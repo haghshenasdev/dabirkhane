@@ -13,15 +13,7 @@ class DatabaseHelper {
   }
 
   static Future<String> _dbPath() async {
-    Directory dir;
-
-    if (Platform.isAndroid) {
-      dir = (await getExternalStorageDirectory())!;
-    } else {
-      dir = await getApplicationDocumentsDirectory();
-    }
-
-    return join(dir.path, 'dabirkhane.sqlite');
+    return getDbPath();
   }
 
   static Future<List<String>> getDistinctFieldValues(String field) async {
@@ -126,20 +118,26 @@ class DatabaseHelper {
           t_name_ersali TEXT,
           adres_name TEXT
         );
-        CREATE TABLE IF NOT EXISTS categories (
+        ''');
+
+        // ساخت جدول categories
+        await db.execute('''
+                CREATE TABLE IF NOT EXISTS categories (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   name TEXT UNIQUE NOT NULL
 );
-CREATE TABLE IF NOT EXISTS record_categories (
+      ''');
+
+        // ساخت جدول record_categories
+        await db.execute('''
+        CREATE TABLE IF NOT EXISTS record_categories (
   record_id TEXT NOT NULL,
   category_id INTEGER NOT NULL,
   PRIMARY KEY (record_id, category_id),
   FOREIGN KEY (record_id) REFERENCES daftare_andicator(Shomare_Radif) ON DELETE CASCADE,
   FOREIGN KEY (category_id) REFERENCES categories(id) ON DELETE CASCADE
 );
-
-
-        ''');
+      ''');
       },
     );
   }
@@ -147,10 +145,13 @@ CREATE TABLE IF NOT EXISTS record_categories (
   static Future<String> getDbPath() async {
     Directory dir;
 
-    if (Platform.isAndroid) {
-      dir = (await getExternalStorageDirectory())!;
-    } else {
+    if (Platform.isWindows) {
+      // روی ویندوز داخل Documents
       dir = await getApplicationDocumentsDirectory();
+    } else {
+      // روی اندروید و سایر پلتفرم‌ها داخل مسیر امن دیتابیس
+      final path = await getDatabasesPath();
+      return join(path, 'dabirkhane.sqlite');
     }
 
     return join(dir.path, 'dabirkhane.sqlite');
@@ -288,30 +289,33 @@ CREATE TABLE IF NOT EXISTS record_categories (
   ) async {
     final db = await database;
 
-    await db.delete(
-      'record_categories',
-      where: 'record_id = ?',
-      whereArgs: [recordId],
-    );
-
-    for (final cat in categories) {
-      await db.insert('categories', {
-        'name': cat,
-      }, conflictAlgorithm: ConflictAlgorithm.ignore);
-
-      final idRes = await db.query(
-        'categories',
-        where: 'name = ?',
-        whereArgs: [cat],
+    await db.transaction((txn) async {
+      await txn.delete(
+        'record_categories',
+        where: 'record_id = ?',
+        whereArgs: [recordId],
       );
 
-      final catId = idRes.first['id'];
+      for (final cat in categories) {
+        await txn.insert('categories', {
+          'name': cat,
+        }, conflictAlgorithm: ConflictAlgorithm.ignore);
 
-      await db.insert('record_categories', {
-        'record_id': recordId,
-        'category_id': catId,
-      }, conflictAlgorithm: ConflictAlgorithm.ignore);
-    }
+        final idRes = await txn.query(
+          'categories',
+          columns: ['id'],
+          where: 'name = ?',
+          whereArgs: [cat],
+        );
+
+        final catId = idRes.first['id'];
+
+        await txn.insert('record_categories', {
+          'record_id': recordId,
+          'category_id': catId,
+        }, conflictAlgorithm: ConflictAlgorithm.ignore);
+      }
+    });
   }
 
   static Future<List<String>> getCategoriesForRecord(String recordId) async {

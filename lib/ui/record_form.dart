@@ -1,15 +1,17 @@
 import 'dart:async';
 import 'dart:io';
+import 'package:cunning_document_scanner/cunning_document_scanner.dart';
+
 import '../utils/JalaliDateFormatter.dart';
 import '../utils/app_settings.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:flutter_doc_scanner/flutter_doc_scanner.dart';
 import 'package:open_file/open_file.dart';
 import '../db/database_helper.dart';
 import 'package:shamsi_date/shamsi_date.dart';
 import 'package:path/path.dart' as path;
+import 'package:permission_handler/permission_handler.dart';
 
 class RecordForm extends StatefulWidget {
   final Map<String, dynamic>? record;
@@ -245,6 +247,15 @@ class _RecordFormState extends State<RecordForm>
   }
 
   Future<void> addFileForRecord() async {
+    // درخواست مجوز ذخیره‌سازی
+    PermissionStatus status = await Permission.manageExternalStorage.request();
+    if (!status.isGranted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('برای دسترسی به فایل‌ها مجوز لازم را بدهید')),
+      );
+      return;
+    }
+
     final shomareRadif = c['Shomare_Radif']?.text.trim();
     if (shomareRadif == null || shomareRadif.isEmpty) {
       ScaffoldMessenger.of(
@@ -295,9 +306,7 @@ class _RecordFormState extends State<RecordForm>
     //by default way they fetch pdf for android and png for iOS
     dynamic scannedDocuments;
     try {
-      scannedDocuments =
-          await FlutterDocScanner().getScannedDocumentAsPdf(page: 4) ??
-          'Unknown platform documents';
+      scannedDocuments = await CunningDocumentScanner.getPictures();
     } on PlatformException {
       scannedDocuments = 'دریافت فایل های اسکن شده شکست خورد.';
     } catch (error) {
