@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:io';
 import 'package:cunning_document_scanner/cunning_document_scanner.dart';
+import 'package:dabirkhane/pages/scanner_page.dart';
 
 import '../utils/JalaliDateFormatter.dart';
 import '../utils/app_settings.dart';
@@ -304,17 +305,20 @@ class _RecordFormState extends State<RecordForm>
 
   Future<void> scanDocument() async {
     //by default way they fetch pdf for android and png for iOS
-    dynamic scannedDocuments;
+    dynamic result;
     try {
-      scannedDocuments = await CunningDocumentScanner.getPictures();
+      result = await Navigator.push(
+        context,
+        MaterialPageRoute(builder: (_) => const ScanerPage()),
+      );
     } on PlatformException {
-      scannedDocuments = 'دریافت فایل های اسکن شده شکست خورد.';
+      result = 'دریافت فایل های اسکن شده شکست خورد.';
     } catch (error) {
-      scannedDocuments = error.toString();
+      result = error.toString();
     }
     ScaffoldMessenger.of(
       context,
-    ).showSnackBar(SnackBar(content: Text(scannedDocuments.toString())));
+    ).showSnackBar(SnackBar(content: Text(result.toString())));
   }
 
   Widget buildGuyField() {
