@@ -146,6 +146,8 @@ class _HomePageState extends State<HomePage> {
 
       // 3️⃣ حذف فایل قبلی
       if (await targetFile.exists()) {
+        final backupPath = '$targetPath.backup';
+        await targetFile.copy(backupPath);
         await targetFile.delete();
       }
 
