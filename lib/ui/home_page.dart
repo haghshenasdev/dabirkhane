@@ -224,11 +224,29 @@ class _HomePageState extends State<HomePage> {
 
   @override
   Widget build(BuildContext context) {
+    final width = MediaQuery.of(context).size.width;
+
+    final bool desktop = width > 1100;
+    final bool tablet = width > 700;
+
     return Scaffold(
+      backgroundColor: const Color(0xffEEF3F8),
+
       appBar: AppBar(
+        elevation: 0,
+        backgroundColor: Colors.white,
+        surfaceTintColor: Colors.white,
+
         title: selectionMode
-            ? Text('${selectedIndexes.length} مورد انتخاب شده')
-            : const Text('دبیرخانه'),
+            ? Text(
+                "${selectedIndexes.length} مورد انتخاب شده",
+                style: const TextStyle(fontWeight: FontWeight.bold),
+              )
+            : const Text(
+                "دبیرخانه",
+                style: TextStyle(fontWeight: FontWeight.bold),
+              ),
+
         leading: selectionMode
             ? IconButton(
                 icon: const Icon(Icons.close),
@@ -240,11 +258,12 @@ class _HomePageState extends State<HomePage> {
                 },
               )
             : null,
+
         actions: selectionMode
             ? [
-                TextButton.icon(
+                IconButton(
                   icon: const Icon(Icons.done_all),
-                  label: const Text('انتخاب همه'),
+                  tooltip: "انتخاب همه",
                   onPressed: () {
                     setState(() {
                       selectedIndexes = Set.from(
@@ -253,44 +272,40 @@ class _HomePageState extends State<HomePage> {
                     });
                   },
                 ),
-
-                TextButton.icon(
-                  icon: const Icon(Icons.table_chart_outlined),
-                  label: const Text('خروجی CSV'),
+                IconButton(
+                  icon: const Icon(Icons.table_chart),
+                  tooltip: "CSV",
                   onPressed: exportSelectedToCsv,
                 ),
               ]
             : [
                 IconButton(
+                  tooltip: "بروزرسانی",
                   icon: const Icon(Icons.refresh),
-                  onPressed: () {
-                    setState(() {
-                      load(); // یا load();
-                    });
-                  },
-                  tooltip: 'تازه سازی',
+                  onPressed: () => loadMore(reset: true),
                 ),
                 IconButton(
-                  icon: const Icon(Icons.bar_chart_rounded),
+                  tooltip: "آمار",
+                  icon: const Icon(Icons.bar_chart),
                   onPressed: () {
                     Navigator.push(
                       context,
                       MaterialPageRoute(builder: (_) => const StatsPage()),
                     );
                   },
-                  tooltip: 'آمار',
                 ),
                 IconButton(
-                  icon: const Icon(Icons.arrow_downward_rounded),
+                  tooltip: "بازیابی",
+                  icon: const Icon(Icons.download),
                   onPressed: importDb,
-                  tooltip: 'بازیابی اطلاعات',
                 ),
                 IconButton(
-                  icon: const Icon(Icons.arrow_upward_rounded),
+                  tooltip: "پشتیبان گیری",
+                  icon: const Icon(Icons.upload),
                   onPressed: exportDb,
-                  tooltip: 'پشتیبان گیری از اطلاعات',
                 ),
                 IconButton(
+                  tooltip: "تنظیمات",
                   icon: const Icon(Icons.settings),
                   onPressed: () {
                     Navigator.push(
@@ -304,8 +319,11 @@ class _HomePageState extends State<HomePage> {
 
       floatingActionButton: selectionMode
           ? null
-          : FloatingActionButton(
-              child: const Icon(Icons.add),
+          : FloatingActionButton.extended(
+              backgroundColor: Colors.blue,
+              foregroundColor: Colors.white,
+              icon: const Icon(Icons.add),
+              label: const Text("ثبت نامه"),
               onPressed: () async {
                 final id = await Navigator.push<int>(
                   context,
@@ -318,510 +336,651 @@ class _HomePageState extends State<HomePage> {
               },
             ),
 
-      body: Column(
-        children: [
-          // 🔍 سرچ + فیلتر پیشرفته
-          Padding(
-            padding: const EdgeInsets.all(8.0),
-            child: Column(
-              children: [
-                Row(
-                  children: [
-                    // 🔎 فیلد جستجو
-                    Expanded(
-                      child: TextField(
-                        controller: _controller,
-                        decoration: InputDecoration(
-                          labelText: 'جستجو...',
-                          prefixIcon: const Icon(Icons.search),
-                          border: const OutlineInputBorder(),
-                          // وقتی متن نوشته شده دکمه پاک‌کن نمایش داده می‌شود
-                          suffixIcon: _controller.text.isNotEmpty
-                              ? IconButton(
-                                  icon: const Icon(Icons.clear),
-                                  onPressed: () {
-                                    _controller.clear();
-                                    query = '';
-                                    loadMore(reset: true);
-                                  },
-                                )
-                              : null,
+      body: SafeArea(
+        child: Center(
+          child: ConstrainedBox(
+            constraints: BoxConstraints(
+              maxWidth: desktop ? 1450 : double.infinity,
+            ),
+
+            child: Padding(
+              padding: EdgeInsets.symmetric(
+                horizontal: desktop ? 32 : 12,
+                vertical: desktop ? 24 : 12,
+              ),
+
+              child: Column(
+                children: [
+                  //----------------------------------------------------
+                  // Search Panel
+                  //----------------------------------------------------
+                  Container(
+                    padding: const EdgeInsets.all(18),
+
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(20),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withOpacity(.06),
+                          blurRadius: 20,
+                          offset: const Offset(0, 8),
                         ),
-                        onChanged: (v) {
-                          if (_debounce?.isActive ?? false) _debounce!.cancel();
-                          _debounce = Timer(
-                            const Duration(milliseconds: 500),
-                            () {
-                              query = v;
-                              loadMore(reset: true);
-                            },
-                          );
-                        },
-                      ),
+                      ],
                     ),
 
-                    const SizedBox(width: 8),
+                    child: Column(
+                      children: [
+                        Row(
+                          children: [
+                            Expanded(
+                              child: TextField(
+                                controller: _controller,
 
-                    // 🔽 دکمه باز شدن فیلتر
-                    IconButton(
-                      icon: Icon(
-                        showAdvancedFilter
-                            ? Icons.expand_less
-                            : Icons.filter_alt_outlined,
-                      ),
-                      tooltip: 'فیلتر تاریخ',
-                      onPressed: () {
-                        setState(() {
-                          showAdvancedFilter = !showAdvancedFilter;
-                        });
+                                decoration: InputDecoration(
+                                  hintText: "جستجوی نامه...",
+
+                                  prefixIcon: const Icon(Icons.search),
+
+                                  filled: true,
+
+                                  fillColor: Colors.grey.shade100,
+
+                                  border: OutlineInputBorder(
+                                    borderRadius: BorderRadius.circular(14),
+                                    borderSide: BorderSide.none,
+                                  ),
+
+                                  suffixIcon: _controller.text.isEmpty
+                                      ? null
+                                      : IconButton(
+                                          icon: const Icon(Icons.clear),
+                                          onPressed: () {
+                                            _controller.clear();
+                                            query = "";
+                                            loadMore(reset: true);
+                                          },
+                                        ),
+                                ),
+
+                                onChanged: (v) {
+                                  _debounce?.cancel();
+
+                                  _debounce = Timer(
+                                    const Duration(milliseconds: 400),
+                                    () {
+                                      query = v;
+                                      loadMore(reset: true);
+                                    },
+                                  );
+                                },
+                              ),
+                            ),
+
+                            const SizedBox(width: 12),
+
+                            FilledButton.icon(
+                              onPressed: () {
+                                setState(() {
+                                  showAdvancedFilter = !showAdvancedFilter;
+                                });
+                              },
+                              icon: Icon(
+                                showAdvancedFilter
+                                    ? Icons.expand_less
+                                    : Icons.filter_alt_outlined,
+                              ),
+                              label: const Text("فیلتر"),
+                            ),
+                          ],
+                        ),
+
+                        AnimatedCrossFade(
+                          duration: const Duration(milliseconds: 250),
+
+                          firstChild: const SizedBox.shrink(),
+
+                          secondChild: Padding(
+                            padding: const EdgeInsets.only(top: 18),
+
+                            child: buildAdvancedFilter(),
+                          ),
+
+                          crossFadeState: showAdvancedFilter
+                              ? CrossFadeState.showSecond
+                              : CrossFadeState.showFirst,
+                        ),
+                      ],
+                    ),
+                  ),
+
+                  const SizedBox(height: 20),
+
+                  //----------------------------------------------------
+                  // List
+                  //----------------------------------------------------
+                  Expanded(
+                    child: records.isEmpty && !isLoading
+                        ? const Center(
+                            child: Text(
+                              "هیچ نامه‌ای ثبت نشده است",
+                              style: TextStyle(fontSize: 18),
+                            ),
+                          )
+                        : ListView.builder(
+                            controller: _scrollController,
+                            itemCount: records.length + (hasMore ? 1 : 0),
+                            itemBuilder: (_, i) {
+                              if (i >= records.length) {
+                                return const Padding(
+                                  padding: EdgeInsets.all(24),
+                                  child: Center(
+                                    child: CircularProgressIndicator(),
+                                  ),
+                                );
+                              }
+
+                              return buildRecordCard(records[i], i);
+                            },
+                          ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget buildAdvancedFilter() {
+    InputDecoration decoration(String label, IconData icon) {
+      return InputDecoration(
+        labelText: label,
+        prefixIcon: Icon(icon),
+        filled: true,
+        fillColor: Colors.grey.shade100,
+        contentPadding: const EdgeInsets.symmetric(
+          horizontal: 14,
+          vertical: 14,
+        ),
+        border: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(14),
+          borderSide: BorderSide.none,
+        ),
+        enabledBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(14),
+          borderSide: BorderSide(color: Colors.grey.shade300),
+        ),
+        focusedBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(14),
+          borderSide: const BorderSide(color: Colors.blue, width: 1.4),
+        ),
+      );
+    }
+
+    final desktop = MediaQuery.of(context).size.width > 900;
+
+    return Column(
+      children: [
+        //-----------------------------------------
+        // تاریخ
+        //-----------------------------------------
+        desktop
+            ? Row(
+                children: [
+                  Expanded(
+                    child: TextField(
+                      controller: fromDateController,
+                      keyboardType: TextInputType.number,
+                      decoration: decoration("از تاریخ", Icons.calendar_month),
+                    ),
+                  ),
+
+                  const SizedBox(width: 12),
+
+                  Expanded(
+                    child: TextField(
+                      controller: toDateController,
+                      keyboardType: TextInputType.number,
+                      decoration: decoration("تا تاریخ", Icons.event),
+                    ),
+                  ),
+                ],
+              )
+            : Column(
+                children: [
+                  TextField(
+                    controller: fromDateController,
+                    keyboardType: TextInputType.number,
+                    decoration: decoration("از تاریخ", Icons.calendar_month),
+                  ),
+
+                  const SizedBox(height: 12),
+
+                  TextField(
+                    controller: toDateController,
+                    keyboardType: TextInputType.number,
+                    decoration: decoration("تا تاریخ", Icons.event),
+                  ),
+                ],
+              ),
+
+        const SizedBox(height: 14),
+
+        //-----------------------------------------
+        // گیرنده
+        //-----------------------------------------
+        TextField(
+          controller: onvanController,
+          decoration: decoration("گیرنده نامه", Icons.person_outline),
+        ),
+
+        const SizedBox(height: 14),
+
+        //-----------------------------------------
+        // دسته بندی
+        //-----------------------------------------
+        TextField(
+          controller: categoryFilterController,
+          decoration: decoration("دسته بندی", Icons.category_outlined),
+
+          onChanged: (value) {
+            _debounceCategoryFilter?.cancel();
+
+            _debounceCategoryFilter = Timer(
+              const Duration(milliseconds: 300),
+              () async {
+                if (value.trim().isEmpty) {
+                  setState(() {
+                    categoryFilterSuggestions.clear();
+                  });
+
+                  return;
+                }
+
+                final result = await DatabaseHelper.searchCategories(
+                  value.trim(),
+                );
+
+                setState(() {
+                  categoryFilterSuggestions = result;
+                });
+              },
+            );
+          },
+
+          onSubmitted: (v) {
+            _addCategoryFilter(v.trim());
+          },
+        ),
+
+        //-----------------------------------------
+        // چیپ ها
+        //-----------------------------------------
+        if (selectedCategoryFilters.isNotEmpty)
+          Padding(
+            padding: const EdgeInsets.only(top: 12),
+
+            child: Align(
+              alignment: Alignment.centerRight,
+
+              child: Wrap(
+                spacing: 8,
+                runSpacing: 8,
+
+                children: selectedCategoryFilters.map((cat) {
+                  return Chip(
+                    label: Text(cat),
+
+                    backgroundColor: Colors.blue.shade50,
+
+                    deleteIcon: const Icon(Icons.close),
+
+                    onDeleted: () {
+                      setState(() {
+                        selectedCategoryFilters.remove(cat);
+                      });
+                    },
+                  );
+                }).toList(),
+              ),
+            ),
+          ),
+
+        //-----------------------------------------
+        // پیشنهادها
+        //-----------------------------------------
+        if (categoryFilterSuggestions.isNotEmpty)
+          Container(
+            margin: const EdgeInsets.only(top: 10),
+
+            decoration: BoxDecoration(
+              color: Colors.white,
+
+              borderRadius: BorderRadius.circular(14),
+
+              border: Border.all(color: Colors.grey.shade300),
+            ),
+
+            child: ListView.separated(
+              shrinkWrap: true,
+
+              physics: const NeverScrollableScrollPhysics(),
+
+              itemCount: categoryFilterSuggestions.length,
+
+              separatorBuilder: (_, __) =>
+                  Divider(height: 1, color: Colors.grey.shade300),
+
+              itemBuilder: (_, i) {
+                final item = categoryFilterSuggestions[i];
+
+                return ListTile(
+                  dense: true,
+
+                  leading: const Icon(Icons.label_outline, color: Colors.blue),
+
+                  title: Text(item, textDirection: TextDirection.rtl),
+
+                  onTap: () {
+                    _addCategoryFilter(item);
+                  },
+                );
+              },
+            ),
+          ),
+
+        const SizedBox(height: 20),
+
+        //-----------------------------------------
+        // دکمه ها
+        //-----------------------------------------
+        Wrap(
+          spacing: 12,
+          runSpacing: 12,
+
+          alignment: WrapAlignment.end,
+
+          children: [
+            FilledButton.icon(
+              icon: const Icon(Icons.search),
+
+              label: const Text("اعمال فیلتر"),
+
+              onPressed: () {
+                loadMore(reset: true);
+              },
+            ),
+
+            OutlinedButton.icon(
+              icon: const Icon(Icons.clear),
+
+              label: const Text("پاک کردن"),
+
+              onPressed: () {
+                fromDateController.clear();
+                toDateController.clear();
+                onvanController.clear();
+
+                categoryFilterController.clear();
+
+                selectedCategoryFilters.clear();
+
+                categoryFilterSuggestions.clear();
+
+                query = "";
+
+                _controller.clear();
+
+                loadMore(reset: true);
+              },
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+
+  Widget buildRecordCard(Map<String, dynamic> r, int i) {
+    final isSelected = selectedIndexes.contains(i);
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 6),
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          borderRadius: BorderRadius.circular(22),
+
+          onTap: () async {
+            if (selectionMode) {
+              setState(() {
+                if (isSelected) {
+                  selectedIndexes.remove(i);
+                } else {
+                  selectedIndexes.add(i);
+                }
+
+                if (selectedIndexes.isEmpty) {
+                  selectionMode = false;
+                }
+              });
+            } else {
+              final id = await Navigator.push<int>(
+                context,
+                MaterialPageRoute(builder: (_) => RecordForm(record: r)),
+              );
+
+              if (id != null) {
+                await refreshOneRecord(id);
+              }
+            }
+          },
+
+          onLongPress: () {
+            setState(() {
+              selectionMode = true;
+              selectedIndexes.add(i);
+            });
+          },
+
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 180),
+
+            padding: const EdgeInsets.all(18),
+
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(22),
+
+              color: isSelected
+                  ? Colors.blue.withOpacity(.10)
+                  : Colors.white.withOpacity(.72),
+
+              border: Border.all(
+                color: isSelected ? Colors.blue : Colors.white,
+                width: isSelected ? 2 : 1.2,
+              ),
+
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withOpacity(.06),
+                  blurRadius: 18,
+                  offset: const Offset(0, 8),
+                ),
+              ],
+            ),
+
+            child: Stack(
+              children: [
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.end,
+                  children: [
+                    //----------------------------------------------------
+                    // عنوان
+                    //----------------------------------------------------
+                    Row(
+                      textDirection: TextDirection.rtl,
+                      children: [
+                        Expanded(
+                          child: Text(
+                            r["guy"] ?? "—",
+                            textAlign: TextAlign.right,
+                            style: const TextStyle(
+                              fontSize: 18,
+                              fontWeight: FontWeight.bold,
+                            ),
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+
+                        const SizedBox(width: 10),
+
+                        Container(
+                          width: 42,
+                          height: 42,
+                          decoration: BoxDecoration(
+                            color: Colors.blue.shade50,
+                            borderRadius: BorderRadius.circular(14),
+                          ),
+                          child: const Icon(
+                            Icons.mail_outline,
+                            color: Colors.blue,
+                          ),
+                        ),
+                      ],
+                    ),
+
+                    const SizedBox(height: 18),
+
+                    //----------------------------------------------------
+                    // صاحب نامه
+                    //----------------------------------------------------
+                    Row(
+                      textDirection: TextDirection.rtl,
+                      children: [
+                        const Icon(
+                          Icons.person_outline,
+                          size: 18,
+                          color: Colors.blueGrey,
+                        ),
+
+                        const SizedBox(width: 8),
+
+                        Expanded(
+                          child: Text(
+                            r["saheb_name"] ?? "—",
+                            textAlign: TextAlign.right,
+                            style: const TextStyle(fontSize: 15),
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                      ],
+                    ),
+
+                    const SizedBox(height: 14),
+
+                    Divider(color: Colors.grey.shade300, height: 1),
+
+                    const SizedBox(height: 14),
+
+                    //----------------------------------------------------
+                    // پایین کارت
+                    //----------------------------------------------------
+                    LayoutBuilder(
+                      builder: (_, c) {
+                        final desktop = c.maxWidth > 420;
+
+                        if (desktop) {
+                          return Row(
+                            textDirection: TextDirection.rtl,
+
+                            children: [
+                              _recordChip(
+                                Icons.calendar_today,
+                                r["date"] ?? "—",
+                              ),
+
+                              const Spacer(),
+
+                              _recordChip(
+                                Icons.confirmation_number_outlined,
+                                "ردیف ${r["Shomare_Radif"]}",
+                              ),
+                            ],
+                          );
+                        }
+
+                        return Column(
+                          children: [
+                            Align(
+                              alignment: Alignment.centerRight,
+                              child: _recordChip(
+                                Icons.calendar_today,
+                                r["date"] ?? "—",
+                              ),
+                            ),
+
+                            const SizedBox(height: 10),
+
+                            Align(
+                              alignment: Alignment.centerRight,
+                              child: _recordChip(
+                                Icons.confirmation_number_outlined,
+                                "ردیف ${r["Shomare_Radif"]}",
+                              ),
+                            ),
+                          ],
+                        );
                       },
                     ),
                   ],
                 ),
 
-                // 🟢 فیلتر بازشو
-                AnimatedCrossFade(
-                  firstChild: const SizedBox(),
-                  secondChild: Container(
-                    margin: const EdgeInsets.only(top: 10),
-                    padding: const EdgeInsets.all(10),
-                    decoration: BoxDecoration(
-                      border: Border.all(color: Colors.grey.shade300),
-                      borderRadius: BorderRadius.circular(10),
-                    ),
-                    child: Column(
-                      children: [
-                        Row(
-                          children: [
-                            // از تاریخ
-                            Expanded(
-                              child: TextField(
-                                controller: fromDateController,
-                                keyboardType: TextInputType.number,
-                                decoration: const InputDecoration(
-                                  labelText: 'از تاریخ (مثال: 14040101)',
-                                  border: OutlineInputBorder(),
-                                ),
-                              ),
-                            ),
-                            const SizedBox(width: 10),
-
-                            // تا تاریخ
-                            Expanded(
-                              child: TextField(
-                                controller: toDateController,
-                                keyboardType: TextInputType.number,
-                                decoration: const InputDecoration(
-                                  labelText: 'تا تاریخ (مثال: 14041229)',
-                                  border: OutlineInputBorder(),
-                                ),
-                              ),
-                            ),
-                          ],
-                        ),
-
-                        const SizedBox(height: 10),
-
-                        Row(
-                          children: [
-                            Expanded(
-                              child: TextField(
-                                controller: onvanController,
-                                decoration: const InputDecoration(
-                                  labelText: 'گیرنده نامه',
-                                  border: OutlineInputBorder(),
-                                ),
-                              ),
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: 10),
-
-                        /// 🔹 فیلتر دسته‌بندی
-                        Column(
-                          crossAxisAlignment: CrossAxisAlignment.stretch,
-                          children: [
-                            TextField(
-                              controller: categoryFilterController,
-                              decoration: const InputDecoration(
-                                labelText: 'دسته‌بندی',
-                                border: OutlineInputBorder(),
-                              ),
-                              onChanged: (value) {
-                                _debounceCategoryFilter?.cancel();
-                                _debounceCategoryFilter = Timer(
-                                  const Duration(milliseconds: 300),
-                                  () async {
-                                    if (value.trim().isEmpty) {
-                                      setState(
-                                        () => categoryFilterSuggestions.clear(),
-                                      );
-                                      return;
-                                    }
-
-                                    final res =
-                                        await DatabaseHelper.searchCategories(
-                                          value.trim(),
-                                        );
-
-                                    setState(
-                                      () => categoryFilterSuggestions = res,
-                                    );
-                                  },
-                                );
-                              },
-                              onSubmitted: (value) {
-                                _addCategoryFilter(value.trim());
-                              },
-                            ),
-
-                            /// نمایش چیپ‌ها
-                            if (selectedCategoryFilters.isNotEmpty)
-                              Padding(
-                                padding: const EdgeInsets.only(top: 8),
-                                child: Wrap(
-                                  spacing: 6,
-                                  runSpacing: 6,
-                                  children: selectedCategoryFilters.map((cat) {
-                                    return Chip(
-                                      label: Text(cat),
-                                      deleteIcon: const Icon(
-                                        Icons.close,
-                                        size: 18,
-                                      ),
-                                      onDeleted: () {
-                                        setState(() {
-                                          selectedCategoryFilters.remove(cat);
-                                        });
-                                      },
-                                    );
-                                  }).toList(),
-                                ),
-                              ),
-
-                            /// پیشنهادها
-                            if (categoryFilterSuggestions.isNotEmpty)
-                              Container(
-                                margin: const EdgeInsets.only(top: 4),
-                                decoration: BoxDecoration(
-                                  border: Border.all(
-                                    color: Colors.grey.shade300,
-                                  ),
-                                  borderRadius: BorderRadius.circular(8),
-                                  color: Colors.white,
-                                ),
-                                child: ListView.builder(
-                                  shrinkWrap: true,
-                                  physics: const NeverScrollableScrollPhysics(),
-                                  itemCount: categoryFilterSuggestions.length,
-                                  itemBuilder: (_, i) {
-                                    final item = categoryFilterSuggestions[i];
-                                    return ListTile(
-                                      dense: true,
-                                      title: Text(
-                                        item,
-                                        textDirection: TextDirection.rtl,
-                                      ),
-                                      onTap: () {
-                                        _addCategoryFilter(item);
-                                      },
-                                    );
-                                  },
-                                ),
-                              ),
-                          ],
-                        ),
-
-                        const SizedBox(height: 10),
-
-                        Row(
-                          children: [
-                            ElevatedButton.icon(
-                              icon: const Icon(Icons.search),
-                              label: const Text('اعمال فیلتر'),
-                              onPressed: () {
-                                loadMore(reset: true);
-                              },
-                            ),
-                            const SizedBox(width: 10),
-                            TextButton(
-                              child: const Text('پاک کردن'),
-                              onPressed: () {
-                                fromDateController.clear();
-                                toDateController.clear();
-                                onvanController.clear();
-                                selectedCategoryFilters.clear();
-                                categoryFilterController.clear();
-                                loadMore(reset: true);
-                              },
-                            ),
-                          ],
-                        ),
-                      ],
+                //----------------------------------------------------
+                // انتخاب
+                //----------------------------------------------------
+                if (selectionMode)
+                  Positioned(
+                    left: 0,
+                    top: 0,
+                    child: AnimatedSwitcher(
+                      duration: const Duration(milliseconds: 150),
+                      child: Icon(
+                        isSelected
+                            ? Icons.check_circle
+                            : Icons.radio_button_unchecked,
+                        key: ValueKey(isSelected),
+                        color: isSelected ? Colors.blue : Colors.grey,
+                        size: 28,
+                      ),
                     ),
                   ),
-                  crossFadeState: showAdvancedFilter
-                      ? CrossFadeState.showSecond
-                      : CrossFadeState.showFirst,
-                  duration: const Duration(milliseconds: 250),
-                ),
               ],
             ),
           ),
+        ),
+      ),
+    );
+  }
 
-          // 📄 لیست کارت‌ها
-          Expanded(
-            child: ListView.builder(
-              controller: _scrollController,
-              itemCount: records.length + (hasMore ? 1 : 0),
-              itemBuilder: (_, i) {
-                if (i >= records.length) {
-                  return const Padding(
-                    padding: EdgeInsets.all(16),
-                    child: Center(child: CircularProgressIndicator()),
-                  );
-                }
+  Widget _recordChip(IconData icon, String text) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+      decoration: BoxDecoration(
+        color: Colors.grey.shade100,
+        borderRadius: BorderRadius.circular(20),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 16, color: Colors.blueGrey),
 
-                final r = records[i];
-                final isSelected = selectedIndexes.contains(i);
+          const SizedBox(width: 6),
 
-                return Card(
-                  color: isSelected ? Colors.blue.withOpacity(0.15) : null,
-                  margin: const EdgeInsets.symmetric(
-                    horizontal: 10,
-                    vertical: 6,
-                  ),
-                  elevation: isSelected ? 4 : 2,
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12),
-                    side: isSelected
-                        ? const BorderSide(color: Colors.blue, width: 1.5)
-                        : BorderSide.none,
-                  ),
-                  child: InkWell(
-                    borderRadius: BorderRadius.circular(12),
-
-                    // 👆 کلیک کوتاه
-                    onTap: () async {
-                      if (selectionMode) {
-                        setState(() {
-                          if (isSelected) {
-                            selectedIndexes.remove(i);
-                          } else {
-                            selectedIndexes.add(i);
-                          }
-
-                          if (selectedIndexes.isEmpty) {
-                            selectionMode = false;
-                          }
-                        });
-                      } else {
-                        final id = await Navigator.push<int>(
-                          context,
-                          MaterialPageRoute(
-                            builder: (_) => RecordForm(record: r),
-                          ),
-                        );
-
-                        if (id != null) {
-                          await refreshOneRecord(id);
-                        }
-                      }
-                    },
-
-                    // ✋ کلیک طولانی
-                    onLongPress: () {
-                      setState(() {
-                        selectionMode = true;
-                        selectedIndexes.add(i);
-                      });
-                    },
-
-                    child: Stack(
-                      children: [
-                        Padding(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 16,
-                            vertical: 14,
-                          ),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.end,
-                            children: [
-                              /// سطر اول: guy و صاحب
-                              LayoutBuilder(
-                                builder: (context, constraints) {
-                                  final isWide = constraints.maxWidth > 400;
-                                  if (isWide) {
-                                    return Row(
-                                      textDirection: TextDirection.rtl,
-                                      mainAxisAlignment:
-                                          MainAxisAlignment.spaceBetween,
-                                      children: [
-                                        Text(
-                                          r['guy'] ?? '—',
-                                          style: const TextStyle(
-                                            fontSize: 17,
-                                            fontWeight: FontWeight.w700,
-                                          ),
-                                        ),
-                                        Row(
-                                          children: [
-                                            const Icon(
-                                              Icons.person_outline,
-                                              size: 16,
-                                            ),
-                                            const SizedBox(width: 6),
-                                            Text(
-                                              r['saheb_name'] ?? '—',
-                                              style: const TextStyle(
-                                                fontSize: 16,
-                                                fontWeight: FontWeight.w700,
-                                              ),
-                                            ),
-                                          ],
-                                        ),
-                                      ],
-                                    );
-                                  } else {
-                                    return Column(
-                                      crossAxisAlignment:
-                                          CrossAxisAlignment.end,
-                                      children: [
-                                        Text(
-                                          r['guy'] ?? '—',
-                                          style: const TextStyle(
-                                            fontSize: 17,
-                                            fontWeight: FontWeight.w700,
-                                          ),
-                                        ),
-                                        const SizedBox(height: 6),
-                                        Row(
-                                          children: [
-                                            const Icon(
-                                              Icons.person_outline,
-                                              size: 16,
-                                            ),
-                                            const SizedBox(width: 6),
-                                            Expanded(
-                                              child: Text(
-                                                r['saheb_name'] ?? '—',
-                                                style: const TextStyle(
-                                                  fontSize: 16,
-                                                  fontWeight: FontWeight.w700,
-                                                ),
-                                              ),
-                                            ),
-                                          ],
-                                        ),
-                                      ],
-                                    );
-                                  }
-                                },
-                              ),
-
-                              const SizedBox(height: 10),
-
-                              /// سطر دوم: تاریخ و ردیف
-                              LayoutBuilder(
-                                builder: (context, constraints) {
-                                  final isWide = constraints.maxWidth > 400;
-                                  if (isWide) {
-                                    return Row(
-                                      textDirection: TextDirection.rtl,
-                                      mainAxisAlignment:
-                                          MainAxisAlignment.spaceBetween,
-                                      children: [
-                                        Row(
-                                          children: [
-                                            const Icon(
-                                              Icons.calendar_today,
-                                              size: 16,
-                                            ),
-                                            const SizedBox(width: 6),
-                                            Text(r['date'] ?? '—'),
-                                          ],
-                                        ),
-                                        Row(
-                                          children: [
-                                            const Icon(
-                                              Icons
-                                                  .confirmation_number_outlined,
-                                              size: 16,
-                                            ),
-                                            const SizedBox(width: 6),
-                                            Text(
-                                              'ردیف ${r['Shomare_Radif']}',
-                                              style: const TextStyle(
-                                                fontWeight: FontWeight.w600,
-                                              ),
-                                            ),
-                                          ],
-                                        ),
-                                      ],
-                                    );
-                                  } else {
-                                    return Column(
-                                      crossAxisAlignment:
-                                          CrossAxisAlignment.end,
-                                      children: [
-                                        Row(
-                                          children: [
-                                            const Icon(
-                                              Icons.calendar_today,
-                                              size: 16,
-                                            ),
-                                            const SizedBox(width: 6),
-                                            Expanded(
-                                              child: Text(r['date'] ?? '—'),
-                                            ),
-                                          ],
-                                        ),
-                                        const SizedBox(height: 6),
-                                        Row(
-                                          children: [
-                                            const Icon(
-                                              Icons
-                                                  .confirmation_number_outlined,
-                                              size: 16,
-                                            ),
-                                            const SizedBox(width: 6),
-                                            Expanded(
-                                              child: Text(
-                                                'ردیف ${r['Shomare_Radif']}',
-                                                style: const TextStyle(
-                                                  fontWeight: FontWeight.w600,
-                                                ),
-                                              ),
-                                            ),
-                                          ],
-                                        ),
-                                      ],
-                                    );
-                                  }
-                                },
-                              ),
-                            ],
-                          ),
-                        ),
-
-                        // ✅ آیکن انتخاب
-                        if (selectionMode)
-                          Positioned(
-                            top: 8,
-                            left: 8,
-                            child: Icon(
-                              isSelected
-                                  ? Icons.check_circle
-                                  : Icons.radio_button_unchecked,
-                              color: isSelected ? Colors.blue : Colors.grey,
-                            ),
-                          ),
-                      ],
-                    ),
-                  ),
-                );
-              },
-            ),
+          Text(
+            text,
+            style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w500),
           ),
         ],
       ),

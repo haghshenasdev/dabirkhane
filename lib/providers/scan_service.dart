@@ -22,14 +22,13 @@ class ScanService {
     _scanStartTime = DateTime.now();
 
     // شماره نامه داخل کلیپ برد
-    await Clipboard.setData(
-      ClipboardData(text: recordId.toString()),
-    );
+    await Clipboard.setData(ClipboardData(text: recordId.toString()));
 
     // باز کردن CamScanner
     const intent = AndroidIntent(
-      package: 'com.intsig.camscanner',
       action: 'android.intent.action.MAIN',
+      category: 'android.intent.category.LAUNCHER',
+      package: 'com.intsig.camscanner',
     );
 
     await intent.launch();
@@ -58,12 +57,7 @@ class ScanService {
 
     final extension = path.extension(file.path);
 
-    final target = File(
-      path.join(
-        lettersDir.path,
-        "$_recordId$extension",
-      ),
-    );
+    final target = File(path.join(lettersDir.path, "$_recordId$extension"));
 
     if (await target.exists()) {
       await target.delete();
@@ -95,10 +89,7 @@ class ScanService {
 
       final ext = path.extension(entity.path).toLowerCase();
 
-      if (ext == ".pdf" ||
-          ext == ".jpg" ||
-          ext == ".jpeg" ||
-          ext == ".png") {
+      if (ext == ".pdf" || ext == ".jpg" || ext == ".jpeg" || ext == ".png") {
         files.add(entity);
       }
     }
@@ -107,14 +98,9 @@ class ScanService {
       return null;
     }
 
-    files.sort(
-      (a, b) =>
-          b.lastModifiedSync().compareTo(
-            a.lastModifiedSync(),
-          ),
-    );
+    files.sort((a, b) => b.lastModifiedSync().compareTo(a.lastModifiedSync()));
 
-        final newest = files.first;
+    final newest = files.first;
 
     // اگر فایل قدیمی تر از شروع اسکن است
     if (newest.lastModifiedSync().isBefore(_scanStartTime!)) {
