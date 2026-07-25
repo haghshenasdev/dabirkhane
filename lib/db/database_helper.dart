@@ -340,4 +340,19 @@ class DatabaseHelper {
       _db = null;
     }
   }
+
+  static Future<Map<String, dynamic>?> getById(int id) async {
+    final db = await database;
+
+    final result = await db.query(
+      'daftare_andicator',
+      where: 'Shomare_Radif = ?',
+      whereArgs: [id],
+      limit: 1,
+    );
+
+    if (result.isEmpty) return null;
+
+    return Map<String, dynamic>.from(result.first);
+  }
 }

@@ -5,7 +5,6 @@ import 'dart:ui';
 import 'package:camera/camera.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
-import 'package:opencv_dart/opencv.dart' as cv;
 
 class ScanerPage extends StatefulWidget {
   const ScanerPage({super.key});
@@ -39,28 +38,7 @@ class _ScanerPageState extends State<ScanerPage> {
     });
   }
 
-  void _processCameraImage(Uint8List cameraImage) async {
-    try {
-      final mat = cv.imdecode(cameraImage, cv.IMREAD_COLOR);
-      final gray = cv.cvtColor(mat, cv.COLOR_BGR2GRAY);
-      final blurred = cv.gaussianBlur(gray, (3, 3), 0);
-      final edges = cv.canny(blurred, 100, 200);
-      final nonZeroMat = cv.findNonZero(edges);
-      if (nonZeroMat.isEmpty) return;
-      final edgePoints = <Offset>[];
-      for (int i = 0; i < nonZeroMat.rows; i++) {
-        final row = nonZeroMat.row(i);
-        final x = row.at<int>(0, 0);
-        final y = row.at<int>(0, 1);
-        edgePoints.add(Offset(x.toDouble(), y.toDouble()));
-      }
-      setState(() {
-        points = getCorrectedCorners(edgePoints);
-      });
-    } catch (e) {
-      print("Error: $e");
-    }
-  }
+  void _processCameraImage(Uint8List cameraImage) async {}
 
   List<Offset> getCorrectedCorners(List<Offset> points) {
     double minX = points.map((p) => p.dx).reduce(min);

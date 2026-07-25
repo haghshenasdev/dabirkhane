@@ -1,6 +1,5 @@
 import 'dart:async';
 import 'dart:io';
-import 'package:cunning_document_scanner/cunning_document_scanner.dart';
 import 'package:dabirkhane/pages/scanner_page.dart';
 
 import '../utils/JalaliDateFormatter.dart';
@@ -53,12 +52,12 @@ class _RecordFormState extends State<RecordForm>
     'guy',
     'sh_name_reside',
     'onvan',
+    'comment',
+    'shomare_badi',
   ];
 
   final otherFields = [
-    'comment',
     't_name_ersali',
-    'shomare_badi',
     't_name_reside',
     'wordmost2',
     'from_pywa',
@@ -189,18 +188,21 @@ class _RecordFormState extends State<RecordForm>
       for (var f in [...mainFields, ...otherFields]) f: c[f]!.text,
     };
 
+    int id;
+
     if (widget.record == null) {
-      await DatabaseHelper.insert(data);
+      id = await DatabaseHelper.insert(data);
     } else {
-      await DatabaseHelper.update(widget.record!['Shomare_Radif'], data);
+      id = widget.record!['Shomare_Radif'];
+      await DatabaseHelper.update(id, data);
     }
 
     await DatabaseHelper.saveCategoriesForRecord(
-      c['Shomare_Radif']!.text,
+      id.toString(),
       selectedCategories,
     );
 
-    Navigator.pop(context, true);
+    Navigator.pop(context, id);
   }
 
   Future<Directory> getLettersDirectory() async {
@@ -724,6 +726,26 @@ class _RecordFormState extends State<RecordForm>
       );
     }
 
+    if (field == 'comment') {
+      return Padding(
+        padding: const EdgeInsets.only(bottom: 10),
+        child: TextFormField(
+          controller: c[field],
+          decoration: InputDecoration(
+            labelText: fieldLabels[field] ?? field,
+            border: const OutlineInputBorder(),
+            alignLabelWithHint: true,
+          ),
+          textDirection: TextDirection.rtl,
+
+          minLines: 1, // ابتدا یک خط
+          maxLines: 3, // حداکثر سه خط
+          keyboardType: TextInputType.multiline,
+          textInputAction: TextInputAction.newline,
+        ),
+      );
+    }
+
     return Padding(
       padding: const EdgeInsets.only(bottom: 10),
       child: TextFormField(
@@ -761,13 +783,14 @@ class _RecordFormState extends State<RecordForm>
               children: [
                 ...mainFields.map((field) => buildTextField(field)),
 
-                const SizedBox(height: 10),
-                buildCategoryField(),
-                const SizedBox(height: 10),
-
                 ExpansionTile(
                   title: Text('سایر اطلاعات'),
-                  children: otherFields.map(buildTextField).toList(),
+                  children: [
+                    const SizedBox(height: 10),
+                    buildCategoryField(),
+                    const SizedBox(height: 10),
+                    ...otherFields.map(buildTextField).toList(),
+                  ],
                 ),
                 Row(
                   children: [

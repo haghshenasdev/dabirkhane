@@ -307,11 +307,14 @@ class _HomePageState extends State<HomePage> {
           : FloatingActionButton(
               child: const Icon(Icons.add),
               onPressed: () async {
-                final r = await Navigator.push(
+                final id = await Navigator.push<int>(
                   context,
                   MaterialPageRoute(builder: (_) => RecordForm()),
                 );
-                if (r == true) load();
+
+                if (id != null) {
+                  await refreshOneRecord(id);
+                }
               },
             ),
 
@@ -613,14 +616,15 @@ class _HomePageState extends State<HomePage> {
                           }
                         });
                       } else {
-                        final res = await Navigator.push(
+                        final id = await Navigator.push<int>(
                           context,
                           MaterialPageRoute(
                             builder: (_) => RecordForm(record: r),
                           ),
                         );
-                        if (res == true) {
-                          loadMore(reset: true);
+
+                        if (id != null) {
+                          await refreshOneRecord(id);
                         }
                       }
                     },
@@ -889,5 +893,21 @@ class _HomePageState extends State<HomePage> {
 
     categoryFilterController.clear();
     categoryFilterSuggestions.clear();
+  }
+
+  Future<void> refreshOneRecord(int id) async {
+    final record = await DatabaseHelper.getById(id);
+
+    if (record == null) return;
+
+    final index = records.indexWhere((e) => e['Shomare_Radif'] == id);
+
+    setState(() {
+      if (index == -1) {
+        records.insert(0, record);
+      } else {
+        load();
+      }
+    });
   }
 }
