@@ -1,4 +1,6 @@
 import 'dart:io';
+import 'package:dabirkhane/db/database_helper.dart';
+
 import '../providers/theme_provider.dart';
 import '../utils/LettersPathTile.dart';
 import 'package:flutter/material.dart';
@@ -10,6 +12,116 @@ import '../ui/wid/ThemeColorTile.dart';
 
 class SettingsPage extends StatelessWidget {
   const SettingsPage({super.key});
+
+  Future<void> restoreDbBackup(BuildContext context) async {
+    try {
+      // 1️⃣ مسیر دیتابیس اصلی و فایل بکاپ
+      final String targetPath = await DatabaseHelper.getDbPath();
+      final File targetFile = File(targetPath);
+      final String backupPath = '$targetPath.backup';
+      final File backupFile = File(backupPath);
+
+      // 2️⃣ بررسی اینکه آیا فایل بکاپ وجود دارد یا نه
+      if (!await backupFile.exists()) {
+        showDialog(
+          context: context,
+          builder: (_) => AlertDialog(
+            title: Text('خطا'),
+            content: Text('هیچ بکاپی برای بازیابی وجود ندارد.'),
+            actions: [
+              TextButton(
+                child: Text('باشه'),
+                onPressed: () => Navigator.pop(context),
+              ),
+            ],
+          ),
+        );
+        return;
+      }
+
+      // 3️⃣ نمایش پیام تایید برای بازیابی (آیا مطمئن است که می‌خواهد داده‌ها را بازیابی کند؟)
+      final confirm = await showConfirmationDialog(context);
+      if (!confirm) {
+        return;
+      }
+
+      // 4️⃣ بستن دیتابیس فعلی
+      await DatabaseHelper.closeDb();
+
+      // 5️⃣ حذف دیتابیس فعلی
+      if (await targetFile.exists()) {
+        await targetFile.delete();
+      }
+
+      // 6️⃣ کپی کردن فایل بکاپ به مسیر اصلی
+      await backupFile.copy(targetPath);
+
+      // 7️⃣ باز کردن دیتابیس جدید (بازیابی شده)
+      await DatabaseHelper.database;
+
+      showDialog(
+        context: context,
+        builder: (_) => AlertDialog(
+          title: Text('بازیابی موفقیت‌آمیز'),
+          content: Text('دیتابیس با موفقیت بازیابی شد.'),
+          actions: [
+            TextButton(
+              child: Text('باشه'),
+              onPressed: () => Navigator.pop(context),
+            ),
+          ],
+        ),
+      );
+    } catch (e) {
+      showDialog(
+        context: context,
+        builder: (_) => AlertDialog(
+          title: Text('خطا'),
+          content: Text(
+            'بازیابی دیتابیس با خطا مواجه شد.\nلطفاً مطمئن شوید که فایل بکاپ سالم است.\n\n$e',
+          ),
+          actions: [
+            TextButton(
+              child: Text('باشه'),
+              onPressed: () => Navigator.pop(context),
+            ),
+          ],
+        ),
+      );
+      debugPrint(e.toString());
+    }
+  }
+
+  Future<bool> showConfirmationDialog(BuildContext context) async {
+    // اینجا می‌توانید از هر کدام از روش‌های تایید که دوست دارید استفاده کنید
+    // برای مثال، استفاده از یک دیالوگ تایید برای کاربر
+    return await showDialog(
+          context: context,
+          builder: (BuildContext context) {
+            return AlertDialog(
+              title: Text('هشدار'),
+              content: Text(
+                'تمامی داده‌های فعلی پاک خواهند شد. آیا مطمئن هستید که می‌خواهید دیتابیس قبلی را بازیابی کنید؟',
+              ),
+              actions: <Widget>[
+                TextButton(
+                  onPressed: () {
+                    Navigator.of(context).pop(false);
+                  },
+                  child: Text('خیر'),
+                ),
+                TextButton(
+                  onPressed: () {
+                    Navigator.of(context).pop(true);
+                  },
+                  child: Text('بله'),
+                ),
+              ],
+            );
+          },
+        ) ??
+        false; // اگر دیالوگ بسته شود، مقدار پیش‌فرض false است
+  }
 
   Future<Directory> getLettersDirectory() async {
     final appDir = await getApplicationDocumentsDirectory();
@@ -44,12 +156,10 @@ class SettingsPage extends StatelessWidget {
           const LettersPathTile(),
 
           ListTile(
-            leading: const Icon(Icons.cleaning_services),
-            title: const Text('پاک‌سازی فایل‌های موقت'),
+            leading: const Icon(Icons.restore),
+            title: const Text('بازیابی دیتابیس قبلی'),
             onTap: () {
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('این قابلیت هنوز فعال نشده')),
-              );
+              restoreDbBackup(context);
             },
           ),
 
@@ -77,7 +187,9 @@ class SettingsPage extends StatelessWidget {
                 }
               },
               child: const Text(
-                'MH-DEV | محمد مهدی حق شناس',
+                'MH-DEV | محمد مهدی حق شناس'
+                '\n'
+                'https://haghshenasdev.github.io/',
                 style: TextStyle(
                   color: Colors.blue,
                   decoration: TextDecoration.underline,
