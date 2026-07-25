@@ -1,7 +1,9 @@
 import 'dart:async';
 import 'dart:io';
+import 'package:camera/camera.dart';
 import 'package:dabirkhane/pages/scanner_page.dart';
 import 'package:dabirkhane/providers/scan_service.dart';
+import 'package:share_plus/share_plus.dart';
 
 import '../utils/JalaliDateFormatter.dart';
 import '../utils/app_settings.dart';
@@ -861,6 +863,11 @@ class _RecordFormState extends State<RecordForm>
                       onPressed: addFileForRecord,
                     ),
                     ElevatedButton.icon(
+                      icon: const Icon(Icons.share),
+                      label: const Text("اشتراک گذاری"),
+                      onPressed: shareFiles,
+                    ),
+                    ElevatedButton.icon(
                       icon: const Icon(Icons.camera_alt),
                       label: const Text('اسکن فایل'),
                       onPressed: scanDocument,
@@ -1030,5 +1037,22 @@ class _RecordFormState extends State<RecordForm>
     );
 
     await ScanService.startScan(id);
+  }
+
+  Future<void> shareFiles() async {
+    if (filesInDirectory.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text("فایلی برای اشتراک گذاری وجود ندارد")),
+      );
+      return;
+    }
+
+    final files = filesInDirectory.map((e) => XFile(e.path)).toList();
+
+    await Share.shareXFiles(
+      files,
+      subject: 'نامه شماره ${c['Shomare_Radif']!.text}',
+      text: 'نامه شماره ${c['Shomare_Radif']!.text}',
+    );
   }
 }
