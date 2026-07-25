@@ -13,15 +13,7 @@ class DatabaseHelper {
   }
 
   static Future<String> _dbPath() async {
-    Directory dir;
-
-    if (Platform.isAndroid) {
-      dir = (await getExternalStorageDirectory())!;
-    } else {
-      dir = await getApplicationDocumentsDirectory();
-    }
-
-    return join(dir.path, 'dabirkhane.sqlite');
+    return getDbPath();
   }
 
   static Future<List<String>> getDistinctFieldValues(String field) async {
