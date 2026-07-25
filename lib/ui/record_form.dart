@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:io';
 import 'package:dabirkhane/pages/scanner_page.dart';
+import 'package:dabirkhane/providers/scan_service.dart';
 
 import '../utils/JalaliDateFormatter.dart';
 import '../utils/app_settings.dart';
@@ -22,7 +23,7 @@ class RecordForm extends StatefulWidget {
 }
 
 class _RecordFormState extends State<RecordForm>
-    with SingleTickerProviderStateMixin {
+    with SingleTickerProviderStateMixin, WidgetsBindingObserver {
   final _formKey = GlobalKey<FormState>();
   final Map<String, TextEditingController> c = {};
   Map<String, dynamic>? lastRecord;
@@ -85,6 +86,7 @@ class _RecordFormState extends State<RecordForm>
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _tabController = TabController(length: 2, vsync: this);
 
     for (var f in [...mainFields, ...otherFields]) {
@@ -246,7 +248,27 @@ class _RecordFormState extends State<RecordForm>
     _firstFieldFocus.dispose();
     _tabController.dispose();
 
+    WidgetsBinding.instance.removeObserver(this);
     super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) async {
+    if (state != AppLifecycleState.resumed) return;
+
+    if (!ScanService.isWaitingForScan) return;
+
+    final ok = await ScanService.processReturnedScan();
+
+    if (!mounted) return;
+
+    if (ok) {
+      await _loadFiles();
+
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text("فایل اسکن شده اضافه شد.")));
+    }
   }
 
   Future<void> addFileForRecord() async {
@@ -808,6 +830,15 @@ class _RecordFormState extends State<RecordForm>
                         child: const Text('ذخیره'),
                       ),
                     ),
+                    const SizedBox(width: 8),
+
+                    Expanded(
+                      child: ElevatedButton.icon(
+                        icon: const Icon(Icons.document_scanner),
+                        label: const Text("اسکن"),
+                        onPressed: saveAndScan,
+                      ),
+                    ),
                   ],
                 ),
               ],
@@ -975,5 +1006,29 @@ class _RecordFormState extends State<RecordForm>
     ScaffoldMessenger.of(
       context,
     ).showSnackBar(const SnackBar(content: Text('اطلاعات ذخیره شد')));
+  }
+
+  Future<void> saveAndScan() async {
+    if (!_formKey.currentState!.validate()) return;
+
+    final data = {
+      for (var f in [...mainFields, ...otherFields]) f: c[f]!.text,
+    };
+
+    int id;
+
+    if (widget.record == null) {
+      id = await DatabaseHelper.insert(data);
+    } else {
+      id = widget.record!['Shomare_Radif'];
+      await DatabaseHelper.update(id, data);
+    }
+
+    await DatabaseHelper.saveCategoriesForRecord(
+      id.toString(),
+      selectedCategories,
+    );
+
+    await ScanService.startScan(id);
   }
 }
