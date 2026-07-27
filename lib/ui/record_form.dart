@@ -1,28 +1,24 @@
 import 'dart:async';
 import 'dart:io';
-import 'dart:ui';
-
 import 'package:camera/camera.dart';
-import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
-import 'package:file_picker/file_picker.dart';
-import 'package:open_file/open_file.dart';
-import 'package:path/path.dart' as path;
-import 'package:permission_handler/permission_handler.dart';
-import 'package:share_plus/share_plus.dart';
-import 'package:shamsi_date/shamsi_date.dart';
-
 import 'package:dabirkhane/pages/scanner_page.dart';
 import 'package:dabirkhane/providers/scan_service.dart';
+import 'package:share_plus/share_plus.dart';
 
-import '../db/database_helper.dart';
 import '../utils/JalaliDateFormatter.dart';
 import '../utils/app_settings.dart';
+import 'package:file_picker/file_picker.dart';
+import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'package:open_file/open_file.dart';
+import '../db/database_helper.dart';
+import 'package:shamsi_date/shamsi_date.dart';
+import 'package:path/path.dart' as path;
+import 'package:permission_handler/permission_handler.dart';
 
 class RecordForm extends StatefulWidget {
   final Map<String, dynamic>? record;
-
-  const RecordForm({super.key, this.record});
+  RecordForm({this.record});
 
   @override
   State<RecordForm> createState() => _RecordFormState();
@@ -30,80 +26,31 @@ class RecordForm extends StatefulWidget {
 
 class _RecordFormState extends State<RecordForm>
     with SingleTickerProviderStateMixin, WidgetsBindingObserver {
-  // ----------------------------
-  // Form
-  // ----------------------------
-
-  final GlobalKey<FormState> _formKey = GlobalKey<FormState>();
-
-  late TabController _tabController;
-
-  // ----------------------------
-  // Controllers
-  // ----------------------------
-
-  final Map<String, TextEditingController> controllers = {};
-
-  final Map<String, FocusNode> focusNodes = {};
-
-  final FocusNode firstFieldFocus = FocusNode();
-
-  // ----------------------------
-  // Suggestions
-  // ----------------------------
-
-  List<String> guySuggestions = [];
-
-  List<String> onvanSuggestions = [];
-
-  List<String> sahebSuggestions = [];
-
-  List<String> categorySuggestions = [];
-
-  Timer? guyTimer;
-
-  Timer? onvanTimer;
-
-  Timer? sahebTimer;
-
-  Timer? categoryTimer;
-
-  Timer? searchTimer;
-
-  // ----------------------------
-  // Last Record
-  // ----------------------------
-
+  final _formKey = GlobalKey<FormState>();
+  final Map<String, TextEditingController> c = {};
   Map<String, dynamic>? lastRecord;
-
   String? lastInfoText;
+  List<String> guySuggestions = [];
+  List<String> onvanSuggestions = [];
+  Timer? _debounceGuy;
+  Timer? _debounceOnvan;
+  final Map<String, FocusNode> focusNodes = {};
+  List<File> filesInDirectory = [];
+  late TabController _tabController;
+  List<String> sahebSuggestions = [];
+  Timer? _debounce;
+  final FocusNode _firstFieldFocus = FocusNode();
 
-  // ----------------------------
-  // Categories
-  // ----------------------------
-
+  //دسته بندی
+  List<String> selectedCategories = [];
+  List<String> categorySuggestions = [];
+  Timer? _debounceCategory;
   final TextEditingController categoryController = TextEditingController();
-
   final FocusNode categoryFocus = FocusNode();
 
-  List<String> selectedCategories = [];
-
-  // ----------------------------
-  // Files
-  // ----------------------------
-
-  List<File> filesInDirectory = [];
-
-  // ----------------------------
-  // Fields Order
-  // ----------------------------
-
-  final List<String> mainFields = [
-    // این دو تا در UI کنار هم قرار می‌گیرند
+  final mainFields = [
     'Shomare_Radif',
     'date',
-
-    // ترتیب بقیه بدون تغییر
     'saheb_name',
     'guy',
     'sh_name_reside',
@@ -112,7 +59,7 @@ class _RecordFormState extends State<RecordForm>
     'shomare_badi',
   ];
 
-  final List<String> otherFields = [
+  final otherFields = [
     't_name_ersali',
     't_name_reside',
     'wordmost2',
@@ -121,161 +68,191 @@ class _RecordFormState extends State<RecordForm>
     'goshashte',
   ];
 
-  // ----------------------------
-  // Labels
-  // ----------------------------
-
   final Map<String, String> fieldLabels = {
     'Shomare_Radif': 'شماره نامه',
-
-    'date': 'تاریخ',
-
-    'saheb_name': 'صاحب نامه',
-
-    'guy': 'موضوع',
-
-    'sh_name_reside': 'شماره تماس',
-
-    'onvan': 'گیرنده نامه',
-
-    'comment': 'توضیحات',
-
-    'shomare_badi': 'شماره بعدی',
-
-    't_name_ersali': 'تاریخ مکاتبه',
-
-    't_name_reside': 'تاریخ نامه',
-
-    'wordmost2': 'پیوست مکاتبه',
-
-    'from_pywa': 'پیوست نامه',
-
-    'adres_name': 'آدرس',
-
     'goshashte': 'شماره قبلی',
+    'date': 'تاریخ',
+    'saheb_name': 'صاحب نامه',
+    'guy': 'موضوع',
+    'from_pywa': 'پیوست نامه',
+    'sh_name_reside': 'شماره تماس',
+    't_name_reside': 'تاریخ نامه',
+    'onvan': 'گیرنده نامه',
+    'comment': 'توضیحات',
+    'shomare_badi': 'شماره بعدی',
+    'wordmost2': 'پیوست مکاتبه',
+    't_name_ersali': 'تاریخ مکاتبه',
+    'adres_name': 'آدرس',
   };
-
-  // ----------------------------
-  // Colors (Glass Theme)
-  // ----------------------------
-
-  static const Color glassWhite = Color.fromRGBO(255, 255, 255, 0.18);
-
-  static const Color glassBorder = Color.fromRGBO(255, 255, 255, 0.30);
-
-  // ----------------------------
-  // Init
-  // ----------------------------
 
   @override
   void initState() {
     super.initState();
-
     WidgetsBinding.instance.addObserver(this);
-
     _tabController = TabController(length: 2, vsync: this);
 
-    _createControllers();
+    for (var f in [...mainFields, ...otherFields]) {
+      c[f] = TextEditingController(text: widget.record?[f]?.toString() ?? '');
+      focusNodes[f] = FocusNode();
+    }
 
     if (widget.record == null) {
       _setInitialValues();
     } else {
-      _loadFiles();
-
+      _loadFiles(); // بارگذاری فایل‌ها
       _loadCategories();
     }
   }
 
-  void _createControllers() {
-    final fields = [...mainFields, ...otherFields];
-
-    for (final field in fields) {
-      controllers[field] = TextEditingController(
-        text: widget.record?[field]?.toString() ?? '',
-      );
-
-      focusNodes[field] = FocusNode();
-    }
-  }
-  // ----------------------------
-  // Load Categories
-  // ----------------------------
-
   Future<void> _loadCategories() async {
-    if (widget.record == null) return;
+    final recordId = widget.record!['Shomare_Radif'].toString();
 
-    final id = widget.record!['Shomare_Radif'].toString();
-
-    final result = await DatabaseHelper.getCategoriesForRecord(id);
-
-    if (!mounted) return;
+    final cats = await DatabaseHelper.getCategoriesForRecord(recordId);
 
     setState(() {
-      selectedCategories = result;
+      selectedCategories = cats;
     });
   }
 
-  // ----------------------------
-  // Default Values
-  // ----------------------------
-
   void _setInitialValues() {
     final now = Jalali.now();
-
-    controllers['date']!.text =
-        '${now.year}/'
-        '${now.month.toString().padLeft(2, '0')}/'
-        '${now.day.toString().padLeft(2, '0')}';
-
+    c['date']!.text =
+        '${now.year}/${now.month.toString().padLeft(2, '0')}/${now.day.toString().padLeft(2, '0')}';
     _setDefaultShomareRadif();
   }
 
   Future<void> _setDefaultShomareRadif() async {
-    final last = await DatabaseHelper.getLastShomareRadif();
-
-    final next = (last ?? 0) + 1;
-
-    if (!mounted) return;
-
-    controllers['Shomare_Radif']!.text = next.toString();
+    final lastNumber = await DatabaseHelper.getLastShomareRadif();
+    final nextNumber = (lastNumber ?? 0) + 1;
+    c['Shomare_Radif']!.text = nextNumber.toString();
   }
 
-  // ----------------------------
-  // Dispose
-  // ----------------------------
+  // بارگذاری فایل‌ها از پوشه 'letters'
+  Future<void> _loadFiles() async {
+    final shomareRadifRaw = c['Shomare_Radif']?.text ?? '';
+    final shomareRadif = normalizeNumbers(shomareRadifRaw.trim());
+
+    if (shomareRadif.isEmpty) {
+      setState(() {
+        filesInDirectory = [];
+      });
+      return;
+    }
+
+    final lettersDir = await getLettersDirectory();
+
+    if (!await lettersDir.exists()) {
+      setState(() {
+        filesInDirectory = [];
+      });
+      return;
+    }
+
+    final regex = RegExp('^$shomareRadif((\\D+\\d+)|\\d+)?\$');
+
+    final List<File> matchedFiles = [];
+
+    try {
+      await for (final entity in lettersDir.list(
+        recursive: true,
+        followLinks: false,
+      )) {
+        if (entity is File) {
+          final nameRaw = path.basenameWithoutExtension(entity.path);
+          final name = normalizeNumbers(nameRaw);
+
+          if (regex.hasMatch(name)) {
+            matchedFiles.add(entity);
+          }
+        }
+      }
+
+      if (mounted) {
+        setState(() {
+          filesInDirectory = matchedFiles;
+        });
+      }
+    } catch (e) {
+      debugPrint('Error while loading files: $e');
+    }
+  }
+
+  String normalizeNumbers(String input) {
+    const persianDigits = ['۰', '۱', '۲', '۳', '۴', '۵', '۶', '۷', '۸', '۹'];
+    for (int i = 0; i < persianDigits.length; i++) {
+      input = input.replaceAll(persianDigits[i], i.toString());
+    }
+    return input;
+  }
+
+  Future<void> save() async {
+    if (!_formKey.currentState!.validate()) return;
+
+    final data = {
+      for (var f in [...mainFields, ...otherFields]) f: c[f]!.text,
+    };
+
+    int id;
+
+    if (widget.record == null) {
+      id = await DatabaseHelper.insert(data);
+    } else {
+      id = widget.record!['Shomare_Radif'];
+      await DatabaseHelper.update(id, data);
+    }
+
+    await DatabaseHelper.saveCategoriesForRecord(
+      id.toString(),
+      selectedCategories,
+    );
+
+    Navigator.pop(context, id);
+  }
+
+  Future<Directory> getLettersDirectory() async {
+    final lettersDir = await AppSettings.getLettersDirectory();
+    if (!await lettersDir.exists()) {
+      await lettersDir.create();
+    }
+    return lettersDir;
+  }
+
+  // تابع برای باز کردن فایل
+  Future<void> openFile(File file) async {
+    // برای باز کردن فایل با استفاده از اپلیکیشن‌های پیش‌فرض دستگاه
+    final result = await OpenFile.open(file.path);
+
+    if (result.type != ResultType.done) {
+      // اگر باز کردن فایل با خطا مواجه شد، می‌توانید این پیام را نمایش دهید
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('خطا در باز کردن فایل')));
+    }
+  }
 
   @override
   void dispose() {
-    WidgetsBinding.instance.removeObserver(this);
+    _debounce?.cancel();
+    _debounceGuy?.cancel();
+    _debounceOnvan?.cancel();
+    _debounceCategory?.cancel();
 
-    _tabController.dispose();
-
-    guyTimer?.cancel();
-    onvanTimer?.cancel();
-    sahebTimer?.cancel();
-    categoryTimer?.cancel();
-    searchTimer?.cancel();
-
-    for (final item in controllers.values) {
-      item.dispose();
+    for (var controller in c.values) {
+      controller.dispose();
     }
 
-    for (final item in focusNodes.values) {
-      item.dispose();
+    for (var node in focusNodes.values) {
+      node.dispose();
     }
 
     categoryController.dispose();
-
     categoryFocus.dispose();
+    _firstFieldFocus.dispose();
+    _tabController.dispose();
 
-    firstFieldFocus.dispose();
-
+    WidgetsBinding.instance.removeObserver(this);
     super.dispose();
   }
-
-  // ----------------------------
-  // App Lifecycle
-  // ----------------------------
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) async {
@@ -283,11 +260,11 @@ class _RecordFormState extends State<RecordForm>
 
     if (!ScanService.isWaitingForScan) return;
 
-    final success = await ScanService.processReturnedScan();
+    final ok = await ScanService.processReturnedScan();
 
     if (!mounted) return;
 
-    if (success) {
+    if (ok) {
       await _loadFiles();
 
       ScaffoldMessenger.of(
@@ -296,516 +273,290 @@ class _RecordFormState extends State<RecordForm>
     }
   }
 
-  // ----------------------------
-  // Files
-  // ----------------------------
-
-  Future<Directory> getLettersDirectory() async {
-    final dir = await AppSettings.getLettersDirectory();
-
-    if (!await dir.exists()) {
-      await dir.create(recursive: true);
+  Future<void> addFileForRecord() async {
+    // درخواست مجوز ذخیره‌سازی
+    PermissionStatus status = await Permission.manageExternalStorage.request();
+    if (!status.isGranted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('برای دسترسی به فایل‌ها مجوز لازم را بدهید')),
+      );
+      return;
     }
 
-    return dir;
-  }
+    final shomareRadif = c['Shomare_Radif']?.text.trim();
+    if (shomareRadif == null || shomareRadif.isEmpty) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('شماره ثبت مشخص نیست')));
+      return;
+    }
 
-  Future<void> _loadFiles() async {
-    final number = normalizeNumbers(
-      controllers['Shomare_Radif']?.text.trim() ?? '',
-    );
+    // انتخاب چند فایل
+    final result = await FilePicker.platform.pickFiles(allowMultiple: true);
+    if (result == null || result.files.isEmpty) return;
 
-    if (number.isEmpty) {
-      if (mounted) {
-        setState(() {
-          filesInDirectory = [];
-        });
+    final lettersDir = await getLettersDirectory();
+    if (!await lettersDir.exists()) {
+      await lettersDir.create(recursive: true);
+    }
+
+    for (final file in result.files) {
+      if (file.path == null) continue;
+
+      final pickedFile = File(file.path!);
+      final ext = path.extension(pickedFile.path);
+
+      // پیدا کردن نام مناسب فایل
+      String targetName = '$shomareRadif$ext';
+      File targetFile = File(path.join(lettersDir.path, targetName));
+
+      int index = 1;
+      while (await targetFile.exists()) {
+        targetName = '${shomareRadif}_$index$ext';
+        targetFile = File(path.join(lettersDir.path, targetName));
+        index++;
       }
 
-      return;
+      // کپی فایل
+      await pickedFile.copy(targetFile.path);
     }
 
-    final directory = await getLettersDirectory();
+    // رفرش لیست فایل‌ها
+    await _loadFiles();
 
-    if (!await directory.exists()) {
-      setState(() {
-        filesInDirectory = [];
-      });
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text('فایل‌ها با موفقیت اضافه شدند')));
+  }
 
-      return;
-    }
-
-    final regex = RegExp('^$number((\\D+\\d+)|\\d+)?\$');
-
-    final List<File> result = [];
-
+  Future<void> scanDocument() async {
+    //by default way they fetch pdf for android and png for iOS
+    dynamic result;
     try {
-      await for (final entity in directory.list(
-        recursive: true,
-        followLinks: false,
-      )) {
-        if (entity is File) {
-          final filename = normalizeNumbers(
-            path.basenameWithoutExtension(entity.path),
-          );
-
-          if (regex.hasMatch(filename)) {
-            result.add(entity);
-          }
-        }
-      }
-
-      if (!mounted) return;
-
-      setState(() {
-        filesInDirectory = result;
-      });
-    } catch (e) {
-      debugPrint("Load files error: $e");
+      result = await Navigator.push(
+        context,
+        MaterialPageRoute(builder: (_) => const ScanerPage()),
+      );
+    } on PlatformException {
+      result = 'دریافت فایل های اسکن شده شکست خورد.';
+    } catch (error) {
+      result = error.toString();
     }
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text(result.toString())));
   }
-
-  // ----------------------------
-  // Number Normalize
-  // ----------------------------
-
-  String normalizeNumbers(String input) {
-    const persian = ['۰', '۱', '۲', '۳', '۴', '۵', '۶', '۷', '۸', '۹'];
-
-    for (int i = 0; i < persian.length; i++) {
-      input = input.replaceAll(persian[i], i.toString());
-    }
-
-    return input;
-  }
-  // ======================================================
-  // Glass UI
-  // ======================================================
-
-  Widget glassContainer({
-    required Widget child,
-    EdgeInsets padding = const EdgeInsets.all(12),
-  }) {
-    return ClipRRect(
-      borderRadius: BorderRadius.circular(22),
-
-      child: BackdropFilter(
-        filter: ImageFilter.blur(sigmaX: 15, sigmaY: 15),
-
-        child: Container(
-          padding: padding,
-
-          decoration: BoxDecoration(
-            color: Colors.white.withOpacity(.15),
-
-            borderRadius: BorderRadius.circular(22),
-
-            border: Border.all(color: Colors.white.withOpacity(.25)),
-          ),
-
-          child: child,
-        ),
-      ),
-    );
-  }
-
-  Widget glassField({
-    required String field,
-
-    required String label,
-
-    int minLines = 1,
-
-    int maxLines = 1,
-
-    TextInputType? keyboardType,
-
-    List<TextInputFormatter>? inputFormatters,
-
-    Widget? suffix,
-
-    FormFieldValidator<String>? validator,
-  }) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 12),
-
-      child: glassContainer(
-        child: TextFormField(
-          controller: controllers[field],
-
-          focusNode: focusNodes[field],
-
-          keyboardType: keyboardType,
-
-          inputFormatters: inputFormatters,
-
-          minLines: minLines,
-
-          maxLines: maxLines,
-
-          textDirection: TextDirection.rtl,
-
-          validator: validator,
-
-          decoration: InputDecoration(
-            labelText: label,
-
-            labelStyle: const TextStyle(color: Colors.white70),
-
-            suffixIcon: suffix,
-
-            border: InputBorder.none,
-
-            contentPadding: const EdgeInsets.symmetric(
-              horizontal: 16,
-
-              vertical: 14,
-            ),
-          ),
-
-          style: const TextStyle(color: Colors.white),
-        ),
-      ),
-    );
-  }
-
-  // ======================================================
-  // Date Field
-  // ======================================================
-
-  Widget buildDateField() {
-    return glassField(
-      field: 'date',
-
-      label: 'تاریخ',
-
-      keyboardType: TextInputType.number,
-
-      inputFormatters: [
-        FilteringTextInputFormatter.digitsOnly,
-
-        JalaliDateFormatter(),
-      ],
-
-      validator: (value) {
-        if (value == null || value.length != 10) {
-          return 'تاریخ معتبر وارد کنید';
-        }
-
-        return null;
-      },
-    );
-  }
-
-  // ======================================================
-  // Normal Text Field
-  // ======================================================
-
-  Widget buildNormalField(String field) {
-    return glassField(
-      field: field,
-
-      label: fieldLabels[field] ?? field,
-
-      minLines: field == 'comment' ? 2 : 1,
-
-      maxLines: field == 'comment' ? 5 : 3,
-
-      keyboardType: TextInputType.multiline,
-    );
-  }
-
-  // ======================================================
-  // Subject Auto Complete
-  // ======================================================
 
   Widget buildGuyField() {
-    return buildAutoComplete(
+    return buildSimpleAutoCompleteField(
       field: 'guy',
-
       label: 'موضوع',
-
       suggestions: guySuggestions,
-
-      onSearch: (value) {
-        guyTimer?.cancel();
-
-        guyTimer = Timer(const Duration(milliseconds: 300), () async {
+      onChanged: (value) {
+        _debounceGuy?.cancel();
+        _debounceGuy = Timer(const Duration(milliseconds: 300), () async {
           if (value.trim().isEmpty) {
-            setState(() {
-              guySuggestions = [];
-            });
-
+            setState(() => guySuggestions.clear());
             return;
           }
-
-          final result = await DatabaseHelper.searchDistinctField(
+          final res = await DatabaseHelper.searchDistinctField(
             'guy',
             value.trim(),
           );
-
-          if (!mounted) return;
-
-          setState(() {
-            guySuggestions = result;
-          });
+          setState(() => guySuggestions = res);
         });
       },
-
-      onSelect: (item) {
-        controllers['guy']!.text = item;
-
-        setState(() {
-          guySuggestions = [];
-        });
+      onSelected: (item) {
+        c['guy']!.text = item;
+        setState(() => guySuggestions.clear());
       },
+      focusNode: focusNodes['guy']!,
+      nextFocus: focusNodes['saheb_name'],
     );
   }
 
-  // ======================================================
-  // Generic Auto Complete
-  // ======================================================
+  Widget buildOnvanField() {
+    return buildSimpleAutoCompleteField(
+      field: 'onvan',
+      label: 'گیرنده نامه',
+      suggestions: onvanSuggestions,
+      onChanged: (value) {
+        _debounceOnvan?.cancel();
+        _debounceOnvan = Timer(const Duration(milliseconds: 300), () async {
+          if (value.trim().isEmpty) {
+            setState(() => onvanSuggestions.clear());
+            return;
+          }
+          final res = await DatabaseHelper.searchDistinctField(
+            'onvan',
+            value.trim(),
+          );
+          setState(() => onvanSuggestions = res);
+        });
+      },
+      onSelected: (item) {
+        c['onvan']!.text = item;
+        setState(() => onvanSuggestions.clear());
+      },
+      focusNode: focusNodes['onvan']!,
+      nextFocus: null, // فرض کنیم آخرین فیلد هست
+    );
+  }
 
-  Widget buildAutoComplete({
+  Widget buildSimpleAutoCompleteField({
     required String field,
-
     required String label,
-
     required List<String> suggestions,
-
-    required Function(String) onSearch,
-
-    required Function(String) onSelect,
+    required void Function(String) onChanged,
+    required void Function(String) onSelected,
+    required FocusNode focusNode,
+    FocusNode? nextFocus,
   }) {
     return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        glassField(field: field, label: label),
-
+        TextFormField(
+          controller: c[field],
+          focusNode: focusNode,
+          decoration: InputDecoration(
+            labelText: label,
+            border: OutlineInputBorder(),
+          ),
+          textDirection: TextDirection.rtl,
+          minLines: 1, // ابتدا یک خط
+          maxLines: 3, // حداکثر سه خط
+          keyboardType: TextInputType.multiline,
+          onChanged: onChanged,
+          onFieldSubmitted: (_) {
+            // وقتی اینتر زده شد:
+            if (suggestions.isNotEmpty) {
+              onSelected(suggestions[0]);
+            }
+            if (nextFocus != null) {
+              FocusScope.of(context).requestFocus(nextFocus);
+            } else {
+              focusNode.unfocus();
+            }
+          },
+        ),
         if (suggestions.isNotEmpty)
-          glassContainer(
-            child: ListView.builder(
-              shrinkWrap: true,
-
-              itemCount: suggestions.length,
-
-              itemBuilder: (context, index) {
-                final item = suggestions[index];
-
-                return ListTile(
-                  title: Text(
-                    item,
-
-                    textDirection: TextDirection.rtl,
-
-                    style: const TextStyle(color: Colors.white),
-                  ),
-
-                  onTap: () {
-                    onSelect(item);
-                  },
-                );
-              },
+          Container(
+            margin: const EdgeInsets.only(top: 4),
+            decoration: BoxDecoration(
+              border: Border.all(color: Colors.grey.shade300),
+              borderRadius: BorderRadius.circular(8),
+              color: Colors.white,
             ),
-          ),
-      ],
-    );
-  }
-  // ======================================================
-  // Saheb Name Auto Complete
-  // ======================================================
-
-  Widget buildSahebNameField() {
-    return Column(
-      children: [
-        glassField(field: 'saheb_name', label: 'صاحب نامه'),
-
-        if (sahebSuggestions.isNotEmpty)
-          glassContainer(
-            child: ListView.builder(
-              shrinkWrap: true,
-
-              itemCount: sahebSuggestions.length,
-
-              itemBuilder: (context, index) {
-                final item = sahebSuggestions[index];
-
-                return ListTile(
-                  title: Text(
-                    item,
-
-                    textDirection: TextDirection.rtl,
-
-                    style: const TextStyle(color: Colors.white),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Align(
+                  alignment: Alignment.topRight,
+                  child: IconButton(
+                    icon: Icon(Icons.close, size: 20, color: Colors.grey),
+                    padding: EdgeInsets.zero,
+                    constraints: BoxConstraints(),
+                    onPressed: () {
+                      setState(() {
+                        suggestions.clear();
+                      });
+                    },
                   ),
-
-                  onTap: () async {
-                    controllers['saheb_name']!.text = item;
-
-                    final last = await DatabaseHelper.getLastRecordBySahebName(
-                      item,
-                    );
-
-                    if (last != null) {
-                      lastRecord = last;
-
-                      controllers['sh_name_reside']!.text =
-                          last['sh_name_reside']?.toString() ?? '';
-
-                      lastInfoText =
-                          'آخرین نامه: '
-                          '${last['date'] ?? ''} | '
-                          '${last['guy'] ?? ''} | '
-                          '${last['onvan'] ?? ''}';
-                    } else {
-                      lastRecord = null;
-
-                      lastInfoText = null;
-                    }
-
-                    setState(() {
-                      sahebSuggestions = [];
-                    });
-                  },
-                );
-              },
-            ),
-          ),
-
-        if (lastInfoText != null)
-          Padding(
-            padding: const EdgeInsets.only(top: 8),
-
-            child: InkWell(
-              onTap: () async {
-                await Navigator.push(
-                  context,
-
-                  MaterialPageRoute(
-                    builder: (_) => RecordForm(record: lastRecord),
-                  ),
-                );
-              },
-
-              child: Text(
-                lastInfoText!,
-
-                textDirection: TextDirection.rtl,
-
-                style: const TextStyle(
-                  color: Colors.lightBlueAccent,
-
-                  decoration: TextDecoration.underline,
                 ),
-              ),
+                ListView.builder(
+                  shrinkWrap: true,
+                  physics: const NeverScrollableScrollPhysics(),
+                  itemCount: suggestions.length,
+                  itemBuilder: (_, i) {
+                    final item = suggestions[i];
+                    return ListTile(
+                      dense: true,
+                      title: Text(item, textDirection: TextDirection.rtl),
+                      onTap: () {
+                        onSelected(item);
+                        setState(() => suggestions.clear());
+                      },
+                    );
+                  },
+                ),
+              ],
             ),
           ),
       ],
     );
   }
 
-  // ======================================================
-  // Category Field
-  // ======================================================
-
+  //ویدجت دسته بندی
   Widget buildCategoryField() {
     return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        glassContainer(
-          child: TextField(
-            controller: categoryController,
-
-            focusNode: categoryFocus,
-
-            textDirection: TextDirection.rtl,
-
-            style: const TextStyle(color: Colors.white),
-
-            decoration: const InputDecoration(
-              labelText: 'دسته‌بندی',
-
-              labelStyle: TextStyle(color: Colors.white70),
-
-              border: InputBorder.none,
-            ),
-
-            onChanged: (value) {
-              categoryTimer?.cancel();
-
-              categoryTimer = Timer(
-                const Duration(milliseconds: 300),
-
-                () async {
-                  if (value.trim().isEmpty) {
-                    setState(() {
-                      categorySuggestions = [];
-                    });
-
-                    return;
-                  }
-
-                  final result = await DatabaseHelper.searchCategories(
-                    value.trim(),
-                  );
-
-                  setState(() {
-                    categorySuggestions = result;
-                  });
-                },
-              );
-            },
-
-            onSubmitted: (value) {
-              _addCategory(value.trim());
-            },
+        TextFormField(
+          controller: categoryController,
+          focusNode: categoryFocus,
+          decoration: InputDecoration(
+            labelText: "دسته‌بندی",
+            border: OutlineInputBorder(),
           ),
+          onChanged: (value) {
+            _debounceCategory?.cancel();
+            _debounceCategory = Timer(
+              const Duration(milliseconds: 300),
+              () async {
+                if (value.trim().isEmpty) {
+                  setState(() => categorySuggestions.clear());
+                  return;
+                }
+
+                final res = await DatabaseHelper.searchCategories(value.trim());
+                setState(() => categorySuggestions = res);
+              },
+            );
+          },
+          onFieldSubmitted: (value) {
+            _addCategory(value.trim());
+          },
         ),
 
+        /// 🔹 نمایش تگ‌های انتخاب شده
         if (selectedCategories.isNotEmpty)
           Padding(
-            padding: const EdgeInsets.only(top: 10),
-
+            padding: const EdgeInsets.only(top: 8),
             child: Wrap(
-              spacing: 8,
-
-              runSpacing: 8,
-
-              children: selectedCategories
-                  .map(
-                    (item) => Chip(
-                      label: Text(item),
-
-                      deleteIcon: const Icon(Icons.close),
-
-                      onDeleted: () {
-                        setState(() {
-                          selectedCategories.remove(item);
-                        });
-                      },
-                    ),
-                  )
-                  .toList(),
+              spacing: 6,
+              runSpacing: 6,
+              children: selectedCategories.map((cat) {
+                return Chip(
+                  label: Text(cat),
+                  deleteIcon: Icon(Icons.close, size: 18),
+                  onDeleted: () {
+                    setState(() {
+                      selectedCategories.remove(cat);
+                    });
+                  },
+                );
+              }).toList(),
             ),
           ),
 
+        /// 🔹 پیشنهادها
         if (categorySuggestions.isNotEmpty)
-          glassContainer(
+          Container(
+            margin: const EdgeInsets.only(top: 4),
+            decoration: BoxDecoration(
+              border: Border.all(color: Colors.grey.shade300),
+              borderRadius: BorderRadius.circular(8),
+              color: Colors.white,
+            ),
             child: ListView.builder(
               shrinkWrap: true,
-
+              physics: NeverScrollableScrollPhysics(),
               itemCount: categorySuggestions.length,
-
-              itemBuilder: (context, index) {
-                final item = categorySuggestions[index];
-
+              itemBuilder: (_, i) {
+                final item = categorySuggestions[i];
                 return ListTile(
-                  title: Text(
-                    item,
-
-                    textDirection: TextDirection.rtl,
-
-                    style: const TextStyle(color: Colors.white),
-                  ),
-
+                  dense: true,
+                  title: Text(item, textDirection: TextDirection.rtl),
                   onTap: () {
                     _addCategory(item);
                   },
@@ -827,302 +578,457 @@ class _RecordFormState extends State<RecordForm>
     }
 
     categoryController.clear();
-
-    categorySuggestions = [];
+    categorySuggestions.clear();
   }
 
-  // ======================================================
-  // Field Builder
-  // ======================================================
-
-  Widget buildField(String field) {
-    switch (field) {
-      case 'saheb_name':
-        return buildSahebNameField();
-
-      case 'guy':
-        return buildGuyField();
-
-      case 'date':
-        return buildDateField();
-
-      default:
-        return buildNormalField(field);
-    }
-  }
-
-  // ======================================================
-  // Main Form Layout
-  // ======================================================
-
-  Widget buildMainForm() {
-    return Form(
-      key: _formKey,
-
-      child: ListView(
-        padding: const EdgeInsets.all(16),
-
-        children: [
-          // شماره نامه + تاریخ کنار هم
-          Row(
-            children: [
-              Expanded(child: buildField('Shomare_Radif')),
-
-              const SizedBox(width: 12),
-
-              Expanded(child: buildField('date')),
-            ],
+  /// 🔹 فیلد مخصوص صاحب نامه با اتوکامپلیت
+  Widget buildSahebNameField() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        TextFormField(
+          focusNode: _firstFieldFocus,
+          controller: c['saheb_name'],
+          decoration: InputDecoration(
+            labelText: 'صاحب نامه',
+            border: OutlineInputBorder(),
           ),
+          textDirection: TextDirection.rtl,
+          minLines: 1, // ابتدا یک خط
+          maxLines: 3, // حداکثر سه خط
+          keyboardType: TextInputType.multiline,
+          onChanged: (value) {
+            _debounce?.cancel();
+            _debounce = Timer(const Duration(milliseconds: 400), () async {
+              final res = await DatabaseHelper.searchSahebName(value.trim());
+              setState(() {
+                sahebSuggestions = res;
+              });
+            });
+          },
+        ),
 
-          // بقیه فیلدها بدون تغییر ترتیب
-          ...mainFields
-              .where((e) => e != 'Shomare_Radif' && e != 'date')
-              .map(buildField),
-
-          ExpansionTile(
-            title: const Text(
-              'سایر اطلاعات',
-              style: TextStyle(color: Colors.white),
+        // 🔽 لیست پیشنهادها
+        if (sahebSuggestions.isNotEmpty)
+          Container(
+            margin: const EdgeInsets.only(top: 4),
+            decoration: BoxDecoration(
+              border: Border.all(color: Colors.grey.shade300),
+              borderRadius: BorderRadius.circular(8),
+              color: Colors.white,
             ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Align(
+                  alignment: Alignment.topRight,
+                  child: IconButton(
+                    icon: Icon(Icons.close, size: 20, color: Colors.grey),
+                    padding: EdgeInsets.zero,
+                    constraints: BoxConstraints(),
+                    onPressed: () {
+                      setState(() {
+                        sahebSuggestions.clear();
+                      });
+                    },
+                  ),
+                ),
+                ListView.builder(
+                  shrinkWrap: true,
+                  physics: const NeverScrollableScrollPhysics(),
+                  itemCount: sahebSuggestions.length,
+                  itemBuilder: (_, i) {
+                    final item = sahebSuggestions[i];
+                    return ListTile(
+                      dense: true,
+                      title: Text(item, textDirection: TextDirection.rtl),
+                      onTap: () async {
+                        c['saheb_name']!.text = item;
 
+                        final last =
+                            await DatabaseHelper.getLastRecordBySahebName(item);
+
+                        if (last != null) {
+                          c['sh_name_reside']!.text =
+                              last['sh_name_reside']?.toString() ?? '';
+
+                          lastRecord = last;
+
+                          lastInfoText =
+                              'آخرین نامه: ${last['date'] ?? '—'} | ${last['guy'] ?? '—'} | ${last['onvan'] ?? '—'}';
+                        } else {
+                          lastRecord = null;
+                          lastInfoText = null;
+                        }
+
+                        setState(() {
+                          sahebSuggestions.clear();
+                        });
+                      },
+                    );
+                  },
+                ),
+              ],
+            ),
+          ),
+        if (lastInfoText != null && lastRecord != null)
+          Padding(
+            padding: const EdgeInsets.only(top: 6, right: 4),
+            child: InkWell(
+              onTap: () async {
+                await Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => RecordForm(record: lastRecord),
+                  ),
+                );
+              },
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(Icons.open_in_new, size: 14, color: Colors.blueGrey),
+                  const SizedBox(width: 6),
+                  Flexible(
+                    child: Text(
+                      lastInfoText!,
+                      textDirection: TextDirection.rtl,
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: Colors.blueGrey,
+                        decoration: TextDecoration.underline,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+      ],
+    );
+  }
+
+  Widget buildTextField(String field) {
+    if (field == 'saheb_name') {
+      return Padding(
+        padding: const EdgeInsets.only(bottom: 12),
+        child: buildSahebNameField(),
+      );
+    }
+
+    if (field == 'guy') {
+      return Padding(
+        padding: const EdgeInsets.only(bottom: 12),
+        child: buildGuyField(),
+      );
+    }
+
+    if (field == 'onvan') {
+      return Padding(
+        padding: const EdgeInsets.only(bottom: 12),
+        child: buildOnvanField(),
+      );
+    }
+
+    // 🔹 فیلد تاریخ با فرمت شمسی
+    if (field == 'date') {
+      return Padding(
+        padding: const EdgeInsets.only(bottom: 10),
+        child: TextFormField(
+          controller: c[field],
+          keyboardType: TextInputType.number,
+          inputFormatters: [
+            FilteringTextInputFormatter.digitsOnly,
+            JalaliDateFormatter(),
+          ],
+          decoration: InputDecoration(
+            labelText: 'تاریخ',
+            hintText: '1404/01/15',
+            border: OutlineInputBorder(),
+          ),
+          textDirection: TextDirection.rtl,
+          validator: (v) {
+            if (v == null || v.length != 10) {
+              return 'تاریخ معتبر وارد کنید';
+            }
+            return null;
+          },
+        ),
+      );
+    }
+
+    if (field == 'comment') {
+      return Padding(
+        padding: const EdgeInsets.only(bottom: 10),
+        child: TextFormField(
+          controller: c[field],
+          decoration: InputDecoration(
+            labelText: fieldLabels[field] ?? field,
+            border: const OutlineInputBorder(),
+            alignLabelWithHint: true,
+          ),
+          textDirection: TextDirection.rtl,
+
+          minLines: 1, // ابتدا یک خط
+          maxLines: 3, // حداکثر سه خط
+          keyboardType: TextInputType.multiline,
+          textInputAction: TextInputAction.newline,
+        ),
+      );
+    }
+
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 10),
+      child: TextFormField(
+        controller: c[field],
+        minLines: 1, // ابتدا یک خط
+        maxLines: 3, // حداکثر سه خط
+        keyboardType: TextInputType.multiline,
+        decoration: InputDecoration(
+          labelText: fieldLabels[field] ?? field,
+          border: OutlineInputBorder(),
+        ),
+        textDirection: TextDirection.rtl,
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: Text(widget.record == null ? 'ثبت نامه' : 'ویرایش نامه'),
+        bottom: TabBar(
+          controller: _tabController,
+          tabs: [
+            Tab(text: "اطلاعات فرم"),
+            Tab(text: "فایل‌ها"),
+          ],
+        ),
+      ),
+      body: TabBarView(
+        controller: _tabController,
+        children: [
+          // تب اول: اطلاعات فرم
+          Form(
+            key: _formKey,
+            child: ListView(
+              padding: EdgeInsets.all(12),
+              children: [
+                ...mainFields.map((field) => buildTextField(field)),
+
+                ExpansionTile(
+                  title: Text('سایر اطلاعات'),
+                  children: [
+                    const SizedBox(height: 10),
+                    buildCategoryField(),
+                    const SizedBox(height: 10),
+                    ...otherFields.map(buildTextField).toList(),
+                  ],
+                ),
+                Row(
+                  children: [
+                    if (widget.record == null)
+                      Expanded(
+                        child: ElevatedButton(
+                          onPressed: saveAndStay,
+                          child: const Text('ذخیره و جدید'),
+                        ),
+                      ),
+                    if (widget.record == null) const SizedBox(width: 10),
+                    Expanded(
+                      child: ElevatedButton(
+                        onPressed: save,
+                        child: const Text('ذخیره'),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+
+                    Expanded(
+                      child: ElevatedButton.icon(
+                        icon: const Icon(Icons.document_scanner),
+                        label: const Text("اسکن"),
+                        onPressed: saveAndScan,
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+          // تب دوم: لیست فایل‌ها
+          Column(
             children: [
-              buildCategoryField(),
+              // دکمه‌ها برای افزودن فایل و اسکن فایل
+              Padding(
+                padding: const EdgeInsets.all(8.0),
+                child: Wrap(
+                  alignment: WrapAlignment.center,
+                  spacing: 10,
+                  runSpacing: 10,
+                  children: [
+                    ElevatedButton.icon(
+                      icon: const Icon(Icons.attach_file),
+                      label: const Text('افزودن فایل'),
+                      onPressed: addFileForRecord,
+                    ),
+                    ElevatedButton.icon(
+                      icon: const Icon(Icons.share),
+                      label: const Text("اشتراک گذاری"),
+                      onPressed: shareFiles,
+                    ),
+                    ElevatedButton.icon(
+                      icon: const Icon(Icons.camera_alt),
+                      label: const Text('اسکن فایل'),
+                      onPressed: scanDocument,
+                    ),
+                    ElevatedButton.icon(
+                      icon: const Icon(Icons.refresh),
+                      label: const Text('بروزرسانی لیست'),
+                      onPressed: _loadFiles,
+                    ),
+                  ],
+                ),
+              ),
 
-              const SizedBox(height: 12),
+              // نمایش لیست فایل‌ها
+              Expanded(
+                child: GridView.builder(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 12,
+                    vertical: 8,
+                  ),
+                  gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
+                    maxCrossAxisExtent: 180, // عرض هر کارت
+                    mainAxisSpacing: 8,
+                    crossAxisSpacing: 8,
+                    // برای اینکه کارت‌ها نسبت طول به عرض مناسب داشته باشند و فضای متن هم جا شود
+                    // مقدار کم‌تر مقدار کارت را بلندتر می‌کند (تماشاگر نسبت 9:16 برای تصویر داخلیش است)
+                    // با مقدار ~0.55 تا 0.6 کارتی بلندتر می‌شود تا تصویر 9:16 بتواند جا بگیرد.
+                    childAspectRatio: 0.55,
+                  ),
+                  itemCount: filesInDirectory.length,
+                  itemBuilder: (context, index) {
+                    final file = filesInDirectory[index];
+                    final isImg = _isImage(file.path);
+                    final fileName = path.basename(file.path);
 
-              ...otherFields.map(buildField),
+                    return MouseRegion(
+                      cursor: SystemMouseCursors.click,
+                      child: InkWell(
+                        onTap: () => openFile(file),
+                        borderRadius: BorderRadius.circular(12),
+                        child: Card(
+                          elevation: 2,
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.stretch,
+                            children: [
+                              // ناحیه تصویر با نسبت عمودی 9:16
+                              Expanded(
+                                child: AspectRatio(
+                                  aspectRatio: 5 / 7,
+                                  child: isImg
+                                      ? Image.file(
+                                          file,
+                                          width: double.infinity,
+                                          height: double.infinity,
+                                          fit:
+                                              BoxFit.contain, // جلوگیری از کراپ
+                                        )
+                                      : Container(
+                                          color: Colors.grey[200],
+                                          child: const Center(
+                                            child: Icon(
+                                              Icons.insert_drive_file,
+                                              size: 40,
+                                              color: Colors.grey,
+                                            ),
+                                          ),
+                                        ),
+                                ),
+                              ),
+                              // متن زیر تصویر
+                              Padding(
+                                padding: const EdgeInsets.all(8.0),
+                                child: Text(
+                                  fileName,
+                                  textAlign: TextAlign.center,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: const TextStyle(
+                                    fontSize: 14,
+                                    fontWeight: FontWeight.w500,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    );
+                  },
+                ),
+              ),
             ],
           ),
         ],
       ),
     );
   }
-  // ======================================================
-  // Build
-  // ======================================================
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      extendBodyBehindAppBar: true,
-
-      backgroundColor: Colors.transparent,
-
-      appBar: AppBar(
-        backgroundColor: Colors.transparent,
-
-        elevation: 0,
-
-        title: Text(widget.record == null ? 'ثبت نامه' : 'ویرایش نامه'),
-
-        bottom: TabBar(
-          controller: _tabController,
-
-          tabs: [
-            const Tab(text: 'اطلاعات فرم'),
-
-            const Tab(text: 'فایل‌ها'),
-          ],
-        ),
-      ),
-
-      body: Container(
-        decoration: const BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topLeft,
-
-            end: Alignment.bottomRight,
-
-            colors: [Color(0xff0F2027), Color(0xff203A43), Color(0xff2C5364)],
-          ),
-        ),
-
-        child: SafeArea(
-          child: TabBarView(
-            controller: _tabController,
-
-            children: [buildMainForm(), buildFilesTab()],
-          ),
-        ),
-      ),
-    );
-  }
-
-  // ======================================================
-  // Files Tab
-  // ======================================================
-
-  Widget buildFilesTab() {
-    return Column(
-      children: [
-        Padding(
-          padding: const EdgeInsets.all(12),
-
-          child: Wrap(
-            spacing: 10,
-
-            runSpacing: 10,
-
-            alignment: WrapAlignment.center,
-
-            children: [
-              glassButton(
-                icon: Icons.attach_file,
-
-                text: 'افزودن فایل',
-
-                onTap: addFileForRecord,
-              ),
-
-              glassButton(
-                icon: Icons.share,
-
-                text: 'اشتراک گذاری',
-
-                onTap: shareFiles,
-              ),
-
-              glassButton(
-                icon: Icons.camera_alt,
-
-                text: 'اسکن فایل',
-
-                onTap: scanDocument,
-              ),
-
-              glassButton(
-                icon: Icons.refresh,
-
-                text: 'بروزرسانی',
-
-                onTap: _loadFiles,
-              ),
-            ],
-          ),
-        ),
-
-        Expanded(
-          child: GridView.builder(
-            padding: const EdgeInsets.all(12),
-
-            gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
-              maxCrossAxisExtent: 180,
-
-              mainAxisSpacing: 12,
-
-              crossAxisSpacing: 12,
-
-              childAspectRatio: .60,
-            ),
-
-            itemCount: filesInDirectory.length,
-
-            itemBuilder: (context, index) {
-              final file = filesInDirectory[index];
-
-              return buildFileCard(file);
-            },
-          ),
-        ),
-      ],
-    );
-  }
-
-  // ======================================================
-  // Glass Button
-  // ======================================================
-
-  Widget glassButton({
-    required IconData icon,
-
-    required String text,
-
-    required VoidCallback onTap,
-  }) {
-    return InkWell(
-      borderRadius: BorderRadius.circular(16),
-
-      onTap: onTap,
-
-      child: glassContainer(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-
-          children: [
-            Icon(icon, color: Colors.white),
-
-            const SizedBox(width: 8),
-
-            Text(text, style: const TextStyle(color: Colors.white)),
-          ],
-        ),
-      ),
-    );
-  }
-
-  // ======================================================
-  // File Card
-  // ======================================================
-
-  Widget buildFileCard(File file) {
-    final image = _isImage(file.path);
-
-    return InkWell(
-      borderRadius: BorderRadius.circular(20),
-
-      onTap: () {
-        openFile(file);
-      },
-
-      child: glassContainer(
-        child: Column(
-          children: [
-            Expanded(
-              child: image
-                  ? Image.file(file, fit: BoxFit.contain)
-                  : const Icon(
-                      Icons.insert_drive_file,
-
-                      size: 50,
-
-                      color: Colors.white70,
-                    ),
-            ),
-
-            const SizedBox(height: 8),
-
-            Text(
-              path.basename(file.path),
-
-              maxLines: 1,
-
-              overflow: TextOverflow.ellipsis,
-
-              style: const TextStyle(color: Colors.white),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
 
   bool _isImage(String filePath) {
     final ext = path.extension(filePath).toLowerCase();
-
     return ['.png', '.jpg', '.jpeg', '.gif', '.webp', '.bmp'].contains(ext);
   }
 
-  // ======================================================
-  // Save
-  // ======================================================
-
-  Future<void> save() async {
+  Future<void> saveAndStay() async {
     if (!_formKey.currentState!.validate()) return;
 
     final data = {
-      for (final f in [...mainFields, ...otherFields]) f: controllers[f]!.text,
+      for (var f in [...mainFields, ...otherFields]) f: c[f]!.text,
+    };
+
+    if (widget.record == null) {
+      await DatabaseHelper.insert(data);
+    } else {
+      await DatabaseHelper.update(widget.record!['Shomare_Radif'], data);
+    }
+
+    await DatabaseHelper.saveCategoriesForRecord(
+      c['Shomare_Radif']!.text,
+      selectedCategories,
+    );
+
+    // 🔹 تاریخ رکورد فعلی را نگه می‌داریم
+    final String lastDate = c['date']?.text ?? '';
+
+    // پاک کردن فیلدها
+    for (var controller in c.values) {
+      controller.clear();
+    }
+
+    // دوباره ست کردن مقادیر پیشفرض
+    _setInitialValues();
+    // 🔹 برگرداندن تاریخ قبلی
+    c['date']?.text = lastDate;
+
+    // فوکوس برگردد به اولین فیلد
+    Future.delayed(const Duration(milliseconds: 100), () {
+      _firstFieldFocus.requestFocus();
+    });
+
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(const SnackBar(content: Text('اطلاعات ذخیره شد')));
+  }
+
+  Future<void> saveAndScan() async {
+    if (!_formKey.currentState!.validate()) return;
+
+    final data = {
+      for (var f in [...mainFields, ...otherFields]) f: c[f]!.text,
     };
 
     int id;
@@ -1131,163 +1037,39 @@ class _RecordFormState extends State<RecordForm>
       id = await DatabaseHelper.insert(data);
     } else {
       id = widget.record!['Shomare_Radif'];
-
       await DatabaseHelper.update(id, data);
     }
 
     await DatabaseHelper.saveCategoriesForRecord(
       id.toString(),
-
       selectedCategories,
     );
 
-    if (!mounted) return;
+    try {
+      await ScanService.startScan(id);
+    } catch (e) {
+      debugPrint('Open CamScanner Error: $e');
 
-    Navigator.pop(context, id);
-  }
-
-  Future<void> saveAndStay() async {
-    await save();
-  }
-
-  Future<void> saveAndScan() async {
-    await save();
-
-    final id = controllers['Shomare_Radif']!.text;
-
-    await ScanService.startScan(int.parse(id));
-  }
-
-  // ======================================================
-  // Open File
-  // ======================================================
-
-  Future<void> openFile(File file) async {
-    final result = await OpenFile.open(file.path);
-
-    if (result.type != ResultType.done) {
       ScaffoldMessenger.of(
         context,
-      ).showSnackBar(const SnackBar(content: Text('خطا در باز کردن فایل')));
+      ).showSnackBar(SnackBar(content: Text('خطا در باز کردن CamScanner\n$e')));
     }
   }
-
-  // ======================================================
-  // Share Files
-  // ======================================================
 
   Future<void> shareFiles() async {
     if (filesInDirectory.isEmpty) {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text('فایلی وجود ندارد')));
-
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text("فایلی برای اشتراک گذاری وجود ندارد")),
+      );
       return;
     }
+
+    final files = filesInDirectory.map((e) => XFile(e.path)).toList();
 
     await Share.shareXFiles(
-      filesInDirectory.map((e) => XFile(e.path)).toList(),
-
-      subject: 'نامه شماره ${controllers['Shomare_Radif']!.text}',
+      files,
+      subject: 'نامه شماره ${c['Shomare_Radif']!.text}',
+      text: 'نامه شماره ${c['Shomare_Radif']!.text}',
     );
-  }
-
-  // ======================================================
-  // Add Files For Record
-  // ======================================================
-
-  Future<void> addFileForRecord() async {
-    // درخواست دسترسی فایل
-    final permission = await Permission.manageExternalStorage.request();
-
-    if (!permission.isGranted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('برای دسترسی به فایل‌ها مجوز لازم است')),
-      );
-
-      return;
-    }
-
-    final shomareRadif = controllers['Shomare_Radif']?.text.trim();
-
-    if (shomareRadif == null || shomareRadif.isEmpty) {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text('شماره نامه مشخص نیست')));
-
-      return;
-    }
-
-    // انتخاب چند فایل
-
-    final result = await FilePicker.platform.pickFiles(allowMultiple: true);
-
-    if (result == null || result.files.isEmpty) {
-      return;
-    }
-
-    final directory = await getLettersDirectory();
-
-    if (!await directory.exists()) {
-      await directory.create(recursive: true);
-    }
-
-    for (final item in result.files) {
-      if (item.path == null) continue;
-
-      final sourceFile = File(item.path!);
-
-      final extension = path.extension(sourceFile.path);
-
-      // نام اولیه فایل
-
-      String fileName = '$shomareRadif$extension';
-
-      File target = File(path.join(directory.path, fileName));
-
-      // اگر فایل همنام وجود داشت
-
-      int counter = 1;
-
-      while (await target.exists()) {
-        fileName = '${shomareRadif}_$counter$extension';
-
-        target = File(path.join(directory.path, fileName));
-
-        counter++;
-      }
-
-      // کپی فایل
-
-      await sourceFile.copy(target.path);
-    }
-
-    // تازه‌سازی لیست فایل‌ها
-
-    await _loadFiles();
-
-    if (!mounted) return;
-
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('فایل‌ها با موفقیت اضافه شدند')),
-    );
-  }
-
-  Future<void> scanDocument() async {
-    //by default way they fetch pdf for android and png for iOS
-    dynamic result;
-    try {
-      result = await Navigator.push(
-        context,
-        MaterialPageRoute(builder: (_) => const ScanerPage()),
-      );
-    } on PlatformException {
-      result = 'دریافت فایل های اسکن شده شکست خورد.';
-    } catch (error) {
-      result = error.toString();
-    }
-    ScaffoldMessenger.of(
-      context,
-    ).showSnackBar(SnackBar(content: Text(result.toString())));
   }
 }
