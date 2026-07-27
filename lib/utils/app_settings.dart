@@ -4,6 +4,47 @@ import 'package:path_provider/path_provider.dart';
 
 class AppSettings {
   static const _lettersPathKey = 'letters_path';
+  static const _camScannerPath1Key = 'camscanner_path_1';
+  static const _camScannerPath2Key = 'camscanner_path_2';
+
+  static const String defaultCamScannerPath1 =
+      "/storage/emulated/0/DCIM/CamScanner";
+
+  static const String defaultCamScannerPath2 =
+      "/storage/emulated/0/Download/CamScanner";
+
+  static Future<List<Directory>> getCamScannerDirectories() async {
+    final prefs = await SharedPreferences.getInstance();
+
+    final path1 =
+        prefs.getString(_camScannerPath1Key) ?? defaultCamScannerPath1;
+
+    final path2 =
+        prefs.getString(_camScannerPath2Key) ?? defaultCamScannerPath2;
+
+    return [Directory(path1), Directory(path2)];
+  }
+
+  static Future<void> setCamScannerDirectories({
+    required String path1,
+    required String path2,
+  }) async {
+    final prefs = await SharedPreferences.getInstance();
+
+    await prefs.setString(_camScannerPath1Key, path1);
+    await prefs.setString(_camScannerPath2Key, path2);
+  }
+static Future<String> getCamScannerPath1() async {
+  final prefs = await SharedPreferences.getInstance();
+  return prefs.getString(_camScannerPath1Key) ??
+      defaultCamScannerPath1;
+}
+
+static Future<String> getCamScannerPath2() async {
+  final prefs = await SharedPreferences.getInstance();
+  return prefs.getString(_camScannerPath2Key) ??
+      defaultCamScannerPath2;
+}
 
   /// گرفتن مسیر پوشه نامه‌ها
   static Future<Directory> getLettersDirectory() async {

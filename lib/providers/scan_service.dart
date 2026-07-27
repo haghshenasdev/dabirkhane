@@ -28,9 +28,9 @@ class ScanService {
     const intent = AndroidIntent(
       action: 'android.intent.action.MAIN',
       package: 'com.intsig.camscanner',
-      componentName: 'com.intsig.camscanner.mainmenu.mainactivity.MainActivity',
+      componentName: 'com.intsig.camscanner.CaptureIntentActivity',
     );
-
+    // com.intsig.camscanner.mainmenu.mainactivity.MainActivity
     await intent.launch();
   }
 
@@ -57,13 +57,18 @@ class ScanService {
 
     final extension = path.extension(file.path);
 
-    final target = File(path.join(lettersDir.path, "$_recordId$extension"));
+    // پیدا کردن اولین نام آزاد
+    String targetName = '$_recordId$extension';
+    File targetFile = File(path.join(lettersDir.path, targetName));
 
-    if (await target.exists()) {
-      await target.delete();
+    int index = 1;
+    while (await targetFile.exists()) {
+      targetName = '${_recordId}_$index$extension';
+      targetFile = File(path.join(lettersDir.path, targetName));
+      index++;
     }
 
-    await file.copy(target.path);
+    await file.copy(targetFile.path);
 
     _recordId = null;
     _scanStartTime = null;
@@ -76,21 +81,21 @@ class ScanService {
   //------------------------------------------------------------
 
   static Future<File?> _findLatestScannedFile() async {
-    final dcim = Directory("/storage/emulated/0/DCIM/CamScanner");
-
-    if (!await dcim.exists()) {
-      return null;
-    }
+    final directories = await AppSettings.getCamScannerDirectories();
 
     final files = <File>[];
 
-    await for (final entity in dcim.list()) {
-      if (entity is! File) continue;
+    for (final dir in directories) {
+      if (!await dir.exists()) continue;
 
-      final ext = path.extension(entity.path).toLowerCase();
+      await for (final entity in dir.list()) {
+        if (entity is! File) continue;
 
-      if (ext == ".pdf" || ext == ".jpg" || ext == ".jpeg" || ext == ".png") {
-        files.add(entity);
+        final ext = path.extension(entity.path).toLowerCase();
+
+        if (ext == ".pdf" || ext == ".jpg" || ext == ".jpeg" || ext == ".png") {
+          files.add(entity);
+        }
       }
     }
 
@@ -102,7 +107,7 @@ class ScanService {
 
     final newest = files.first;
 
-    // اگر فایل قدیمی تر از شروع اسکن است
+    // اگر فایل قدیمی‌تر از شروع اسکن است
     if (newest.lastModifiedSync().isBefore(_scanStartTime!)) {
       return null;
     }
@@ -114,7 +119,6 @@ class ScanService {
 
     return newest;
   }
-
   //------------------------------------------------------------
   // آیا فرآیند اسکن در حال انجام است؟
   //------------------------------------------------------------

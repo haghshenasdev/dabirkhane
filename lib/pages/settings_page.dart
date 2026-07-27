@@ -1,5 +1,6 @@
 import 'dart:io';
 import 'package:dabirkhane/db/database_helper.dart';
+import 'package:dabirkhane/utils/CamScannerPathsTile.dart';
 
 import '../providers/theme_provider.dart';
 import '../utils/LettersPathTile.dart';
@@ -154,6 +155,9 @@ class SettingsPage extends StatelessWidget {
 
           _sectionTitle('فایل‌ها'),
           const LettersPathTile(),
+          const Divider(),
+
+          const CamScannerPathsTile(),
 
           ListTile(
             leading: const Icon(Icons.restore),
