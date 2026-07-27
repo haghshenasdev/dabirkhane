@@ -423,6 +423,9 @@ class _RecordFormState extends State<RecordForm>
             border: OutlineInputBorder(),
           ),
           textDirection: TextDirection.rtl,
+          minLines: 1, // ابتدا یک خط
+          maxLines: 3, // حداکثر سه خط
+          keyboardType: TextInputType.multiline,
           onChanged: onChanged,
           onFieldSubmitted: (_) {
             // وقتی اینتر زده شد:
@@ -591,6 +594,9 @@ class _RecordFormState extends State<RecordForm>
             border: OutlineInputBorder(),
           ),
           textDirection: TextDirection.rtl,
+          minLines: 1, // ابتدا یک خط
+          maxLines: 3, // حداکثر سه خط
+          keyboardType: TextInputType.multiline,
           onChanged: (value) {
             _debounce?.cancel();
             _debounce = Timer(const Duration(milliseconds: 400), () async {
@@ -774,6 +780,9 @@ class _RecordFormState extends State<RecordForm>
       padding: const EdgeInsets.only(bottom: 10),
       child: TextFormField(
         controller: c[field],
+        minLines: 1, // ابتدا یک خط
+        maxLines: 3, // حداکثر سه خط
+        keyboardType: TextInputType.multiline,
         decoration: InputDecoration(
           labelText: fieldLabels[field] ?? field,
           border: OutlineInputBorder(),

@@ -28,9 +28,8 @@ class ScanService {
     const intent = AndroidIntent(
       action: 'android.intent.action.MAIN',
       package: 'com.intsig.camscanner',
-      componentName: 'com.intsig.camscanner.CaptureIntentActivity',
+      componentName: 'com.intsig.camscanner.mainmenu.mainactivity.MainActivity',
     );
-    // com.intsig.camscanner.mainmenu.mainactivity.MainActivity
     await intent.launch();
   }
 
