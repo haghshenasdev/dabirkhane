@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:android_intent_plus/android_intent.dart';
+import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:path/path.dart' as path;
 
@@ -9,7 +10,6 @@ import '../utils/app_settings.dart';
 
 class ScanService {
   ScanService._();
-
   static DateTime? _scanStartTime;
   static int? _recordId;
 
@@ -27,8 +27,8 @@ class ScanService {
     // باز کردن CamScanner
     const intent = AndroidIntent(
       action: 'android.intent.action.MAIN',
-      category: 'android.intent.category.LAUNCHER',
       package: 'com.intsig.camscanner',
+      componentName: 'com.intsig.camscanner.mainmenu.mainactivity.MainActivity',
     );
 
     await intent.launch();

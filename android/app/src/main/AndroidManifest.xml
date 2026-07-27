@@ -7,7 +7,10 @@
     <uses-permission android:name="android.permission.MANAGE_EXTERNAL_STORAGE" />
 <!-- Permissions options for the `camera` group -->
     <uses-permission android:name="android.permission.CAMERA"/>
-    <application
+    <queries>
+   <package android:name="net.pulsesecure.pulsesecure" /> // your android package name
+ </queries>
+   <application
         android:label="dabirkhane"
         android:name="${applicationName}"
         android:icon="@mipmap/launcher_icon">

@@ -1036,7 +1036,15 @@ class _RecordFormState extends State<RecordForm>
       selectedCategories,
     );
 
-    await ScanService.startScan(id);
+    try {
+      await ScanService.startScan(id);
+    } catch (e) {
+      debugPrint('Open CamScanner Error: $e');
+
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('خطا در باز کردن CamScanner\n$e')));
+    }
   }
 
   Future<void> shareFiles() async {
