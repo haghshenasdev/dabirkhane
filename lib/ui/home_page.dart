@@ -214,6 +214,10 @@ class _HomePageState extends State<HomePage> {
     super.initState();
     loadMore();
 
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      FocusScope.of(context).unfocus();
+    });
+
     _scrollController.addListener(() {
       if (_scrollController.position.pixels >=
           _scrollController.position.maxScrollExtent - 200) {
@@ -871,6 +875,7 @@ class _HomePageState extends State<HomePage> {
                           child: Text(
                             r["saheb_name"] ?? "—",
                             textAlign: TextAlign.right,
+                            textDirection: TextDirection.rtl,
                             style: const TextStyle(fontSize: 15),
                             overflow: TextOverflow.ellipsis,
                           ),
@@ -889,46 +894,17 @@ class _HomePageState extends State<HomePage> {
                     //----------------------------------------------------
                     LayoutBuilder(
                       builder: (_, c) {
-                        final desktop = c.maxWidth > 420;
+                        return Row(
+                          textDirection: TextDirection.rtl,
 
-                        if (desktop) {
-                          return Row(
-                            textDirection: TextDirection.rtl,
-
-                            children: [
-                              _recordChip(
-                                Icons.calendar_today,
-                                r["date"] ?? "—",
-                              ),
-
-                              const Spacer(),
-
-                              _recordChip(
-                                Icons.confirmation_number_outlined,
-                                "ردیف ${r["Shomare_Radif"]}",
-                              ),
-                            ],
-                          );
-                        }
-
-                        return Column(
                           children: [
-                            Align(
-                              alignment: Alignment.centerRight,
-                              child: _recordChip(
-                                Icons.calendar_today,
-                                r["date"] ?? "—",
-                              ),
-                            ),
+                            _recordChip(Icons.calendar_today, r["date"] ?? "—"),
 
-                            const SizedBox(height: 10),
+                            const Spacer(),
 
-                            Align(
-                              alignment: Alignment.centerRight,
-                              child: _recordChip(
-                                Icons.confirmation_number_outlined,
-                                "ردیف ${r["Shomare_Radif"]}",
-                              ),
+                            _recordChip(
+                              Icons.confirmation_number_outlined,
+                              "ردیف ${r["Shomare_Radif"]}",
                             ),
                           ],
                         );

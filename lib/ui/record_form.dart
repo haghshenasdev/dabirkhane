@@ -1,7 +1,6 @@
 import 'dart:async';
 import 'dart:io';
 import 'package:camera/camera.dart';
-import 'package:dabirkhane/pages/scanner_page.dart';
 import 'package:dabirkhane/providers/scan_service.dart';
 import 'package:share_plus/share_plus.dart';
 
@@ -327,24 +326,6 @@ class _RecordFormState extends State<RecordForm>
     ScaffoldMessenger.of(
       context,
     ).showSnackBar(SnackBar(content: Text('فایل‌ها با موفقیت اضافه شدند')));
-  }
-
-  Future<void> scanDocument() async {
-    //by default way they fetch pdf for android and png for iOS
-    dynamic result;
-    try {
-      result = await Navigator.push(
-        context,
-        MaterialPageRoute(builder: (_) => const ScanerPage()),
-      );
-    } on PlatformException {
-      result = 'دریافت فایل های اسکن شده شکست خورد.';
-    } catch (error) {
-      result = error.toString();
-    }
-    ScaffoldMessenger.of(
-      context,
-    ).showSnackBar(SnackBar(content: Text(result.toString())));
   }
 
   Widget buildGuyField() {
@@ -879,7 +860,7 @@ class _RecordFormState extends State<RecordForm>
                     ElevatedButton.icon(
                       icon: const Icon(Icons.camera_alt),
                       label: const Text('اسکن فایل'),
-                      onPressed: scanDocument,
+                      onPressed: scan,
                     ),
                     ElevatedButton.icon(
                       icon: const Icon(Icons.refresh),
