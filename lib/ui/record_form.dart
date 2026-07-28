@@ -847,7 +847,7 @@ class _RecordFormState extends State<RecordForm>
                       child: ElevatedButton.icon(
                         icon: const Icon(Icons.document_scanner),
                         label: const Text("اسکن"),
-                        onPressed: saveAndScan,
+                        onPressed: scan,
                       ),
                     ),
                   ],
@@ -1024,27 +1024,13 @@ class _RecordFormState extends State<RecordForm>
     ).showSnackBar(const SnackBar(content: Text('اطلاعات ذخیره شد')));
   }
 
-  Future<void> saveAndScan() async {
-    if (!_formKey.currentState!.validate()) return;
-
-    final data = {
-      for (var f in [...mainFields, ...otherFields]) f: c[f]!.text,
-    };
-
-    int id;
-
-    if (widget.record == null) {
-      id = await DatabaseHelper.insert(data);
-    } else {
-      id = widget.record!['Shomare_Radif'];
-      await DatabaseHelper.update(id, data);
+  Future<void> scan() async {
+    String id = c['Shomare_Radif']!.text.trim();
+    if (id == '') {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('مقدار آیدی نامه معتبر  نیست.')));
     }
-
-    await DatabaseHelper.saveCategoriesForRecord(
-      id.toString(),
-      selectedCategories,
-    );
-
     try {
       await ScanService.startScan(id);
     } catch (e) {

@@ -57,7 +57,7 @@ class _CamScannerPathsTileState extends State<CamScannerPathsTile> {
       children: [
         ListTile(
           leading: const Icon(Icons.document_scanner),
-          title: const Text("مسیر CamScanner شماره ۱"),
+          title: const Text("مسیر CamScanner تصاویر"),
           subtitle: Text(
             path1 ?? AppSettings.defaultCamScannerPath1,
             textDirection: TextDirection.ltr,
@@ -68,7 +68,7 @@ class _CamScannerPathsTileState extends State<CamScannerPathsTile> {
         ),
         ListTile(
           leading: const Icon(Icons.document_scanner),
-          title: const Text("مسیر CamScanner شماره ۲"),
+          title: const Text("مسیر CamScanner pdf"),
           subtitle: Text(
             path2 ?? AppSettings.defaultCamScannerPath2,
             textDirection: TextDirection.ltr,

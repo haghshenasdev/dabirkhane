@@ -11,13 +11,13 @@ import '../utils/app_settings.dart';
 class ScanService {
   ScanService._();
   static DateTime? _scanStartTime;
-  static int? _recordId;
+  static String? _recordId;
 
   //------------------------------------------------------------
   // شروع فرآیند اسکن
   //------------------------------------------------------------
 
-  static Future<void> startScan(int recordId) async {
+  static Future<void> startScan(String recordId) async {
     _recordId = recordId;
     _scanStartTime = DateTime.now();
 
@@ -28,8 +28,9 @@ class ScanService {
     const intent = AndroidIntent(
       action: 'android.intent.action.MAIN',
       package: 'com.intsig.camscanner',
-      componentName: 'com.intsig.camscanner.mainmenu.mainactivity.MainActivity',
+      componentName: 'com.intsig.camscanner.capture.CaptureActivity',
     );
+    // com.intsig.camscanner.mainmenu.mainactivity.MainActivity
     await intent.launch();
   }
 
@@ -130,7 +131,7 @@ class ScanService {
   // شماره نامه فعلی
   //------------------------------------------------------------
 
-  static int? get currentRecordId => _recordId;
+  static String? get currentRecordId => _recordId;
 
   //------------------------------------------------------------
   // زمان شروع اسکن

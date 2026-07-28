@@ -156,9 +156,7 @@ class SettingsPage extends StatelessWidget {
           _sectionTitle('فایل‌ها'),
           const LettersPathTile(),
           const Divider(),
-
-          const CamScannerPathsTile(),
-
+          _sectionTitle('دیتابیس'),
           ListTile(
             leading: const Icon(Icons.restore),
             title: const Text('بازیابی دیتابیس قبلی'),
@@ -166,6 +164,10 @@ class SettingsPage extends StatelessWidget {
               restoreDbBackup(context);
             },
           ),
+          const Divider(),
+          _sectionTitle('اسکنر'),
+
+          const CamScannerPathsTile(),
 
           const Divider(),
 
@@ -179,17 +181,7 @@ class SettingsPage extends StatelessWidget {
             leading: const Icon(Icons.code),
             title: const Text('توسعه‌دهنده'),
             subtitle: GestureDetector(
-              onTap: () async {
-                final url = Uri.parse('https://haghshenasdev.github.io/');
-                if (await canLaunchUrl(url)) {
-                  await launchUrl(url);
-                } else {
-                  // اگر باز نشد می‌تونی یه هشدار یا پیام خطا نشون بدی
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(content: Text('امکان باز کردن سایت وجود ندارد')),
-                  );
-                }
-              },
+              onTap: () => openDeveloperSite(context),
               child: const Text(
                 'MH-DEV | محمد مهدی حق شناس'
                 '\n'
@@ -204,6 +196,30 @@ class SettingsPage extends StatelessWidget {
         ],
       ),
     );
+  }
+
+  Future<void> openDeveloperSite(BuildContext context) async {
+    final Uri url = Uri.parse('https://haghshenasdev.github.io/');
+
+    try {
+      if (await canLaunchUrl(url)) {
+        await launchUrl(url, mode: LaunchMode.externalApplication);
+      } else {
+        if (context.mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('امکان باز کردن سایت وجود ندارد')),
+          );
+        }
+      }
+    } catch (e) {
+      debugPrint('Open URL Error: $e');
+
+      if (context.mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('خطا در باز کردن مرورگر')));
+      }
+    }
   }
 
   Widget _sectionTitle(String title) {
