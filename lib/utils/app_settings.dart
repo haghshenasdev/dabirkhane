@@ -6,12 +6,16 @@ class AppSettings {
   static const _lettersPathKey = 'letters_path';
   static const _camScannerPath1Key = 'camscanner_path_1';
   static const _camScannerPath2Key = 'camscanner_path_2';
+  static const _readWithoutGallerySaveKey = 'read_without_gallery_save';
 
   static const String defaultCamScannerPath1 =
       "/storage/emulated/0/DCIM/CamScanner";
 
   static const String defaultCamScannerPath2 =
       "/storage/emulated/0/Download/CamScanner";
+
+  static const String camScannerPrivateImagePath =
+      "/storage/emulated/0/Android/data/com.intsig.camscanner/files/CamScanner/.images";
 
   static Future<List<Directory>> getCamScannerDirectories() async {
     final prefs = await SharedPreferences.getInstance();
@@ -34,17 +38,31 @@ class AppSettings {
     await prefs.setString(_camScannerPath1Key, path1);
     await prefs.setString(_camScannerPath2Key, path2);
   }
-static Future<String> getCamScannerPath1() async {
-  final prefs = await SharedPreferences.getInstance();
-  return prefs.getString(_camScannerPath1Key) ??
-      defaultCamScannerPath1;
-}
 
-static Future<String> getCamScannerPath2() async {
-  final prefs = await SharedPreferences.getInstance();
-  return prefs.getString(_camScannerPath2Key) ??
-      defaultCamScannerPath2;
-}
+  static Future<String> getCamScannerPath1() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getString(_camScannerPath1Key) ?? defaultCamScannerPath1;
+  }
+
+  static Future<bool> getReadWithoutGallerySave() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getBool(_readWithoutGallerySaveKey) ?? true;
+  }
+
+  static Future<void> setReadWithoutGallerySave(bool value) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(_readWithoutGallerySaveKey, value);
+  }
+
+  static Future<void> toggleReadWithoutGallerySave() async {
+    final current = await getReadWithoutGallerySave();
+    await setReadWithoutGallerySave(!current);
+  }
+
+  static Future<String> getCamScannerPath2() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getString(_camScannerPath2Key) ?? defaultCamScannerPath2;
+  }
 
   /// گرفتن مسیر پوشه نامه‌ها
   static Future<Directory> getLettersDirectory() async {

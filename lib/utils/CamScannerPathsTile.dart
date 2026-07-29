@@ -15,6 +15,7 @@ class CamScannerPathsTile extends StatefulWidget {
 class _CamScannerPathsTileState extends State<CamScannerPathsTile> {
   String? path1;
   String? path2;
+  bool _readWithoutGallerySave = true;
 
   @override
   void initState() {
@@ -25,6 +26,7 @@ class _CamScannerPathsTileState extends State<CamScannerPathsTile> {
   Future<void> _loadPaths() async {
     path1 = await AppSettings.getCamScannerPath1();
     path2 = await AppSettings.getCamScannerPath2();
+    _readWithoutGallerySave = await AppSettings.getReadWithoutGallerySave();
 
     if (mounted) {
       setState(() {});
@@ -76,6 +78,22 @@ class _CamScannerPathsTileState extends State<CamScannerPathsTile> {
           ),
           trailing: const Icon(Icons.edit),
           onTap: () => _pickDirectory(2),
+        ),
+        SwitchListTile(
+          secondary: const Icon(Icons.photo_library_outlined),
+          title: const Text("خواندن بدون ذخیره در گالری"),
+          subtitle: const Text(
+            "پس از اسکن، فایل بدون ذخیره در گالری ثبت شود.",
+            style: TextStyle(fontSize: 12),
+          ),
+          value: _readWithoutGallerySave,
+          onChanged: (value) async {
+            setState(() {
+              _readWithoutGallerySave = value;
+            });
+
+            await AppSettings.setReadWithoutGallerySave(value);
+          },
         ),
       ],
     );

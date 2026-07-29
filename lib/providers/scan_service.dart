@@ -9,6 +9,7 @@ import '../utils/app_settings.dart';
 
 class ScanService {
   ScanService._();
+
   static DateTime? _scanStartTime;
   static String? _recordId;
 
@@ -23,14 +24,31 @@ class ScanService {
     // شماره نامه داخل کلیپ برد
     await Clipboard.setData(ClipboardData(text: recordId.toString()));
 
-    // باز کردن CamScanner
-    const intent = AndroidIntent(
-      action: 'android.intent.action.MAIN',
-      package: 'com.intsig.camscanner',
-      componentName: 'com.intsig.camscanner.mainmenu.mainactivity.MainActivity',
-    );
-    // com.intsig.camscanner.capture.CaptureActivity
-    // com.intsig.camscanner.mainmenu.mainactivity.MainActivity
+    // بررسی تنظیمات
+    final readWithoutGallerySave =
+        await AppSettings.getReadWithoutGallerySave();
+
+    AndroidIntent intent;
+
+    if (readWithoutGallerySave) {
+      // حالت بدون ذخیره در گالری
+      // باز کردن مستقیم دوربین CamScanner
+      intent = const AndroidIntent(
+        action: 'android.intent.action.MAIN',
+        package: 'com.intsig.camscanner',
+        componentName: 'com.intsig.camscanner.capture.CaptureActivity',
+      );
+    } else {
+      // حالت معمولی
+      // باز کردن صفحه اصلی CamScanner
+      intent = const AndroidIntent(
+        action: 'android.intent.action.MAIN',
+        package: 'com.intsig.camscanner',
+        componentName:
+            'com.intsig.camscanner.mainmenu.mainactivity.MainActivity',
+      );
+    }
+
     await intent.launch();
   }
 
@@ -43,9 +61,10 @@ class ScanService {
       return false;
     }
 
-    final file = await _findLatestScannedFile();
+    // دریافت تمام فایل های جدید اسکن شده
+    final files = await _findScannedFiles();
 
-    if (file == null) {
+    if (files.isEmpty) {
       return false;
     }
 
@@ -55,69 +74,129 @@ class ScanService {
       await lettersDir.create(recursive: true);
     }
 
-    final extension = path.extension(file.path);
+    int counter = 0;
 
-    // پیدا کردن اولین نام آزاد
-    String targetName = '$_recordId$extension';
-    File targetFile = File(path.join(lettersDir.path, targetName));
+    for (final file in files) {
+      final extension = path.extension(file.path);
 
-    int index = 1;
-    while (await targetFile.exists()) {
-      targetName = '${_recordId}_$index$extension';
-      targetFile = File(path.join(lettersDir.path, targetName));
-      index++;
+      String targetName;
+
+      if (counter == 0) {
+        targetName = '$_recordId$extension';
+      } else {
+        targetName = '${_recordId}_$counter$extension';
+      }
+
+      File targetFile = File(path.join(lettersDir.path, targetName));
+
+      int index = counter;
+
+      while (await targetFile.exists()) {
+        index++;
+
+        targetName = '${_recordId}_$index$extension';
+
+        targetFile = File(path.join(lettersDir.path, targetName));
+      }
+
+      await file.copy(targetFile.path);
+
+      counter++;
     }
-
-    await file.copy(targetFile.path);
 
     _recordId = null;
     _scanStartTime = null;
 
     return true;
   }
-
   //------------------------------------------------------------
-  // پیدا کردن فایل جدید CamScanner
+  // پیدا کردن فایل‌های جدید CamScanner
   //------------------------------------------------------------
 
-  static Future<File?> _findLatestScannedFile() async {
-    final directories = await AppSettings.getCamScannerDirectories();
+  static Future<List<File>> _findScannedFiles() async {
+    final readWithoutGallerySave =
+        await AppSettings.getReadWithoutGallerySave();
+
+    final directories = <Directory>[];
+
+    if (readWithoutGallerySave) {
+      // مسیر خصوصی CamScanner
+      directories.add(Directory(AppSettings.camScannerPrivateImagePath));
+    } else {
+      // مسیرهای معمولی
+      directories.addAll(await AppSettings.getCamScannerDirectories());
+    }
 
     final files = <File>[];
 
     for (final dir in directories) {
-      if (!await dir.exists()) continue;
+      if (!await dir.exists()) {
+        continue;
+      }
 
-      await for (final entity in dir.list()) {
-        if (entity is! File) continue;
+      await for (final entity in dir.list(
+        recursive: true,
+        followLinks: false,
+      )) {
+        if (entity is! File) {
+          continue;
+        }
 
         final ext = path.extension(entity.path).toLowerCase();
 
-        if (ext == ".pdf" || ext == ".jpg" || ext == ".jpeg" || ext == ".png") {
-          files.add(entity);
+        if (ext == '.jpg' || ext == '.jpeg' || ext == '.png' || ext == '.pdf') {
+          final modified = await entity.lastModified();
+
+          // فقط فایل‌هایی که بعد از شروع اسکن ساخته شده‌اند
+          if (modified.isAfter(_scanStartTime!)) {
+            files.add(entity);
+          }
         }
       }
     }
 
     if (files.isEmpty) {
-      return null;
+      return [];
     }
 
-    files.sort((a, b) => b.lastModifiedSync().compareTo(a.lastModifiedSync()));
+    // مرتب سازی از قدیمی به جدید
+    files.sort((a, b) => a.lastModifiedSync().compareTo(b.lastModifiedSync()));
 
-    final newest = files.first;
+    /*
+      CamScanner گاهی چند فایل را با چند ثانیه فاصله ذخیره می‌کند.
 
-    // اگر فایل قدیمی‌تر از شروع اسکن است
-    if (newest.lastModifiedSync().isBefore(_scanStartTime!)) {
-      return null;
+      مثال:
+
+      page1.jpg  10:00:01
+      page2.jpg  10:00:03
+      page3.jpg  10:00:05
+
+      همه اینها یک اسکن هستند.
+
+      ولی فایل خیلی قدیمی نباید وارد شود.
+    */
+
+    final latestTime = await files.last.lastModified();
+
+    final result = <File>[];
+
+    for (final file in files) {
+      final time = await file.lastModified();
+
+      final difference = latestTime.difference(time).inSeconds;
+
+      // فایل‌هایی که حداکثر ۳۰ ثانیه با آخرین فایل فاصله دارند
+      if (difference <= 30) {
+        result.add(file);
+      }
     }
 
-    // اگر بیش از 10 دقیقه از شروع اسکن گذشته باشد
+    // محدودیت زمانی کلی عملیات اسکن
     if (DateTime.now().difference(_scanStartTime!).inMinutes > 10) {
-      return null;
+      return [];
     }
 
-    return newest;
+    return result;
   }
   //------------------------------------------------------------
   // آیا فرآیند اسکن در حال انجام است؟
@@ -131,13 +210,17 @@ class ScanService {
   // شماره نامه فعلی
   //------------------------------------------------------------
 
-  static String? get currentRecordId => _recordId;
+  static String? get currentRecordId {
+    return _recordId;
+  }
 
   //------------------------------------------------------------
   // زمان شروع اسکن
   //------------------------------------------------------------
 
-  static DateTime? get scanStartTime => _scanStartTime;
+  static DateTime? get scanStartTime {
+    return _scanStartTime;
+  }
 
   //------------------------------------------------------------
   // لغو عملیات اسکن
@@ -149,7 +232,7 @@ class ScanService {
   }
 
   //------------------------------------------------------------
-  // پاک کردن فایل قدیمی هم نام (اختیاری)
+  // پاک کردن فایل قدیمی هم نام
   //------------------------------------------------------------
 
   static Future<void> deleteOldScans(int recordId) async {
@@ -160,11 +243,13 @@ class ScanService {
     }
 
     await for (final entity in lettersDir.list()) {
-      if (entity is! File) continue;
+      if (entity is! File) {
+        continue;
+      }
 
       final name = path.basenameWithoutExtension(entity.path);
 
-      if (name == recordId.toString()) {
+      if (name == recordId.toString() || name.startsWith('${recordId}_')) {
         await entity.delete();
       }
     }
