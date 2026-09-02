@@ -51,37 +51,70 @@ class _HomePageState extends State<HomePage> {
     if (reset) {
       offset = 0;
       hasMore = true;
-      records = [];
+
+      setState(() {
+        records = [];
+      });
     }
 
     if (!hasMore) return;
 
     isLoading = true;
+
     setState(() {});
-    final fromDate = fromDateController.text.trim();
-    final toDate = toDateController.text.trim();
-    final onvan = onvanController.text.trim();
-    final selectedCategories = selectedCategoryFilters;
 
-    final data = await DatabaseHelper.getPaged(
-      limit: limit,
-      offset: offset,
-      search: query,
-      fromDate: fromDate,
-      toDate: toDate,
-      onvan: onvan,
-      categories: selectedCategories,
-    );
+    try {
+      final fromDate = fromDateController.text.trim();
+      final toDate = toDateController.text.trim();
+      final onvan = onvanController.text.trim();
 
-    if (data.length < limit) {
-      hasMore = false;
+      final selectedCategories = List<String>.from(selectedCategoryFilters);
+
+      final data = await DatabaseHelper.getPaged(
+        limit: limit,
+        offset: offset,
+        search: query,
+        fromDate: fromDate,
+        toDate: toDate,
+        onvan: onvan,
+        categories: selectedCategories,
+      );
+
+      final mutableData = data
+          .map((row) => Map<String, dynamic>.from(row))
+          .toList();
+
+      if (mutableData.length < limit) {
+        hasMore = false;
+      }
+
+      offset += mutableData.length;
+
+      if (!mounted) return;
+
+      setState(() {
+        records.addAll(mutableData);
+
+        filtered = records.where((r) {
+          final q = query.toLowerCase();
+
+          return (r['onvan'] ?? '').toString().toLowerCase().contains(q) ||
+              (r['saheb_name'] ?? '').toString().toLowerCase().contains(q) ||
+              r['Shomare_Radif'].toString().contains(q);
+        }).toList();
+
+        isLoading = false;
+      });
+    } catch (e, stackTrace) {
+      debugPrint('loadMore error: $e');
+      debugPrintStack(stackTrace: stackTrace);
+
+      if (mounted) {
+        setState(() {
+          isLoading = false;
+        });
+      }
     }
-
-    offset += data.length;
-    records.addAll(data);
-
-    isLoading = false;
-    setState(() {});
   }
 
   Future<bool> confirmImport() async {
@@ -195,8 +228,21 @@ class _HomePageState extends State<HomePage> {
   }
 
   Future<void> load() async {
-    records = await DatabaseHelper.getAll();
-    applyFilter();
+    final data = await DatabaseHelper.getAll();
+
+    if (!mounted) return;
+
+    setState(() {
+      records = data.map((row) => Map<String, dynamic>.from(row)).toList();
+
+      filtered = records.where((r) {
+        final q = query.toLowerCase();
+
+        return (r['onvan'] ?? '').toString().toLowerCase().contains(q) ||
+            (r['saheb_name'] ?? '').toString().toLowerCase().contains(q) ||
+            r['Shomare_Radif'].toString().contains(q);
+      }).toList();
+    });
   }
 
   void applyFilter() {
@@ -1031,18 +1077,38 @@ class _HomePageState extends State<HomePage> {
   }
 
   Future<void> refreshOneRecord(int id) async {
-    final record = await DatabaseHelper.getById(id);
+    try {
+      final record = await DatabaseHelper.getById(id);
 
-    if (record == null) return;
-
-    final index = records.indexWhere((e) => e['Shomare_Radif'] == id);
-
-    setState(() {
-      if (index == -1) {
-        records.insert(0, record);
-      } else {
-        load();
+      if (record == null || !mounted) {
+        return;
       }
-    });
+
+      final updatedRecord = Map<String, dynamic>.from(record);
+
+      final index = records.indexWhere((e) => e['Shomare_Radif'] == id);
+
+      setState(() {
+        if (index == -1) {
+          // رکورد جدید
+          records.insert(0, updatedRecord);
+        } else {
+          // رکورد ویرایش شده
+          records[index] = updatedRecord;
+        }
+
+        // فیلتر فعلی هم بلافاصله به‌روز شود
+        filtered = records.where((r) {
+          final q = query.toLowerCase();
+
+          return (r['onvan'] ?? '').toString().toLowerCase().contains(q) ||
+              (r['saheb_name'] ?? '').toString().toLowerCase().contains(q) ||
+              r['Shomare_Radif'].toString().contains(q);
+        }).toList();
+      });
+    } catch (e, stackTrace) {
+      debugPrint('refreshOneRecord error: $e');
+      debugPrintStack(stackTrace: stackTrace);
+    }
   }
 }

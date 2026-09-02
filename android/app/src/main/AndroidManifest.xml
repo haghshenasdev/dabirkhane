@@ -11,7 +11,7 @@
    <package android:name="net.pulsesecure.pulsesecure" /> // your android package name
  </queries>
    <application
-        android:label="dabirkhane"
+        android:label="دبیرخانه"
         android:name="${applicationName}"
         android:icon="@mipmap/launcher_icon">
         <activity

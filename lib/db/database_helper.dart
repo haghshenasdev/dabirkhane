@@ -230,15 +230,17 @@ class DatabaseHelper {
       whereClause = 'WHERE ${conditions.join(' AND ')}';
     }
 
-    return await db.rawQuery(
+    final result = await db.rawQuery(
       '''
-    SELECT * FROM daftare_andicator
-    $whereClause
-    ORDER BY Shomare_Radif DESC
-    LIMIT ? OFFSET ?
-    ''',
+SELECT * FROM daftare_andicator
+$whereClause
+ORDER BY Shomare_Radif DESC
+LIMIT ? OFFSET ?
+''',
       [...args, limit, offset],
     );
+
+    return result.map((row) => Map<String, dynamic>.from(row)).toList();
   }
 
   // CRUD
@@ -259,7 +261,13 @@ class DatabaseHelper {
 
   static Future<List<Map<String, dynamic>>> getAll() async {
     final db = await database;
-    return db.query('daftare_andicator', orderBy: 'Shomare_Radif DESC');
+
+    final result = await db.query(
+      'daftare_andicator',
+      orderBy: 'Shomare_Radif DESC',
+    );
+
+    return result.map((row) => Map<String, dynamic>.from(row)).toList();
   }
 
   // متد گرفتن آخرین Shomare_Radif
