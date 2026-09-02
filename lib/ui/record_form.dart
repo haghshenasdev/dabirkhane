@@ -1203,24 +1203,15 @@ class _RecordFormState extends State<RecordForm>
 
   Widget buildTextField(String field) {
     if (field == 'saheb_name') {
-      return Padding(
-        padding: const EdgeInsets.only(bottom: 12),
-        child: buildSahebNameField(),
-      );
+      return buildSahebNameField();
     }
 
     if (field == 'guy') {
-      return Padding(
-        padding: const EdgeInsets.only(bottom: 12),
-        child: buildGuyField(),
-      );
+      return buildGuyField();
     }
 
     if (field == 'onvan') {
-      return Padding(
-        padding: const EdgeInsets.only(bottom: 12),
-        child: buildOnvanField(),
-      );
+      return buildOnvanField();
     }
 
     // ==========================================================
@@ -1894,7 +1885,7 @@ class _RecordFormState extends State<RecordForm>
               children: [
                 Expanded(child: buildTextField('Shomare_Radif')),
 
-                const SizedBox(width: 12),
+                const SizedBox(width: 8),
 
                 Expanded(child: buildTextField('date')),
               ],
@@ -2036,7 +2027,6 @@ class _RecordFormState extends State<RecordForm>
   // ============================================================
   // Glass field
   // ============================================================
-
   InputDecoration _glassInputDecoration({
     required String label,
     String? hint,
@@ -2050,81 +2040,85 @@ class _RecordFormState extends State<RecordForm>
       labelText: label,
       hintText: hint,
       alignLabelWithHint: alignLabelWithHint,
+
       prefixIcon: prefixIcon,
       suffixIcon: suffixIcon,
 
       floatingLabelBehavior: FloatingLabelBehavior.auto,
 
       filled: true,
+      fillColor: Colors.white.withOpacity(.68),
 
-      fillColor: Colors.white.withOpacity(.58),
-
-      contentPadding: const EdgeInsets.symmetric(horizontal: 18, vertical: 16),
+      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
 
       labelStyle: TextStyle(
-        color: colorScheme.onSurface.withOpacity(.62),
-        fontSize: 14,
+        color: colorScheme.onSurface.withOpacity(.58),
+        fontSize: 13,
         fontWeight: FontWeight.w500,
       ),
 
       floatingLabelStyle: TextStyle(
         color: colorScheme.primary,
-        fontSize: 14,
+        fontSize: 12,
         fontWeight: FontWeight.w700,
       ),
 
       hintStyle: TextStyle(
-        color: colorScheme.onSurface.withOpacity(.30),
-        fontSize: 13,
+        color: colorScheme.onSurface.withOpacity(.28),
+        fontSize: 12,
       ),
 
-      prefixIconColor: colorScheme.onSurface.withOpacity(.42),
+      hintTextDirection: TextDirection.rtl,
 
-      suffixIconColor: colorScheme.primary.withOpacity(.70),
+      prefixIconColor: colorScheme.onSurface.withOpacity(.40),
 
-      border: _inputBorder(colorScheme.outline.withOpacity(.13)),
+      suffixIconColor: colorScheme.primary.withOpacity(.65),
 
-      enabledBorder: _inputBorder(colorScheme.outline.withOpacity(.13)),
+      border: _inputBorder(colorScheme.outline.withOpacity(.16)),
+
+      enabledBorder: _inputBorder(colorScheme.outline.withOpacity(.16)),
 
       focusedBorder: _inputBorder(
-        colorScheme.primary.withOpacity(.70),
-        width: 1.5,
+        colorScheme.primary.withOpacity(.60),
+        width: 1.4,
       ),
 
-      errorBorder: _inputBorder(Colors.red.withOpacity(.55)),
+      errorBorder: _inputBorder(Colors.red.withOpacity(.50)),
 
-      focusedErrorBorder: _inputBorder(Colors.red.withOpacity(.80), width: 1.5),
+      focusedErrorBorder: _inputBorder(Colors.red.withOpacity(.75), width: 1.4),
 
-      errorStyle: const TextStyle(fontSize: 11),
+      errorStyle: const TextStyle(fontSize: 10, height: 1.1),
     );
   }
 
   OutlineInputBorder _inputBorder(Color color, {double width = 1}) {
     return OutlineInputBorder(
-      borderRadius: BorderRadius.circular(18),
+      borderRadius: BorderRadius.circular(16),
+
       borderSide: BorderSide(color: color, width: width),
+
+      gapPadding: 7,
     );
   }
 
   Widget _glassField({
     required Widget child,
-    EdgeInsetsGeometry margin = const EdgeInsets.only(bottom: 12),
+    EdgeInsetsGeometry margin = const EdgeInsets.only(bottom: 7),
   }) {
     return Container(
       margin: margin,
       decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(20),
-        color: Colors.white.withOpacity(.48),
-        border: Border.all(color: Colors.white.withOpacity(.82)),
+        borderRadius: BorderRadius.circular(17),
+        color: Colors.white.withOpacity(.38),
         boxShadow: [
           BoxShadow(
             color: Colors.black.withOpacity(.035),
-            blurRadius: 17,
-            offset: const Offset(0, 6),
+            blurRadius: 12,
+            offset: const Offset(0, 4),
           ),
         ],
       ),
-      child: ClipRRect(borderRadius: BorderRadius.circular(20), child: child),
+      child: child,
     );
   }
 
