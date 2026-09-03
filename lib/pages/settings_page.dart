@@ -1,6 +1,7 @@
 import 'dart:io';
 import 'package:dabirkhane/db/database_helper.dart';
 import 'package:dabirkhane/utils/CamScannerPathsTile.dart';
+import 'package:dabirkhane/utils/ScannerTypeTile.dart';
 
 import '../providers/theme_provider.dart';
 import '../utils/LettersPathTile.dart';
@@ -153,7 +154,7 @@ class SettingsPage extends StatelessWidget {
 
           const Divider(),
 
-          _sectionTitle('فایل‌ها'),
+          _sectionTitle('فایل‌ها'), 
           const LettersPathTile(),
           const Divider(),
           _sectionTitle('دیتابیس'),
@@ -166,7 +167,8 @@ class SettingsPage extends StatelessWidget {
           ),
           const Divider(),
           _sectionTitle('اسکنر'),
-
+          const ScannerTypeTile(),
+          const Divider(),
           const CamScannerPathsTile(),
 
           const Divider(),

@@ -7,40 +7,186 @@ import 'package:path/path.dart' as path;
 
 import '../utils/app_settings.dart';
 
+class ScanResult {
+  final bool success;
+  final bool cancelled;
+  final String? recordId;
+  final String? filePath;
+  final String? mimeType;
+
+  const ScanResult({
+    required this.success,
+    required this.cancelled,
+    this.recordId,
+    this.filePath,
+    this.mimeType,
+  });
+}
+
 class ScanService {
   ScanService._();
 
-  static DateTime? _scanStartTime;
+  static final StreamController<ScanResult> _resultController =
+      StreamController<ScanResult>.broadcast();
+
+  static Stream<ScanResult> get results => _resultController.stream;
+
+  static const MethodChannel _channel = MethodChannel('dabirkhane/scanner');
+
+  static const String _fastScannerPackage = 'ir.haghshenas.fastscanner';
+
+  static const String _fastScannerAction =
+      'ir.haghshenas.fastscanner.action.SCAN';
+
+  static const String _scanResultAction =
+      'ir.haghshenas.dabirkhane.action.SCAN_RESULT';
+
   static String? _recordId;
 
+  static bool _waitingForFastScanner = false;
+
+  static Future<void> initialize() async {
+    _channel.setMethodCallHandler((call) async {
+      if (call.method != 'scanResult') {
+        return;
+      }
+
+      final arguments = Map<dynamic, dynamic>.from(call.arguments as Map);
+
+      final success = arguments['success'] == true;
+
+      final cancelled = arguments['cancelled'] == true;
+
+      final recordId = arguments['record_id']?.toString();
+
+      final filePath = arguments['file_path']?.toString();
+
+      final mimeType = arguments['mime_type']?.toString();
+
+      final result = ScanResult(
+        success: success,
+        cancelled: cancelled,
+        recordId: recordId,
+        filePath: filePath,
+        mimeType: mimeType,
+      );
+
+      await _handleScanResult(result);
+    });
+  }
+
+  static Future<void> _handleScanResult(ScanResult result) async {
+    _waitingForFastScanner = false;
+    _resultController.add(result);
+
+    if (!result.success) {
+      cancel();
+      return;
+    }
+
+    if (result.recordId == null || result.filePath == null) {
+      cancel();
+      return;
+    }
+
+    try {
+      await _copyFastScannerResult(
+        recordId: result.recordId!,
+        sourcePath: result.filePath!,
+        mimeType: result.mimeType,
+      );
+    } catch (e) {
+      // خطا را ذخیره نمی‌کنیم؛
+      // RecordForm در صورت نیاز می‌تواند وضعیت را بررسی کند.
+
+      print('FastScanner result error: $e');
+    }
+  }
+
+  static Future<void> _copyFastScannerResult({
+    required String recordId,
+    required String sourcePath,
+    String? mimeType,
+  }) async {
+    final sourceFile = File(sourcePath);
+
+    if (!await sourceFile.exists()) {
+      throw Exception('فایل اسکن شده پیدا نشد:\n$sourcePath');
+    }
+
+    final size = await sourceFile.length();
+
+    if (size <= 0) {
+      throw Exception('فایل اسکن شده خالی است.');
+    }
+
+    final lettersDir = await AppSettings.getLettersDirectory();
+
+    if (!await lettersDir.exists()) {
+      await lettersDir.create(recursive: true);
+    }
+
+    String extension = path.extension(sourcePath).toLowerCase();
+
+    if (extension.isEmpty) {
+      if (mimeType == 'application/pdf') {
+        extension = '.pdf';
+      } else {
+        extension = '.jpg';
+      }
+    }
+
+    final targetPath = path.join(lettersDir.path, '$recordId$extension');
+
+    final targetFile = File(targetPath);
+
+    await targetFile.writeAsBytes(await sourceFile.readAsBytes(), flush: true);
+
+    final copiedSize = await targetFile.length();
+
+    if (copiedSize != size) {
+      throw Exception('کپی فایل ناقص انجام شد.');
+    }
+
+    // پاک کردن فایل موقت FastScanner
+    try {
+      await sourceFile.delete();
+    } catch (_) {}
+
+    _recordId = null;
+  }
+
   //------------------------------------------------------------
-  // شروع فرآیند اسکن
+  // شروع اسکن
   //------------------------------------------------------------
 
   static Future<void> startScan(String recordId) async {
     _recordId = recordId;
-    _scanStartTime = DateTime.now();
 
-    // شماره نامه داخل کلیپ برد
-    await Clipboard.setData(ClipboardData(text: recordId.toString()));
+    final scannerType = await AppSettings.getScannerType();
 
-    // بررسی تنظیمات
+    if (scannerType == AppSettings.scannerFastScanner) {
+      await _startFastScanner(recordId);
+
+      return;
+    }
+
+    // ==========================================================
+    // CamScanner
+    // ==========================================================
+
     final readWithoutGallerySave =
         await AppSettings.getReadWithoutGallerySave();
 
     AndroidIntent intent;
 
     if (readWithoutGallerySave) {
-      // حالت بدون ذخیره در گالری
-      // باز کردن مستقیم دوربین CamScanner
       intent = const AndroidIntent(
         action: 'android.intent.action.MAIN',
         package: 'com.intsig.camscanner',
         componentName: 'com.intsig.camscanner.capture.CaptureActivity',
       );
     } else {
-      // حالت معمولی
-      // باز کردن صفحه اصلی CamScanner
       intent = const AndroidIntent(
         action: 'android.intent.action.MAIN',
         package: 'com.intsig.camscanner',
@@ -52,162 +198,46 @@ class ScanService {
     await intent.launch();
   }
 
-  //------------------------------------------------------------
-  // هنگام برگشت از CamScanner
-  //------------------------------------------------------------
-
-  static Future<bool> processReturnedScan() async {
-    if (_recordId == null || _scanStartTime == null) {
-      return false;
-    }
-
-    // دریافت تمام فایل های جدید اسکن شده
-    final files = await _findScannedFiles();
-
-    if (files.isEmpty) {
-      return false;
-    }
-
-    final lettersDir = await AppSettings.getLettersDirectory();
-
-    if (!await lettersDir.exists()) {
-      await lettersDir.create(recursive: true);
-    }
-
-    int counter = 0;
-
-    for (final file in files) {
-      final extension = path.extension(file.path);
-
-      String targetName;
-
-      if (counter == 0) {
-        targetName = '$_recordId$extension';
-      } else {
-        targetName = '${_recordId}_$counter$extension';
-      }
-
-      File targetFile = File(path.join(lettersDir.path, targetName));
-
-      int index = counter;
-
-      while (await targetFile.exists()) {
-        index++;
-
-        targetName = '${_recordId}_$index$extension';
-
-        targetFile = File(path.join(lettersDir.path, targetName));
-      }
-
-      await file.copy(targetFile.path);
-
-      counter++;
-    }
-
-    _recordId = null;
-    _scanStartTime = null;
-
-    return true;
+  static Future<void> dispose() async {
+    await _resultController.close();
   }
+
   //------------------------------------------------------------
-  // پیدا کردن فایل‌های جدید CamScanner
+  // باز کردن FastScanner
   //------------------------------------------------------------
 
-  static Future<List<File>> _findScannedFiles() async {
-    final readWithoutGallerySave =
-        await AppSettings.getReadWithoutGallerySave();
+  static Future<void> _startFastScanner(String recordId) async {
+    _waitingForFastScanner = true;
 
-    final directories = <Directory>[];
+    final intent = AndroidIntent(
+      action: _fastScannerAction,
 
-    if (readWithoutGallerySave) {
-      // مسیر خصوصی CamScanner
-      directories.add(Directory(AppSettings.camScannerPrivateImagePath));
-    } else {
-      // مسیرهای معمولی
-      directories.addAll(await AppSettings.getCamScannerDirectories());
-    }
+      package: _fastScannerPackage,
 
-    final files = <File>[];
+      componentName: 'ir.haghshenas.fastscanner.MainActivity',
 
-    for (final dir in directories) {
-      if (!await dir.exists()) {
-        continue;
-      }
+      arguments: {
+        'record_id': recordId,
 
-      await for (final entity in dir.list(
-        recursive: true,
-        followLinks: false,
-      )) {
-        if (entity is! File) {
-          continue;
-        }
+        'return_package': 'com.example.dabirkhane',
 
-        final ext = path.extension(entity.path).toLowerCase();
+        'return_action': _scanResultAction,
+      },
+    );
 
-        if (ext == '.jpg' || ext == '.jpeg' || ext == '.png' || ext == '.pdf') {
-          final modified = await entity.lastModified();
-
-          // فقط فایل‌هایی که بعد از شروع اسکن ساخته شده‌اند
-          if (modified.isAfter(_scanStartTime!)) {
-            files.add(entity);
-          }
-        }
-      }
-    }
-
-    if (files.isEmpty) {
-      return [];
-    }
-
-    // مرتب سازی از قدیمی به جدید
-    files.sort((a, b) => a.lastModifiedSync().compareTo(b.lastModifiedSync()));
-
-    /*
-      CamScanner گاهی چند فایل را با چند ثانیه فاصله ذخیره می‌کند.
-
-      مثال:
-
-      page1.jpg  10:00:01
-      page2.jpg  10:00:03
-      page3.jpg  10:00:05
-
-      همه اینها یک اسکن هستند.
-
-      ولی فایل خیلی قدیمی نباید وارد شود.
-    */
-
-    final latestTime = await files.last.lastModified();
-
-    final result = <File>[];
-
-    for (final file in files) {
-      final time = await file.lastModified();
-
-      final difference = latestTime.difference(time).inSeconds;
-
-      // فایل‌هایی که حداکثر ۳۰ ثانیه با آخرین فایل فاصله دارند
-      if (difference <= 30) {
-        result.add(file);
-      }
-    }
-
-    // محدودیت زمانی کلی عملیات اسکن
-    if (DateTime.now().difference(_scanStartTime!).inMinutes > 10) {
-      return [];
-    }
-
-    return result;
+    await intent.launch();
   }
+
   //------------------------------------------------------------
-  // آیا فرآیند اسکن در حال انجام است؟
+  // آیا FastScanner باز است؟
   //------------------------------------------------------------
 
   static bool get isWaitingForScan {
-    return _recordId != null && _scanStartTime != null;
+    return _waitingForFastScanner && _recordId != null;
   }
 
   //------------------------------------------------------------
-  // شماره نامه فعلی
+  // شماره نامه
   //------------------------------------------------------------
 
   static String? get currentRecordId {
@@ -215,24 +245,16 @@ class ScanService {
   }
 
   //------------------------------------------------------------
-  // زمان شروع اسکن
-  //------------------------------------------------------------
-
-  static DateTime? get scanStartTime {
-    return _scanStartTime;
-  }
-
-  //------------------------------------------------------------
-  // لغو عملیات اسکن
+  // لغو
   //------------------------------------------------------------
 
   static void cancel() {
     _recordId = null;
-    _scanStartTime = null;
+    _waitingForFastScanner = false;
   }
 
   //------------------------------------------------------------
-  // پاک کردن فایل قدیمی هم نام
+  // پاک کردن فایل های قبلی نامه
   //------------------------------------------------------------
 
   static Future<void> deleteOldScans(int recordId) async {

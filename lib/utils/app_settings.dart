@@ -8,6 +8,23 @@ class AppSettings {
   static const _camScannerPath2Key = 'camscanner_path_2';
   static const _readWithoutGallerySaveKey = 'read_without_gallery_save';
 
+  static const String _scannerTypeKey = 'scanner_type';
+
+  static const String scannerCamScanner = 'camscanner';
+static const String scannerFastScanner = 'fastscanner';
+
+static Future<String> getScannerType() async {
+  final prefs = await SharedPreferences.getInstance();
+
+  return prefs.getString(_scannerTypeKey) ?? scannerCamScanner;
+}
+
+static Future<void> setScannerType(String value) async {
+  final prefs = await SharedPreferences.getInstance();
+
+  await prefs.setString(_scannerTypeKey, value);
+}
+
   static const String defaultCamScannerPath1 =
       "/storage/emulated/0/DCIM/CamScanner";
 

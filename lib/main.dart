@@ -1,3 +1,5 @@
+import 'package:dabirkhane/providers/scan_service.dart';
+
 import 'providers/theme_provider.dart';
 import 'package:flutter/material.dart';
 import 'ui/home_page.dart';
@@ -15,6 +17,8 @@ void main() async {
 
   final themeProvider = ThemeProvider();
   await themeProvider.load();
+
+  await ScanService.initialize();
 
   runApp(
     ChangeNotifierProvider(create: (_) => themeProvider, child: const MyApp()),

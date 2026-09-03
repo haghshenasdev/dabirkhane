@@ -31,6 +31,7 @@ class _RecordFormState extends State<RecordForm>
   // ============================================================
 
   final _formKey = GlobalKey<FormState>();
+  StreamSubscription<ScanResult>? _scanSubscription;
 
   final Map<String, TextEditingController> c = {};
   final Map<String, FocusNode> focusNodes = {};
@@ -130,6 +131,8 @@ class _RecordFormState extends State<RecordForm>
 
     _tabController = TabController(length: 2, vsync: this);
 
+    _scanSubscription = ScanService.results.listen(_onScanResult);
+
     for (final field in [...mainFields, ...otherFields]) {
       c[field] = TextEditingController(
         text: widget.record?[field]?.toString() ?? '',
@@ -144,6 +147,32 @@ class _RecordFormState extends State<RecordForm>
       _loadFiles();
       _loadCategories();
     }
+  }
+
+  Future<void> _onScanResult(ScanResult result) async {
+    if (!mounted) {
+      return;
+    }
+
+    if (result.cancelled) {
+      _showMessage('اسکن لغو شد.');
+
+      return;
+    }
+
+    if (!result.success) {
+      _showMessage('اسکن با خطا پایان یافت.');
+
+      return;
+    }
+
+    await _loadFiles();
+
+    if (!mounted) {
+      return;
+    }
+
+    _showMessage('فایل اسکن شده با موفقیت اضافه شد.');
   }
 
   // ============================================================
@@ -533,18 +562,21 @@ class _RecordFormState extends State<RecordForm>
 
     if (id.isEmpty) {
       _showMessage('مقدار آیدی نامه معتبر نیست.');
-
       return;
     }
 
     try {
+      await ScanService.deleteOldScans(int.parse(id));
+
       await ScanService.startScan(id);
     } catch (e) {
-      debugPrint('Open CamScanner Error: $e');
+      debugPrint('Open Scanner Error: $e');
 
-      if (!mounted) return;
+      if (!mounted) {
+        return;
+      }
 
-      _showMessage('خطا در باز کردن CamScanner\n$e');
+      _showMessage('خطا در باز کردن اسکنر\n$e');
     }
   }
 
@@ -572,28 +604,28 @@ class _RecordFormState extends State<RecordForm>
   // Lifecycle
   // ============================================================
 
-  @override
-  void didChangeAppLifecycleState(AppLifecycleState state) async {
-    if (state != AppLifecycleState.resumed) {
-      return;
-    }
+  // @override
+  // void didChangeAppLifecycleState(AppLifecycleState state) async {
+  //   if (state != AppLifecycleState.resumed) {
+  //     return;
+  //   }
 
-    if (!ScanService.isWaitingForScan) {
-      return;
-    }
+  //   if (!ScanService.isWaitingForScan) {
+  //     return;
+  //   }
 
-    final ok = await ScanService.processReturnedScan();
+  //   final ok = await ScanService.processReturnedScan();
 
-    if (!mounted) return;
+  //   if (!mounted) return;
 
-    if (ok) {
-      await _loadFiles();
+  //   if (ok) {
+  //     await _loadFiles();
 
-      if (!mounted) return;
+  //     if (!mounted) return;
 
-      _showMessage('فایل اسکن شده اضافه شد.');
-    }
-  }
+  //     _showMessage('فایل اسکن شده اضافه شد.');
+  //   }
+  // }
 
   // ============================================================
   // Autocomplete - Guy
@@ -2408,6 +2440,8 @@ class _RecordFormState extends State<RecordForm>
     _firstFieldFocus.dispose();
 
     _tabController.dispose();
+
+    _scanSubscription?.cancel();
 
     WidgetsBinding.instance.removeObserver(this);
 
