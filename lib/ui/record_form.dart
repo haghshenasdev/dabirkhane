@@ -604,28 +604,28 @@ class _RecordFormState extends State<RecordForm>
   // Lifecycle
   // ============================================================
 
-  // @override
-  // void didChangeAppLifecycleState(AppLifecycleState state) async {
-  //   if (state != AppLifecycleState.resumed) {
-  //     return;
-  //   }
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) async {
+    if (state != AppLifecycleState.resumed) {
+      return;
+    }
 
-  //   if (!ScanService.isWaitingForScan) {
-  //     return;
-  //   }
+    if (!ScanService.isWaitingForScan) {
+      return;
+    }
 
-  //   final ok = await ScanService.processReturnedScan();
+    final ok = await ScanService.processReturnedScan();
 
-  //   if (!mounted) return;
+    if (!mounted) return;
 
-  //   if (ok) {
-  //     await _loadFiles();
+    if (ok) {
+      await _loadFiles();
 
-  //     if (!mounted) return;
+      if (!mounted) return;
 
-  //     _showMessage('فایل اسکن شده اضافه شد.');
-  //   }
-  // }
+      _showMessage('فایل اسکن شده اضافه شد.');
+    }
+  }
 
   // ============================================================
   // Autocomplete - Guy
