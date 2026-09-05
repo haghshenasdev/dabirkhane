@@ -337,6 +337,7 @@ class ScanService {
     // ----------------------------------------------------------
 
     _recordId = null;
+    _recordDate = null;
     _scanStartTime = null;
   }
 
