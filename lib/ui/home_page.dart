@@ -1,6 +1,11 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'package:path/path.dart' as path;
+import 'package:path_provider/path_provider.dart';
+import 'dart:io';
+import 'package:share_plus/share_plus.dart';
+
 import '../pages/settings_page.dart';
 import '../pages/stats_page.dart';
 import 'package:flutter/material.dart';
@@ -223,23 +228,82 @@ class _HomePageState extends State<HomePage> {
 
   Future<void> exportDb() async {
     try {
-      String? dir = await FilePicker.platform.getDirectoryPath();
-      if (dir == null) return;
-
       final db = await DatabaseHelper.database;
       final File dbFile = File(db.path);
 
-      final String target = '$dir/dabirkhane.sqlite';
-
-      if (await File(target).exists()) {
-        await File(target).delete();
+      if (!await dbFile.exists()) {
+        showMessage('خطا', 'فایل دیتابیس پیدا نشد.');
+        return;
       }
 
-      await dbFile.copy(target);
+      // ---------------------------------------------
+      // Android
+      // ---------------------------------------------
+      if (Platform.isAndroid) {
+        final tempDir = await getTemporaryDirectory();
 
-      showMessage('موفقیت', 'دیتابیس با موفقیت ذخیره شد.');
+        final backupFile = File(
+          path.join(tempDir.path, 'dabirkhane_backup.sqlite'),
+        );
+
+        // اگر فایل قبلی وجود دارد حذف شود
+        if (await backupFile.exists()) {
+          await backupFile.delete();
+        }
+
+        // ساخت کپی از دیتابیس
+        await dbFile.copy(backupFile.path);
+
+        // اشتراک‌گذاری
+        await Share.shareXFiles(
+          [XFile(backupFile.path, mimeType: 'application/x-sqlite3')],
+          subject: 'پشتیبان دیتابیس دبیرخانه',
+          text: 'فایل پشتیبان دیتابیس دبیرخانه',
+        );
+
+        // پاک کردن فایل موقت
+        if (await backupFile.exists()) {
+          await backupFile.delete();
+        }
+
+        return;
+      }
+
+      // ---------------------------------------------
+      // Windows
+      // ---------------------------------------------
+      if (Platform.isWindows) {
+        final String? dir = await FilePicker.platform.getDirectoryPath();
+
+        if (dir == null) {
+          return;
+        }
+
+        final String target = path.join(dir, 'dabirkhane.sqlite');
+
+        final File targetFile = File(target);
+
+        if (await targetFile.exists()) {
+          await targetFile.delete();
+        }
+
+        await dbFile.copy(target);
+
+        showMessage(
+          'موفقیت',
+          'پشتیبان دیتابیس با موفقیت ذخیره شد.\n\n'
+              '$target',
+        );
+
+        return;
+      }
+
+      // ---------------------------------------------
+      // سایر پلتفرم‌ها
+      // ---------------------------------------------
+      showMessage('خطا', 'پشتیبان‌گیری در این پلتفرم پشتیبانی نمی‌شود.');
     } catch (e) {
-      showMessage('خطا', 'خطا در اکسپورت دیتابیس:\n$e');
+      showMessage('خطا', 'خطا در پشتیبان‌گیری دیتابیس:\n$e');
     }
   }
 
