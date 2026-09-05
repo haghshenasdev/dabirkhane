@@ -73,13 +73,9 @@ class ScanService {
 
       final result = ScanResult(
         success: arguments['success'] == true,
-
         cancelled: arguments['cancelled'] == true,
-
         recordId: arguments['record_id']?.toString(),
-
         filePath: arguments['file_path']?.toString(),
-
         mimeType: arguments['mime_type']?.toString(),
       );
 
@@ -93,7 +89,6 @@ class ScanService {
 
   static Future<void> startScan(String recordId) async {
     _recordId = recordId;
-
     _scanStartTime = DateTime.now();
 
     // شماره نامه داخل Clipboard
@@ -111,7 +106,6 @@ class ScanService {
 
     if (scannerType == AppSettings.scannerFastScanner) {
       await _startFastScanner(recordId);
-
       return;
     }
 
@@ -131,16 +125,11 @@ class ScanService {
 
     final intent = AndroidIntent(
       action: _fastScannerAction,
-
       package: _fastScannerPackage,
-
       componentName: 'ir.haghshenas.fastscanner.MainActivity',
-
       arguments: {
         'record_id': recordId,
-
         'return_package': 'com.example.dabirkhane',
-
         'return_action': _scanResultAction,
       },
     );
@@ -167,9 +156,7 @@ class ScanService {
 
       intent = const AndroidIntent(
         action: 'android.intent.action.MAIN',
-
         package: 'com.intsig.camscanner',
-
         componentName: 'com.intsig.camscanner.capture.CaptureActivity',
       );
     } else {
@@ -179,9 +166,7 @@ class ScanService {
 
       intent = const AndroidIntent(
         action: 'android.intent.action.MAIN',
-
         package: 'com.intsig.camscanner',
-
         componentName:
             'com.intsig.camscanner.mainmenu.mainactivity.MainActivity',
       );
@@ -293,18 +278,30 @@ class ScanService {
 
     // ----------------------------------------------------------
     // نام فایل
+    //
+    // مثل CamScanner:
+    //
+    // 12345.jpg
+    // 12345_1.jpg
+    // 12345_2.jpg
+    // 12345_3.jpg
+    //
+    // اگر فایل اصلی وجود داشته باشد، فایل قبلی حذف نمی‌شود.
+    // اولین شماره آزاد انتخاب می‌شود.
     // ----------------------------------------------------------
 
-    var targetPath = path.join(lettersDir.path, '$recordId$extension');
+    var targetName = '$recordId$extension';
 
-    var targetFile = File(targetPath);
+    var targetFile = File(path.join(lettersDir.path, targetName));
 
-    // ----------------------------------------------------------
-    // اگر فایل قبلی وجود داشت
-    // ----------------------------------------------------------
+    int counter = 1;
 
-    if (await targetFile.exists()) {
-      await targetFile.delete();
+    while (await targetFile.exists()) {
+      targetName = '${recordId}_$counter$extension';
+
+      targetFile = File(path.join(lettersDir.path, targetName));
+
+      counter++;
     }
 
     // ----------------------------------------------------------
@@ -336,7 +333,6 @@ class ScanService {
     // ----------------------------------------------------------
 
     _recordId = null;
-
     _scanStartTime = null;
   }
 
@@ -346,7 +342,6 @@ class ScanService {
 
   static Future<bool> processReturnedScan() async {
     // این قسمت فقط برای CamScanner است
-
     if (_recordId == null || _scanStartTime == null) {
       return false;
     }
@@ -398,7 +393,6 @@ class ScanService {
     // ----------------------------------------------------------
 
     _recordId = null;
-
     _scanStartTime = null;
 
     return true;
@@ -538,9 +532,7 @@ class ScanService {
 
   static void cancel() {
     _recordId = null;
-
     _scanStartTime = null;
-
     _waitingForFastScanner = false;
   }
 
