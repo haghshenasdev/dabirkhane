@@ -45,6 +45,22 @@ class _HomePageState extends State<HomePage> {
   List<String> categoryFilterSuggestions = [];
   Timer? _debounceCategoryFilter;
 
+  @override
+  void dispose() {
+    _debounce?.cancel();
+    _debounceCategoryFilter?.cancel();
+
+    _scrollController.dispose();
+
+    fromDateController.dispose();
+    toDateController.dispose();
+    onvanController.dispose();
+    _controller.dispose();
+    categoryFilterController.dispose();
+
+    super.dispose();
+  }
+
   Future<void> loadMore({bool reset = false}) async {
     if (isLoading) return;
 
