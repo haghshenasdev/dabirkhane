@@ -2,6 +2,7 @@ import 'dart:io';
 import 'package:dabirkhane/db/database_helper.dart';
 import 'package:dabirkhane/utils/CamScannerPathsTile.dart';
 import 'package:dabirkhane/utils/ScannerTypeTile.dart';
+import 'package:dabirkhane/utils/app_settings.dart';
 
 import '../providers/theme_provider.dart';
 import '../utils/LettersPathTile.dart';
@@ -154,7 +155,7 @@ class SettingsPage extends StatelessWidget {
 
           const Divider(),
 
-          _sectionTitle('فایل‌ها'), 
+          _sectionTitle('فایل‌ها'),
           const LettersPathTile(),
           const Divider(),
           _sectionTitle('دیتابیس'),
@@ -170,6 +171,14 @@ class SettingsPage extends StatelessWidget {
           const ScannerTypeTile(),
           const Divider(),
           const CamScannerPathsTile(),
+
+          const Divider(),
+
+          _sectionTitle('پیشنهاد تکمیل فرم'),
+
+          const FormSuggestionsSettings(),
+
+          const Divider(),
 
           const Divider(),
 
@@ -254,6 +263,139 @@ class DarkModeTile extends StatelessWidget {
       onChanged: (value) {
         context.read<ThemeProvider>().toggleDark(value);
       },
+    );
+  }
+}
+
+class FormSuggestionsSettings extends StatefulWidget {
+  const FormSuggestionsSettings({super.key});
+
+  @override
+  State<FormSuggestionsSettings> createState() =>
+      _FormSuggestionsSettingsState();
+}
+
+class _FormSuggestionsSettingsState
+    extends State<FormSuggestionsSettings> {
+  bool sahebName = true;
+  bool guy = true;
+  bool onvan = true;
+  bool category = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadSettings();
+  }
+
+  Future<void> _loadSettings() async {
+    final values = await Future.wait([
+      AppSettings.getFormSuggestionsEnabled('saheb_name'),
+      AppSettings.getFormSuggestionsEnabled('guy'),
+      AppSettings.getFormSuggestionsEnabled('onvan'),
+      AppSettings.getFormSuggestionsEnabled('category'),
+    ]);
+
+    if (!mounted) return;
+
+    setState(() {
+      sahebName = values[0];
+      guy = values[1];
+      onvan = values[2];
+      category = values[3];
+    });
+  }
+
+  Future<void> _setValue(
+    String field,
+    bool value,
+  ) async {
+    await AppSettings.setFormSuggestionsEnabled(
+      field,
+      value,
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      children: [
+        SwitchListTile(
+          secondary: const Icon(Icons.person_search),
+          title: const Text('پیشنهاد صاحب نامه'),
+          subtitle: const Text(
+            'نمایش پیشنهادهای قبلی هنگام وارد کردن صاحب نامه',
+          ),
+          value: sahebName,
+          onChanged: (value) async {
+            setState(() {
+              sahebName = value;
+            });
+
+            await _setValue(
+              'saheb_name',
+              value,
+            );
+          },
+        ),
+
+        SwitchListTile(
+          secondary: const Icon(Icons.topic),
+          title: const Text('پیشنهاد موضوع'),
+          subtitle: const Text(
+            'نمایش موضوعات قبلی هنگام وارد کردن موضوع',
+          ),
+          value: guy,
+          onChanged: (value) async {
+            setState(() {
+              guy = value;
+            });
+
+            await _setValue(
+              'guy',
+              value,
+            );
+          },
+        ),
+
+        SwitchListTile(
+          secondary: const Icon(Icons.person_outline),
+          title: const Text('پیشنهاد گیرنده نامه'),
+          subtitle: const Text(
+            'نمایش گیرنده‌های قبلی هنگام وارد کردن گیرنده',
+          ),
+          value: onvan,
+          onChanged: (value) async {
+            setState(() {
+              onvan = value;
+            });
+
+            await _setValue(
+              'onvan',
+              value,
+            );
+          },
+        ),
+
+        SwitchListTile(
+          secondary: const Icon(Icons.category_outlined),
+          title: const Text('پیشنهاد دسته‌بندی'),
+          subtitle: const Text(
+            'نمایش دسته‌بندی‌های قبلی هنگام انتخاب دسته‌بندی',
+          ),
+          value: category,
+          onChanged: (value) async {
+            setState(() {
+              category = value;
+            });
+
+            await _setValue(
+              'category',
+              value,
+            );
+          },
+        ),
+      ],
     );
   }
 }

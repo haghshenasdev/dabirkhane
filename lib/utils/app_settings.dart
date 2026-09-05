@@ -11,19 +11,73 @@ class AppSettings {
   static const String _scannerTypeKey = 'scanner_type';
 
   static const String scannerCamScanner = 'camscanner';
-static const String scannerFastScanner = 'fastscanner';
+  static const String scannerFastScanner = 'fastscanner';
 
-static Future<String> getScannerType() async {
-  final prefs = await SharedPreferences.getInstance();
+  static Future<String> getScannerType() async {
+    final prefs = await SharedPreferences.getInstance();
 
-  return prefs.getString(_scannerTypeKey) ?? scannerCamScanner;
-}
+    return prefs.getString(_scannerTypeKey) ?? scannerCamScanner;
+  }
 
-static Future<void> setScannerType(String value) async {
-  final prefs = await SharedPreferences.getInstance();
+  static Future<void> setScannerType(String value) async {
+    final prefs = await SharedPreferences.getInstance();
 
-  await prefs.setString(_scannerTypeKey, value);
-}
+    await prefs.setString(_scannerTypeKey, value);
+  }
+
+  static const String _suggestionsSahebNameKey = 'form_suggestions_saheb_name';
+
+  static const String _suggestionsGuyKey = 'form_suggestions_guy';
+
+  static const String _suggestionsOnvanKey = 'form_suggestions_onvan';
+
+  static const String _suggestionsCategoryKey = 'form_suggestions_category';
+
+  static Future<bool> getFormSuggestionsEnabled(String field) async {
+    final prefs = await SharedPreferences.getInstance();
+
+    switch (field) {
+      case 'saheb_name':
+        return prefs.getBool(_suggestionsSahebNameKey) ?? true;
+
+      case 'guy':
+        return prefs.getBool(_suggestionsGuyKey) ?? true;
+
+      case 'onvan':
+        return prefs.getBool(_suggestionsOnvanKey) ?? true;
+
+      case 'category':
+        return prefs.getBool(_suggestionsCategoryKey) ?? true;
+
+      default:
+        return true;
+    }
+  }
+
+  static Future<void> setFormSuggestionsEnabled(
+    String field,
+    bool value,
+  ) async {
+    final prefs = await SharedPreferences.getInstance();
+
+    switch (field) {
+      case 'saheb_name':
+        await prefs.setBool(_suggestionsSahebNameKey, value);
+        break;
+
+      case 'guy':
+        await prefs.setBool(_suggestionsGuyKey, value);
+        break;
+
+      case 'onvan':
+        await prefs.setBool(_suggestionsOnvanKey, value);
+        break;
+
+      case 'category':
+        await prefs.setBool(_suggestionsCategoryKey, value);
+        break;
+    }
+  }
 
   static const String defaultCamScannerPath1 =
       "/storage/emulated/0/DCIM/CamScanner";

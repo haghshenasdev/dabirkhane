@@ -40,6 +40,11 @@ class _RecordFormState extends State<RecordForm>
 
   late TabController _tabController;
 
+  bool _sahebNameSuggestionsEnabled = true;
+  bool _guySuggestionsEnabled = true;
+  bool _onvanSuggestionsEnabled = true;
+  bool _categorySuggestionsEnabled = true;
+
   // ============================================================
   // Suggestions
   // ============================================================
@@ -133,6 +138,8 @@ class _RecordFormState extends State<RecordForm>
 
     _scanSubscription = ScanService.results.listen(_onScanResult);
 
+    _loadSuggestionSettings();
+
     for (final field in [...mainFields, ...otherFields]) {
       c[field] = TextEditingController(
         text: widget.record?[field]?.toString() ?? '',
@@ -147,6 +154,24 @@ class _RecordFormState extends State<RecordForm>
       _loadFiles();
       _loadCategories();
     }
+  }
+
+  Future<void> _loadSuggestionSettings() async {
+    final values = await Future.wait([
+      AppSettings.getFormSuggestionsEnabled('saheb_name'),
+      AppSettings.getFormSuggestionsEnabled('guy'),
+      AppSettings.getFormSuggestionsEnabled('onvan'),
+      AppSettings.getFormSuggestionsEnabled('category'),
+    ]);
+
+    if (!mounted) return;
+
+    setState(() {
+      _sahebNameSuggestionsEnabled = values[0];
+      _guySuggestionsEnabled = values[1];
+      _onvanSuggestionsEnabled = values[2];
+      _categorySuggestionsEnabled = values[3];
+    });
   }
 
   Future<void> _onScanResult(ScanResult result) async {
@@ -639,14 +664,18 @@ class _RecordFormState extends State<RecordForm>
       onChanged: (value) {
         _debounceGuy?.cancel();
 
-        _debounceGuy = Timer(const Duration(milliseconds: 300), () async {
-          if (value.trim().isEmpty) {
-            if (!mounted) return;
-
+        if (!_guySuggestionsEnabled) {
+          if (guySuggestions.isNotEmpty) {
             setState(() {
               guySuggestions.clear();
             });
+          }
+          return;
+        }
 
+        _debounceGuy = Timer(const Duration(milliseconds: 300), () async {
+          if (value.trim().isEmpty) {
+            setState(() => guySuggestions.clear());
             return;
           }
 
@@ -655,7 +684,7 @@ class _RecordFormState extends State<RecordForm>
             value.trim(),
           );
 
-          if (!mounted) return;
+          if (!mounted || !_guySuggestionsEnabled) return;
 
           setState(() {
             guySuggestions = res;
@@ -686,14 +715,18 @@ class _RecordFormState extends State<RecordForm>
       onChanged: (value) {
         _debounceOnvan?.cancel();
 
-        _debounceOnvan = Timer(const Duration(milliseconds: 300), () async {
-          if (value.trim().isEmpty) {
-            if (!mounted) return;
-
+        if (!_onvanSuggestionsEnabled) {
+          if (onvanSuggestions.isNotEmpty) {
             setState(() {
               onvanSuggestions.clear();
             });
+          }
+          return;
+        }
 
+        _debounceOnvan = Timer(const Duration(milliseconds: 300), () async {
+          if (value.trim().isEmpty) {
+            setState(() => onvanSuggestions.clear());
             return;
           }
 
@@ -702,7 +735,7 @@ class _RecordFormState extends State<RecordForm>
             value.trim(),
           );
 
-          if (!mounted) return;
+          if (!mounted || !_onvanSuggestionsEnabled) return;
 
           setState(() {
             onvanSuggestions = res;
@@ -817,10 +850,28 @@ class _RecordFormState extends State<RecordForm>
             onChanged: (value) {
               _debounce?.cancel();
 
+              if (!_sahebNameSuggestionsEnabled) {
+                if (sahebSuggestions.isNotEmpty) {
+                  setState(() {
+                    sahebSuggestions.clear();
+                  });
+                }
+                return;
+              }
+
               _debounce = Timer(const Duration(milliseconds: 400), () async {
+                if (value.trim().isEmpty) {
+                  setState(() {
+                    sahebSuggestions.clear();
+                  });
+                  return;
+                }
+
                 final res = await DatabaseHelper.searchSahebName(value.trim());
 
-                if (!mounted) return;
+                if (!mounted || !_sahebNameSuggestionsEnabled) {
+                  return;
+                }
 
                 setState(() {
                   sahebSuggestions = res;
@@ -957,20 +1008,24 @@ class _RecordFormState extends State<RecordForm>
             ),
             textDirection: TextDirection.rtl,
             onChanged: (value) {
-              setState(() {});
-
               _debounceCategory?.cancel();
+
+              if (!_categorySuggestionsEnabled) {
+                if (categorySuggestions.isNotEmpty) {
+                  setState(() {
+                    categorySuggestions.clear();
+                  });
+                }
+                return;
+              }
 
               _debounceCategory = Timer(
                 const Duration(milliseconds: 300),
                 () async {
                   if (value.trim().isEmpty) {
-                    if (!mounted) return;
-
                     setState(() {
                       categorySuggestions.clear();
                     });
-
                     return;
                   }
 
@@ -978,7 +1033,9 @@ class _RecordFormState extends State<RecordForm>
                     value.trim(),
                   );
 
-                  if (!mounted) return;
+                  if (!mounted || !_categorySuggestionsEnabled) {
+                    return;
+                  }
 
                   setState(() {
                     categorySuggestions = res;
