@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:dabirkhane/providers/scan_service.dart';
+import 'package:dabirkhane/utils/letter_file_organizer.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
@@ -371,6 +372,18 @@ class _RecordFormState extends State<RecordForm>
       await lettersDir.create(recursive: true);
     }
 
+    final date = c['date']?.text.trim() ?? '';
+
+    final targetDirectory = await LetterFileOrganizer.getDirectoryForDate(date);
+
+    if (targetDirectory == null) {
+      _showMessage(
+        'تاریخ نامه معتبر نیست.\n'
+        'لطفاً تاریخ را به صورت 1405/01/01 وارد کنید.',
+      );
+      return;
+    }
+
     for (final file in result.files) {
       if (file.path == null) continue;
 
@@ -380,14 +393,14 @@ class _RecordFormState extends State<RecordForm>
 
       String targetName = '$shomareRadif$ext';
 
-      File targetFile = File(path.join(lettersDir.path, targetName));
+      File targetFile = File(path.join(targetDirectory.path, targetName));
 
       int index = 1;
 
       while (await targetFile.exists()) {
         targetName = '${shomareRadif}_$index$ext';
 
-        targetFile = File(path.join(lettersDir.path, targetName));
+        targetFile = File(path.join(targetDirectory.path, targetName));
 
         index++;
       }
@@ -593,7 +606,7 @@ class _RecordFormState extends State<RecordForm>
     try {
       await ScanService.deleteOldScans(int.parse(id));
 
-      await ScanService.startScan(id);
+      await ScanService.startScan(id,c['date']?.text.trim(),);
     } catch (e) {
       debugPrint('Open Scanner Error: $e');
 

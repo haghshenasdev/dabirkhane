@@ -3,6 +3,7 @@ import 'package:dabirkhane/db/database_helper.dart';
 import 'package:dabirkhane/utils/CamScannerPathsTile.dart';
 import 'package:dabirkhane/utils/ScannerTypeTile.dart';
 import 'package:dabirkhane/utils/app_settings.dart';
+import 'package:dabirkhane/utils/letter_file_organizer.dart';
 
 import '../providers/theme_provider.dart';
 import '../utils/LettersPathTile.dart';
@@ -135,6 +136,129 @@ class SettingsPage extends StatelessWidget {
     return dir;
   }
 
+  Future<void> organizeLetterFiles(BuildContext context) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          title: const Text('مرتب‌سازی فایل‌های نامه'),
+          content: const Text(
+            'تمام فایل‌های موجود در پوشه نامه‌ها '
+            'بر اساس تاریخ ثبت‌شده در دیتابیس مرتب می‌شوند.\n\n'
+            'ساختار پوشه‌ها به صورت سال / ماه خواهد بود.\n\n'
+            'آیا ادامه می‌دهید؟',
+            textDirection: TextDirection.rtl,
+          ),
+          actions: [
+            TextButton(
+              onPressed: () {
+                Navigator.pop(context, false);
+              },
+              child: const Text('انصراف'),
+            ),
+            FilledButton(
+              onPressed: () {
+                Navigator.pop(context, true);
+              },
+              child: const Text('مرتب‌سازی'),
+            ),
+          ],
+        );
+      },
+    );
+
+    if (confirmed != true) {
+      return;
+    }
+
+    if (!context.mounted) return;
+
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) {
+        return const AlertDialog(
+          content: Row(
+            children: [
+              SizedBox(
+                width: 24,
+                height: 24,
+                child: CircularProgressIndicator(),
+              ),
+              SizedBox(width: 20),
+              Expanded(
+                child: Text(
+                  'در حال مرتب‌سازی فایل‌ها...',
+                  textDirection: TextDirection.rtl,
+                ),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+
+    try {
+      final result = await LetterFileOrganizer.organizeAll();
+
+      if (context.mounted) {
+        Navigator.pop(context);
+      }
+
+      if (!context.mounted) return;
+
+      showDialog(
+        context: context,
+        builder: (_) {
+          return AlertDialog(
+            title: const Text('مرتب‌سازی انجام شد'),
+            content: Text(
+              'فایل‌های منتقل‌شده: ${result.moved}\n'
+              'فایل‌های ردشده: ${result.skipped}\n'
+              'خطاها: ${result.errors}',
+              textDirection: TextDirection.rtl,
+            ),
+            actions: [
+              TextButton(
+                onPressed: () {
+                  Navigator.pop(context);
+                },
+                child: const Text('باشه'),
+              ),
+            ],
+          );
+        },
+      );
+    } catch (e) {
+      if (context.mounted) {
+        Navigator.pop(context);
+      }
+
+      if (!context.mounted) return;
+
+      showDialog(
+        context: context,
+        builder: (_) {
+          return AlertDialog(
+            title: const Text('خطا'),
+            content: Text(
+              'مرتب‌سازی فایل‌ها با خطا مواجه شد:\n\n$e',
+              textDirection: TextDirection.rtl,
+            ),
+            actions: [
+              TextButton(
+                onPressed: () {
+                  Navigator.pop(context);
+                },
+                child: const Text('باشه'),
+              ),
+            ],
+          );
+        },
+      );
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -156,7 +280,21 @@ class SettingsPage extends StatelessWidget {
           const Divider(),
 
           _sectionTitle('فایل‌ها'),
+
           const LettersPathTile(),
+
+          ListTile(
+            leading: const Icon(Icons.folder_copy_outlined),
+            title: const Text('مرتب‌سازی فایل‌های نامه‌ها'),
+            subtitle: const Text(
+              'دسته‌بندی فایل‌ها بر اساس سال و ماه ثبت نامه',
+            ),
+            trailing: const Icon(Icons.chevron_left),
+            onTap: () {
+              organizeLetterFiles(context);
+            },
+          ),
+
           const Divider(),
           _sectionTitle('دیتابیس'),
           ListTile(
@@ -275,8 +413,7 @@ class FormSuggestionsSettings extends StatefulWidget {
       _FormSuggestionsSettingsState();
 }
 
-class _FormSuggestionsSettingsState
-    extends State<FormSuggestionsSettings> {
+class _FormSuggestionsSettingsState extends State<FormSuggestionsSettings> {
   bool sahebName = true;
   bool guy = true;
   bool onvan = true;
@@ -306,14 +443,8 @@ class _FormSuggestionsSettingsState
     });
   }
 
-  Future<void> _setValue(
-    String field,
-    bool value,
-  ) async {
-    await AppSettings.setFormSuggestionsEnabled(
-      field,
-      value,
-    );
+  Future<void> _setValue(String field, bool value) async {
+    await AppSettings.setFormSuggestionsEnabled(field, value);
   }
 
   @override
@@ -332,48 +463,35 @@ class _FormSuggestionsSettingsState
               sahebName = value;
             });
 
-            await _setValue(
-              'saheb_name',
-              value,
-            );
+            await _setValue('saheb_name', value);
           },
         ),
 
         SwitchListTile(
           secondary: const Icon(Icons.topic),
           title: const Text('پیشنهاد موضوع'),
-          subtitle: const Text(
-            'نمایش موضوعات قبلی هنگام وارد کردن موضوع',
-          ),
+          subtitle: const Text('نمایش موضوعات قبلی هنگام وارد کردن موضوع'),
           value: guy,
           onChanged: (value) async {
             setState(() {
               guy = value;
             });
 
-            await _setValue(
-              'guy',
-              value,
-            );
+            await _setValue('guy', value);
           },
         ),
 
         SwitchListTile(
           secondary: const Icon(Icons.person_outline),
           title: const Text('پیشنهاد گیرنده نامه'),
-          subtitle: const Text(
-            'نمایش گیرنده‌های قبلی هنگام وارد کردن گیرنده',
-          ),
+          subtitle: const Text('نمایش گیرنده‌های قبلی هنگام وارد کردن گیرنده'),
           value: onvan,
           onChanged: (value) async {
             setState(() {
               onvan = value;
             });
 
-            await _setValue(
-              'onvan',
-              value,
-            );
+            await _setValue('onvan', value);
           },
         ),
 
@@ -389,10 +507,7 @@ class _FormSuggestionsSettingsState
               category = value;
             });
 
-            await _setValue(
-              'category',
-              value,
-            );
+            await _setValue('category', value);
           },
         ),
       ],

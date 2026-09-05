@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:android_intent_plus/android_intent.dart';
+import 'package:dabirkhane/utils/letter_file_organizer.dart';
 import 'package:flutter/services.dart';
 import 'package:path/path.dart' as path;
 
@@ -87,8 +88,11 @@ class ScanService {
   // شروع اسکن
   // ============================================================
 
-  static Future<void> startScan(String recordId) async {
+  static String? _recordDate;
+
+  static Future<void> startScan(String recordId, String? date) async {
     _recordId = recordId;
+    _recordDate = date;
     _scanStartTime = DateTime.now();
 
     // شماره نامه داخل Clipboard
@@ -358,6 +362,14 @@ class ScanService {
       await lettersDir.create(recursive: true);
     }
 
+    final targetDirectory = await LetterFileOrganizer.getDirectoryForDate(
+      _recordDate ?? '',
+    );
+
+    if (targetDirectory == null) {
+      return false;
+    }
+
     int counter = 0;
 
     for (final file in files) {
@@ -371,7 +383,7 @@ class ScanService {
         targetName = '${_recordId}_$counter$extension';
       }
 
-      File targetFile = File(path.join(lettersDir.path, targetName));
+      File targetFile = File(path.join(targetDirectory.path, targetName));
 
       int index = counter;
 
@@ -393,6 +405,7 @@ class ScanService {
     // ----------------------------------------------------------
 
     _recordId = null;
+    _recordDate = null;
     _scanStartTime = null;
 
     return true;
@@ -532,6 +545,7 @@ class ScanService {
 
   static void cancel() {
     _recordId = null;
+    _recordDate = null;
     _scanStartTime = null;
     _waitingForFastScanner = false;
   }
@@ -547,7 +561,10 @@ class ScanService {
       return;
     }
 
-    await for (final entity in lettersDir.list()) {
+    await for (final entity in lettersDir.list(
+      recursive: true,
+      followLinks: false,
+    )) {
       if (entity is! File) {
         continue;
       }
