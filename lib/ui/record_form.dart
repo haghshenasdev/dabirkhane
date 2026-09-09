@@ -103,6 +103,7 @@ class _RecordFormState extends State<RecordForm>
   int? _savedRecordId;
   bool _autoSaveEnabled = false;
   bool _saveAndReturnAfterScan = false;
+  bool _hasActiveReminder = false;
 
   // ============================================================
   // Fields
@@ -162,6 +163,7 @@ class _RecordFormState extends State<RecordForm>
     _loadSuggestionSettings();
     _loadAutoSaveSetting();
     _loadScanSettings();
+    _loadReminderStatus();
 
     for (final field in [...mainFields, ...otherFields]) {
       c[field] = TextEditingController(
@@ -2842,34 +2844,47 @@ class _RecordFormState extends State<RecordForm>
   }
 
   Widget _buildReminderButton() {
+    final colorScheme = Theme.of(context).colorScheme;
+
+    final activeColor = colorScheme.primary;
+    final inactiveColor = colorScheme.onSurface.withOpacity(.50);
+
     return InkWell(
       borderRadius: BorderRadius.circular(14),
       onTap: _openReminderDialog,
       child: AnimatedContainer(
-        duration: const Duration(milliseconds: 250),
-        padding: const EdgeInsets.symmetric(horizontal: 13, vertical: 8),
+        duration: const Duration(milliseconds: 220),
+        padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 7),
         decoration: BoxDecoration(
-          color: Theme.of(context).colorScheme.primary.withOpacity(0.10),
+          color: _hasActiveReminder
+              ? activeColor.withOpacity(.10)
+              : Colors.black.withOpacity(.035),
           borderRadius: BorderRadius.circular(14),
           border: Border.all(
-            color: Theme.of(context).colorScheme.primary.withOpacity(0.22),
+            color: _hasActiveReminder
+                ? activeColor.withOpacity(.25)
+                : Colors.black.withOpacity(.07),
           ),
         ),
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
             Icon(
-              Icons.notifications_none_rounded,
-              size: 20,
-              color: Theme.of(context).colorScheme.primary,
+              _hasActiveReminder
+                  ? Icons.notifications_active_rounded
+                  : Icons.notifications_none_rounded,
+              size: 18,
+              color: _hasActiveReminder ? activeColor : inactiveColor,
             ),
             const SizedBox(width: 6),
             Text(
-              'یادآور',
+              _hasActiveReminder ? 'یادآور فعال' : 'یادآور',
               style: TextStyle(
-                fontSize: 13,
+                fontSize: 11,
                 fontWeight: FontWeight.w600,
-                color: Theme.of(context).colorScheme.primary,
+                color: _hasActiveReminder
+                    ? activeColor
+                    : colorScheme.onSurface.withOpacity(.58),
               ),
             ),
           ],
@@ -2922,6 +2937,9 @@ class _RecordFormState extends State<RecordForm>
         return ReminderDialog(recordId: recordId!, letterDate: letterDate);
       },
     );
+
+    // وضعیت یادآور بعد از اضافه/حذف یادآور دوباره بررسی شود.
+    await _loadReminderStatus();
   }
 
   DateTime? _parseLetterDate(String value) {
@@ -2942,6 +2960,43 @@ class _RecordFormState extends State<RecordForm>
     } catch (e) {
       debugPrint('Parse letter date error: $e');
       return null;
+    }
+  }
+
+  Future<void> _loadReminderStatus() async {
+    int? recordId = _savedRecordId;
+
+    if (recordId == null && widget.record != null) {
+      final value = widget.record!['Shomare_Radif'];
+
+      if (value != null) {
+        recordId = value is int ? value : int.tryParse(value.toString());
+      }
+    }
+
+    if (recordId == null) {
+      if (!mounted) return;
+
+      setState(() {
+        _hasActiveReminder = false;
+      });
+
+      return;
+    }
+
+    try {
+      final reminders = await DatabaseHelper.getPendingRemindersForRecord(
+        recordId,
+      );
+
+      if (!mounted) return;
+
+      setState(() {
+        _hasActiveReminder = reminders.isNotEmpty;
+      });
+    } catch (e, stackTrace) {
+      debugPrint('load reminder status error: $e');
+      debugPrintStack(stackTrace: stackTrace);
     }
   }
 
