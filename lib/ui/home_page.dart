@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'package:dabirkhane/utils/glass_toast.dart';
 import 'package:path/path.dart' as path;
 import 'package:path_provider/path_provider.dart';
 import 'dart:io';
@@ -515,13 +516,32 @@ class _HomePageState extends State<HomePage> {
               icon: const Icon(Icons.add),
               label: const Text("ثبت نامه"),
               onPressed: () async {
-                final id = await Navigator.push<int>(
+                final result = await Navigator.push<Map<String, dynamic>>(
                   context,
-                  MaterialPageRoute(builder: (_) => RecordForm()),
+                  MaterialPageRoute(builder: (_) => const RecordForm()),
                 );
 
-                if (id != null) {
-                  await _refreshAfterRecordSaved();
+                if (result != null) {
+                  final int? id = result['id'] as int?;
+                  final bool scanned = result['scanned'] == true;
+
+                  if (id != null) {
+                    await _refreshAfterRecordSaved();
+
+                    if (!mounted) return;
+
+                    if (scanned) {
+                      GlassToast.show(
+                        context,
+                        'فایل اسکن شده و تغییرات نامه با موفقیت ذخیره شد.',
+                      );
+                    } else {
+                      GlassToast.show(
+                        context,
+                        'تغییرات نامه با موفقیت ذخیره شد.',
+                      );
+                    }
+                  }
                 }
               },
             ),
@@ -1009,13 +1029,32 @@ class _HomePageState extends State<HomePage> {
                 }
               });
             } else {
-              final id = await Navigator.push<int>(
+              final result = await Navigator.push<Map<String, dynamic>>(
                 context,
                 MaterialPageRoute(builder: (_) => RecordForm(record: r)),
               );
 
-              if (id != null) {
-                await _refreshAfterRecordSaved();
+              if (result != null) {
+                final int? id = result['id'] as int?;
+                final bool scanned = result['scanned'] == true;
+
+                if (id != null) {
+                  await _refreshAfterRecordSaved();
+
+                  if (!mounted) return;
+
+                  if (scanned) {
+                    GlassToast.show(
+                      context,
+                      'فایل اسکن شده و تغییرات نامه با موفقیت ذخیره شد.',
+                    );
+                  } else {
+                    GlassToast.show(
+                      context,
+                      'تغییرات نامه با موفقیت ذخیره شد.',
+                    );
+                  }
+                }
               }
             }
           },
@@ -1410,7 +1449,6 @@ class _HomePageState extends State<HomePage> {
         // برای دریافت وجود داشته باشد.
         hasMore = true;
       });
-
     } catch (e, stackTrace) {
       debugPrint('❌ _refreshAfterRecordSaved error: $e');
       debugPrintStack(stackTrace: stackTrace);

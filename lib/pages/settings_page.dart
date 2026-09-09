@@ -309,6 +309,7 @@ class SettingsPage extends StatelessWidget {
           const ScannerTypeTile(),
           const Divider(),
           const CamScannerPathsTile(),
+          const SaveAndReturnAfterScanTile(),
 
           const Divider(),
 
@@ -562,6 +563,56 @@ class _AutoSaveRecordFormTileState extends State<AutoSaveRecordFormTile> {
       title: const Text('ذخیره خودکار نامه'),
       subtitle: const Text(
         'هنگام خروج از فرم، تغییرات به صورت خودکار ذخیره می‌شوند',
+      ),
+      value: enabled,
+      onChanged: _setValue,
+    );
+  }
+}
+
+class SaveAndReturnAfterScanTile extends StatefulWidget {
+  const SaveAndReturnAfterScanTile({super.key});
+
+  @override
+  State<SaveAndReturnAfterScanTile> createState() =>
+      _SaveAndReturnAfterScanTileState();
+}
+
+class _SaveAndReturnAfterScanTileState
+    extends State<SaveAndReturnAfterScanTile> {
+  bool enabled = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  Future<void> _load() async {
+    final value = await AppSettings.getSaveAndReturnAfterScan();
+
+    if (!mounted) return;
+
+    setState(() {
+      enabled = value;
+    });
+  }
+
+  Future<void> _setValue(bool value) async {
+    setState(() {
+      enabled = value;
+    });
+
+    await AppSettings.setSaveAndReturnAfterScan(value);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return SwitchListTile(
+      secondary: const Icon(Icons.document_scanner_outlined),
+      title: const Text('ذخیره و بازگشت پس از اسکن'),
+      subtitle: const Text(
+        'پس از موفقیت اسکن، نامه ذخیره شده و فرم بسته می‌شود',
       ),
       value: enabled,
       onChanged: _setValue,

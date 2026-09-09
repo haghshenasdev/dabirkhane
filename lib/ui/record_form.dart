@@ -101,6 +101,7 @@ class _RecordFormState extends State<RecordForm>
   bool _isSaving = false;
   int? _savedRecordId;
   bool _autoSaveEnabled = false;
+  bool _saveAndReturnAfterScan = false;
 
   // ============================================================
   // Fields
@@ -159,6 +160,7 @@ class _RecordFormState extends State<RecordForm>
 
     _loadSuggestionSettings();
     _loadAutoSaveSetting();
+    _loadScanSettings();
 
     for (final field in [...mainFields, ...otherFields]) {
       c[field] = TextEditingController(
@@ -240,8 +242,16 @@ class _RecordFormState extends State<RecordForm>
       return true;
     }
 
+    // اگر ذخیره خودکار فعال باشد،
+    // هنگام خروج مستقیماً اطلاعات ذخیره می‌شود.
     if (_autoSaveEnabled) {
-      return await _saveDataOnly();
+      final saved = await _saveDataOnly();
+
+      if (saved) {
+        _ignoreWindowClose = true;
+      }
+
+      return saved;
     }
 
     final result = await showDialog<String>(
@@ -393,6 +403,16 @@ class _RecordFormState extends State<RecordForm>
     _handleWindowClose();
   }
 
+  Future<void> _loadScanSettings() async {
+    final value = await AppSettings.getSaveAndReturnAfterScan();
+
+    if (!mounted) return;
+
+    setState(() {
+      _saveAndReturnAfterScan = value;
+    });
+  }
+
   Future<void> _loadSuggestionSettings() async {
     final values = await Future.wait([
       AppSettings.getFormSuggestionsEnabled('saheb_name'),
@@ -428,22 +448,45 @@ class _RecordFormState extends State<RecordForm>
 
     if (result.cancelled) {
       _showMessage('اسکن لغو شد.');
-
       return;
     }
 
     if (!result.success) {
       _showMessage('اسکن با خطا پایان یافت.');
-
       return;
     }
 
+    // فایل‌های اسکن شده را دوباره بارگذاری می‌کنیم
     await _loadFiles();
 
     if (!mounted) {
       return;
     }
 
+    // اگر این گزینه فعال باشد،
+    // بعد از موفقیت اسکن، اطلاعات نامه ذخیره و فرم بسته می‌شود.
+    if (_saveAndReturnAfterScan) {
+      final saved = await _saveDataOnly();
+
+      if (!mounted) {
+        return;
+      }
+
+      if (!saved) {
+        // _saveDataOnly خودش پیام خطا را نمایش می‌دهد
+        return;
+      }
+
+      // به سیستم پنجره/PopScope اعلام می‌کنیم
+      // که بسته شدن فرم مجاز است.
+      _ignoreWindowClose = true;
+
+      Navigator.pop(context, {'id': _savedRecordId, 'scanned': true});
+
+      return;
+    }
+
+    // رفتار قبلی
     _showMessage('فایل اسکن شده با موفقیت اضافه شد.');
   }
 
@@ -748,7 +791,7 @@ class _RecordFormState extends State<RecordForm>
         ? widget.record!['Shomare_Radif']
         : int.parse(widget.record!['Shomare_Radif'].toString());
 
-    Navigator.pop(context, id);
+    Navigator.pop(context, {'id': id, 'scanned': false});
   }
 
   Future<void> saveAndStay() async {
@@ -2112,7 +2155,7 @@ class _RecordFormState extends State<RecordForm>
         if (!mounted || !shouldPop) return;
 
         _ignoreWindowClose = true;
-        Navigator.of(context).pop(_savedRecordId);
+        Navigator.of(context).pop({'id': _savedRecordId, 'scanned': false});
       },
       child: Scaffold(
         backgroundColor: const Color(0xffEEF3F8),

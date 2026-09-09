@@ -33,6 +33,20 @@ class AppSettings {
   static const String _suggestionsOnvanKey = 'form_suggestions_onvan';
 
   static const String _suggestionsCategoryKey = 'form_suggestions_category';
+  static const String _saveAndReturnAfterScanKey = 'save_and_return_after_scan';
+
+  static Future<bool> getSaveAndReturnAfterScan() async {
+    final prefs = await SharedPreferences.getInstance();
+
+    // پیش‌فرض خاموش باشد
+    return prefs.getBool(_saveAndReturnAfterScanKey) ?? false;
+  }
+
+  static Future<void> setSaveAndReturnAfterScan(bool value) async {
+    final prefs = await SharedPreferences.getInstance();
+
+    await prefs.setBool(_saveAndReturnAfterScanKey, value);
+  }
 
   static Future<bool> getAutoSaveRecordForm() async {
     final prefs = await SharedPreferences.getInstance();
