@@ -2130,6 +2130,8 @@ class _RecordFormState extends State<RecordForm>
 
           centerTitle: false,
 
+          actions: [_buildAutoSaveButton(), const SizedBox(width: 12)],
+
           bottom: PreferredSize(
             preferredSize: const Size.fromHeight(64),
             child: Padding(
@@ -2725,6 +2727,69 @@ class _RecordFormState extends State<RecordForm>
           ),
         ),
       );
+  }
+
+  Widget _buildAutoSaveButton() {
+    final colorScheme = Theme.of(context).colorScheme;
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 7),
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          borderRadius: BorderRadius.circular(14),
+          onTap: () async {
+            final newValue = !_autoSaveEnabled;
+
+            await AppSettings.setAutoSaveRecordForm(newValue);
+
+            if (!mounted) return;
+
+            setState(() {
+              _autoSaveEnabled = newValue;
+            });
+          },
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 220),
+            padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 7),
+            decoration: BoxDecoration(
+              color: _autoSaveEnabled
+                  ? colorScheme.primary.withOpacity(.10)
+                  : Colors.black.withOpacity(.035),
+              borderRadius: BorderRadius.circular(14),
+              border: Border.all(
+                color: _autoSaveEnabled
+                    ? colorScheme.primary.withOpacity(.25)
+                    : Colors.black.withOpacity(.07),
+              ),
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(
+                  _autoSaveEnabled ? Icons.save : Icons.save_outlined,
+                  size: 18,
+                  color: _autoSaveEnabled
+                      ? colorScheme.primary
+                      : colorScheme.onSurface.withOpacity(.50),
+                ),
+                const SizedBox(width: 6),
+                Text(
+                  _autoSaveEnabled ? 'ذخیره خودکار' : 'ذخیره خودکار خاموش',
+                  style: TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w600,
+                    color: _autoSaveEnabled
+                        ? colorScheme.primary
+                        : colorScheme.onSurface.withOpacity(.58),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
   }
 
   // ============================================================
