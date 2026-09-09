@@ -11,6 +11,7 @@ import 'package:open_file/open_file.dart';
 import 'package:shamsi_date/shamsi_date.dart';
 import 'package:path/path.dart' as path;
 import 'package:permission_handler/permission_handler.dart';
+import 'package:window_manager/window_manager.dart';
 
 import '../db/database_helper.dart';
 import '../utils/JalaliDateFormatter.dart';
@@ -26,7 +27,7 @@ class RecordForm extends StatefulWidget {
 }
 
 class _RecordFormState extends State<RecordForm>
-    with SingleTickerProviderStateMixin, WidgetsBindingObserver {
+    with SingleTickerProviderStateMixin, WidgetsBindingObserver, WindowListener {
   // ============================================================
   // Form
   // ============================================================
@@ -83,6 +84,19 @@ class _RecordFormState extends State<RecordForm>
 
   Map<String, dynamic>? lastRecord;
   String? lastInfoText;
+
+  // ============================================================
+  // Unsaved changes / Window close
+  // ============================================================
+
+  Map<String, String> _initialFieldValues = {};
+  List<String> _initialCategories = [];
+  String _initialCategoryInput = '';
+
+  bool _ignoreWindowClose = false;
+  bool _windowCloseDialogShowing = false;
+  bool _isSaving = false;
+  int? _savedRecordId;
 
   // ============================================================
   // Fields
@@ -152,9 +166,221 @@ class _RecordFormState extends State<RecordForm>
     if (widget.record == null) {
       _setInitialValues();
     } else {
+      _captureInitialState();
       _loadFiles();
       _loadCategories();
     }
+
+    _initWindowCloseProtection();
+  }
+
+  Future<void> _initWindowCloseProtection() async {
+    if (!Platform.isWindows) return;
+
+    try {
+      await windowManager.ensureInitialized();
+
+      if (!mounted) return;
+
+      windowManager.addListener(this);
+      await windowManager.setPreventClose(true);
+    } catch (e) {
+      debugPrint('Window close protection init error: $e');
+    }
+  }
+
+  Map<String, String> _getCurrentFieldValues() {
+    return {
+      for (final field in [...mainFields, ...otherFields])
+        field: c[field]?.text ?? '',
+    };
+  }
+
+  void _captureInitialState() {
+    _initialFieldValues = _getCurrentFieldValues();
+    _initialCategories = List<String>.from(selectedCategories);
+    _initialCategoryInput = categoryController.text;
+  }
+
+  void _captureSavedState() {
+    _captureInitialState();
+  }
+
+  bool get _hasUnsavedChanges {
+    for (final field in [...mainFields, ...otherFields]) {
+      if ((_initialFieldValues[field] ?? '') != (c[field]?.text ?? '')) {
+        return true;
+      }
+    }
+
+    if (_initialCategories.length != selectedCategories.length) {
+      return true;
+    }
+
+    for (int i = 0; i < selectedCategories.length; i++) {
+      if (selectedCategories[i] != _initialCategories[i]) {
+        return true;
+      }
+    }
+
+    if (_initialCategoryInput != categoryController.text) {
+      return true;
+    }
+
+    return false;
+  }
+
+  Future<bool> _confirmExit() async {
+    if (_ignoreWindowClose || !_hasUnsavedChanges) {
+      return true;
+    }
+
+    final result = await showDialog<String>(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) {
+        return _glassDialog(
+          title: 'تغییرات ذخیره نشده',
+          icon: Icons.warning_amber_rounded,
+          iconColor: Colors.orange,
+          content: const Text(
+            'شما تغییراتی در فرم ایجاد کرده‌اید که هنوز ذخیره نشده‌اند.\n\n'
+            'آیا می‌خواهید تغییرات را ذخیره کنید؟',
+            textDirection: TextDirection.rtl,
+            textAlign: TextAlign.right,
+            style: TextStyle(
+              fontSize: 13,
+              height: 1.7,
+            ),
+          ),
+          actions: [
+            _dialogButton(
+              label: 'ادامه ویرایش',
+              onPressed: () {
+                Navigator.pop(context, 'continue');
+              },
+            ),
+            _dialogButton(
+              label: 'صرف‌نظر',
+              danger: true,
+              onPressed: () {
+                Navigator.pop(context, 'discard');
+              },
+            ),
+            _dialogButton(
+              label: 'ذخیره',
+              onPressed: () {
+                Navigator.pop(context, 'save');
+              },
+            ),
+          ],
+        );
+      },
+    );
+
+    if (!mounted) return false;
+
+    switch (result) {
+      case 'discard':
+        _ignoreWindowClose = true;
+        return true;
+
+      case 'save':
+        final saved = await _saveDataOnly();
+        if (saved) {
+          _ignoreWindowClose = true;
+        }
+        return saved;
+
+      default:
+        return false;
+    }
+  }
+
+  Future<bool> _saveDataOnly() async {
+    if (!_formKey.currentState!.validate()) {
+      return false;
+    }
+
+    if (_isSaving) {
+      return false;
+    }
+
+    _isSaving = true;
+
+    try {
+      final data = {
+        for (final field in [...mainFields, ...otherFields])
+          field: c[field]!.text,
+      };
+
+      int id;
+
+      if (widget.record == null) {
+        id = await DatabaseHelper.insert(data);
+      } else {
+        id = widget.record!['Shomare_Radif'] is int
+            ? widget.record!['Shomare_Radif']
+            : int.parse(widget.record!['Shomare_Radif'].toString());
+
+        await DatabaseHelper.update(id, data);
+      }
+
+      await DatabaseHelper.saveCategoriesForRecord(
+        id.toString(),
+        List<String>.from(selectedCategories),
+      );
+
+      if (!mounted) return false;
+
+      _savedRecordId = id;
+      _captureSavedState();
+
+      return true;
+    } catch (e, stackTrace) {
+      debugPrint('saveDataOnly error: $e');
+      debugPrintStack(stackTrace: stackTrace);
+
+      if (mounted) {
+        _showMessage('خطا در ذخیره اطلاعات:\n$e');
+      }
+
+      return false;
+    } finally {
+      _isSaving = false;
+    }
+  }
+
+  Future<void> _handleWindowClose() async {
+    if (!mounted || _windowCloseDialogShowing) {
+      return;
+    }
+
+    if (_ignoreWindowClose) {
+      await windowManager.destroy();
+      return;
+    }
+
+    _windowCloseDialogShowing = true;
+
+    try {
+      final shouldClose = await _confirmExit();
+
+      if (!mounted) return;
+
+      if (shouldClose) {
+        _ignoreWindowClose = true;
+        await windowManager.destroy();
+      }
+    } finally {
+      _windowCloseDialogShowing = false;
+    }
+  }
+
+  @override
+  void onWindowClose() {
+    if (!Platform.isWindows) return;
+    _handleWindowClose();
   }
 
   Future<void> _loadSuggestionSettings() async {
@@ -205,13 +431,17 @@ class _RecordFormState extends State<RecordForm>
   // Initial values
   // ============================================================
 
-  void _setInitialValues() {
+  Future<void> _setInitialValues() async {
     final now = Jalali.now();
 
     c['date']!.text =
         '${now.year}/${now.month.toString().padLeft(2, '0')}/${now.day.toString().padLeft(2, '0')}';
 
-    _setDefaultShomareRadif();
+    await _setDefaultShomareRadif();
+
+    if (!mounted) return;
+
+    _captureInitialState();
   }
 
   Future<void> _setDefaultShomareRadif() async {
@@ -238,6 +468,8 @@ class _RecordFormState extends State<RecordForm>
     setState(() {
       selectedCategories = List<String>.from(cats);
     });
+
+    _initialCategories = List<String>.from(selectedCategories);
   }
 
   void _addCategory(String value) {
@@ -484,45 +716,19 @@ class _RecordFormState extends State<RecordForm>
   // ============================================================
 
   Future<void> save() async {
-    if (!_formKey.currentState!.validate()) {
-      return;
-    }
+    final saved = await _saveDataOnly();
 
-    try {
-      final data = {
-        for (final field in [...mainFields, ...otherFields])
-          field: c[field]!.text,
-      };
+    if (!saved || !mounted) return;
 
-      int id;
+    _ignoreWindowClose = true;
 
-      if (widget.record == null) {
-        id = await DatabaseHelper.insert(data);
-      } else {
-        id = widget.record!['Shomare_Radif'] is int
+    final id = widget.record == null
+        ? int.parse(c['Shomare_Radif']!.text)
+        : widget.record!['Shomare_Radif'] is int
             ? widget.record!['Shomare_Radif']
             : int.parse(widget.record!['Shomare_Radif'].toString());
 
-        await DatabaseHelper.update(id, data);
-      }
-
-      await DatabaseHelper.saveCategoriesForRecord(
-        id.toString(),
-        List<String>.from(selectedCategories),
-      );
-
-      if (!mounted) return;
-
-      Navigator.pop(context, id);
-    } catch (e, stackTrace) {
-      debugPrint('save error: $e');
-
-      debugPrintStack(stackTrace: stackTrace);
-
-      if (!mounted) return;
-
-      _showMessage('خطا در ذخیره اطلاعات:\n$e');
-    }
+    Navigator.pop(context, id);
   }
 
   Future<void> saveAndStay() async {
@@ -567,9 +773,10 @@ class _RecordFormState extends State<RecordForm>
         lastInfoText = null;
       });
 
-      _setInitialValues();
+      await _setInitialValues();
 
       c['date']?.text = lastDate;
+      _captureSavedState();
 
       Future.delayed(const Duration(milliseconds: 100), () {
         if (mounted) {
@@ -1875,8 +2082,20 @@ class _RecordFormState extends State<RecordForm>
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: const Color(0xffEEF3F8),
+    return PopScope(
+      canPop: false,
+      onPopInvokedWithResult: (didPop, result) async {
+        if (didPop || !mounted) return;
+
+        final shouldPop = await _confirmExit();
+
+        if (!mounted || !shouldPop) return;
+
+        _ignoreWindowClose = true;
+        Navigator.of(context).pop(_savedRecordId);
+      },
+      child: Scaffold(
+        backgroundColor: const Color(0xffEEF3F8),
 
       appBar: AppBar(
         elevation: 0,
@@ -1900,9 +2119,10 @@ class _RecordFormState extends State<RecordForm>
         ),
       ),
 
-      body: TabBarView(
-        controller: _tabController,
-        children: [_buildFormTab(), _buildFilesTab()],
+        body: TabBarView(
+          controller: _tabController,
+          children: [_buildFormTab(), _buildFilesTab()],
+        ),
       ),
     );
   }
@@ -2492,6 +2712,15 @@ class _RecordFormState extends State<RecordForm>
 
   @override
   void dispose() {
+    if (Platform.isWindows) {
+      try {
+        windowManager.removeListener(this);
+        windowManager.setPreventClose(false);
+      } catch (e) {
+        debugPrint('Window close protection dispose error: $e');
+      }
+    }
+
     _debounce?.cancel();
     _debounceGuy?.cancel();
     _debounceOnvan?.cancel();

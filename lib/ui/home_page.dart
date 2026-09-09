@@ -1411,10 +1411,6 @@ class _HomePageState extends State<HomePage> {
         hasMore = true;
       });
 
-      debugPrint(
-        '✅ لیست پس از ثبت نامه بروزرسانی شد. '
-        'تعداد رکوردهای فعلی: ${records.length}',
-      );
     } catch (e, stackTrace) {
       debugPrint('❌ _refreshAfterRecordSaved error: $e');
       debugPrintStack(stackTrace: stackTrace);
