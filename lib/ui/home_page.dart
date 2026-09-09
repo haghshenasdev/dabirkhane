@@ -533,6 +533,10 @@ class _HomePageState extends State<HomePage> {
                   final int? id = result['id'] as int?;
                   final bool scanned = result['scanned'] == true;
 
+                  if (result['reminderChanged'] == true) {
+                    await _refreshAfterRecordSaved();
+                  }
+
                   if (id != null) {
                     await _refreshAfterRecordSaved();
 
@@ -1080,6 +1084,10 @@ class _HomePageState extends State<HomePage> {
               if (result != null) {
                 final int? id = result['id'] as int?;
                 final bool scanned = result['scanned'] == true;
+
+                if (result['reminderChanged'] == true) {
+                  await _refreshAfterRecordSaved();
+                }
 
                 if (id != null) {
                   await _refreshAfterRecordSaved();

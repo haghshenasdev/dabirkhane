@@ -52,6 +52,7 @@ class _RecordFormState extends State<RecordForm>
   bool _guySuggestionsEnabled = true;
   bool _onvanSuggestionsEnabled = true;
   bool _categorySuggestionsEnabled = true;
+  bool _reminderChanged = false;
 
   // ============================================================
   // Suggestions
@@ -488,7 +489,11 @@ class _RecordFormState extends State<RecordForm>
       // که بسته شدن فرم مجاز است.
       _ignoreWindowClose = true;
 
-      Navigator.pop(context, {'id': _savedRecordId, 'scanned': true});
+      Navigator.pop(context, {
+        'id': _savedRecordId,
+        'scanned': true,
+        'reminderChanged': _reminderChanged,
+      });
 
       return;
     }
@@ -798,7 +803,11 @@ class _RecordFormState extends State<RecordForm>
         ? widget.record!['Shomare_Radif']
         : int.parse(widget.record!['Shomare_Radif'].toString());
 
-    Navigator.pop(context, {'id': id, 'scanned': false});
+    Navigator.pop(context, {
+      'id': id,
+      'scanned': false,
+      'reminderChanged': _reminderChanged,
+    });
   }
 
   Future<void> saveAndStay() async {
@@ -3146,6 +3155,8 @@ class _RecordFormState extends State<RecordForm>
 
       await DatabaseHelper.completeReminder(reminder.id!);
 
+      _reminderChanged = true;
+
       await _loadReminderStatus();
 
       if (!mounted) return;
@@ -3250,6 +3261,7 @@ class _RecordFormState extends State<RecordForm>
         text: reminder.text,
       );
 
+      _reminderChanged = true;
       await _loadReminderStatus();
 
       if (!mounted) return;
