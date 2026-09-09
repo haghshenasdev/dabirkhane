@@ -62,7 +62,9 @@ class _ReminderDialogState extends State<ReminderDialog> {
   }
 
   DateTime _calculateDueDate(int days) {
-    return widget.letterDate.add(Duration(days: days));
+    final rawDate = widget.letterDate.add(Duration(days: days));
+
+    return DateTime(rawDate.year, rawDate.month, rawDate.day, 9, 0);
   }
 
   String _formatJalali(DateTime date) {
