@@ -2191,6 +2191,8 @@ class _RecordFormState extends State<RecordForm>
           centerTitle: false,
 
           actions: [
+            _buildHistoryButton(),
+            const SizedBox(width: 8),
             _buildReminderButton(),
             const SizedBox(width: 8),
             _buildAutoSaveButton(),
@@ -2401,17 +2403,6 @@ class _RecordFormState extends State<RecordForm>
   Widget _buildFormButtons() {
     return Row(
       children: [
-        if (widget.record != null) ...[
-          Expanded(
-            child: _glassButton(
-              label: 'تاریخچه',
-              icon: Icons.history_rounded,
-              onPressed: _showRecordHistory,
-            ),
-          ),
-          const SizedBox(width: 9),
-        ],
-
         if (widget.record == null) ...[
           Expanded(
             child: _glassButton(
@@ -3361,6 +3352,43 @@ class _RecordFormState extends State<RecordForm>
       builder: (_) {
         return RecordHistoryDialog(recordId: recordId);
       },
+    );
+  }
+
+  Widget _buildHistoryButton() {
+    final colorScheme = Theme.of(context).colorScheme;
+
+    return InkWell(
+      borderRadius: BorderRadius.circular(14),
+      onTap: _showRecordHistory,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 220),
+        padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 7),
+        decoration: BoxDecoration(
+          color: Colors.black.withOpacity(.035),
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: Colors.black.withOpacity(.07)),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              Icons.history_rounded,
+              size: 18,
+              color: colorScheme.onSurface.withOpacity(.50),
+            ),
+            const SizedBox(width: 6),
+            Text(
+              'تاریخچه',
+              style: TextStyle(
+                fontSize: 11,
+                fontWeight: FontWeight.w600,
+                color: colorScheme.onSurface.withOpacity(.58),
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 
