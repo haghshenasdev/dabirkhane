@@ -27,7 +27,10 @@ class RecordForm extends StatefulWidget {
 }
 
 class _RecordFormState extends State<RecordForm>
-    with SingleTickerProviderStateMixin, WidgetsBindingObserver, WindowListener {
+    with
+        SingleTickerProviderStateMixin,
+        WidgetsBindingObserver,
+        WindowListener {
   // ============================================================
   // Form
   // ============================================================
@@ -97,6 +100,7 @@ class _RecordFormState extends State<RecordForm>
   bool _windowCloseDialogShowing = false;
   bool _isSaving = false;
   int? _savedRecordId;
+  bool _autoSaveEnabled = false;
 
   // ============================================================
   // Fields
@@ -154,6 +158,7 @@ class _RecordFormState extends State<RecordForm>
     _scanSubscription = ScanService.results.listen(_onScanResult);
 
     _loadSuggestionSettings();
+    _loadAutoSaveSetting();
 
     for (final field in [...mainFields, ...otherFields]) {
       c[field] = TextEditingController(
@@ -235,6 +240,10 @@ class _RecordFormState extends State<RecordForm>
       return true;
     }
 
+    if (_autoSaveEnabled) {
+      return await _saveDataOnly();
+    }
+
     final result = await showDialog<String>(
       context: context,
       barrierDismissible: false,
@@ -248,10 +257,7 @@ class _RecordFormState extends State<RecordForm>
             'آیا می‌خواهید تغییرات را ذخیره کنید؟',
             textDirection: TextDirection.rtl,
             textAlign: TextAlign.right,
-            style: TextStyle(
-              fontSize: 13,
-              height: 1.7,
-            ),
+            style: TextStyle(fontSize: 13, height: 1.7),
           ),
           actions: [
             _dialogButton(
@@ -316,7 +322,11 @@ class _RecordFormState extends State<RecordForm>
 
       int id;
 
-      if (widget.record == null) {
+      if (_savedRecordId != null) {
+        id = _savedRecordId!;
+
+        await DatabaseHelper.update(id, data);
+      } else if (widget.record == null) {
         id = await DatabaseHelper.insert(data);
       } else {
         id = widget.record!['Shomare_Radif'] is int
@@ -398,6 +408,16 @@ class _RecordFormState extends State<RecordForm>
       _guySuggestionsEnabled = values[1];
       _onvanSuggestionsEnabled = values[2];
       _categorySuggestionsEnabled = values[3];
+    });
+  }
+
+  Future<void> _loadAutoSaveSetting() async {
+    final value = await AppSettings.getAutoSaveRecordForm();
+
+    if (!mounted) return;
+
+    setState(() {
+      _autoSaveEnabled = value;
     });
   }
 
@@ -725,8 +745,8 @@ class _RecordFormState extends State<RecordForm>
     final id = widget.record == null
         ? int.parse(c['Shomare_Radif']!.text)
         : widget.record!['Shomare_Radif'] is int
-            ? widget.record!['Shomare_Radif']
-            : int.parse(widget.record!['Shomare_Radif'].toString());
+        ? widget.record!['Shomare_Radif']
+        : int.parse(widget.record!['Shomare_Radif'].toString());
 
     Navigator.pop(context, id);
   }
@@ -813,7 +833,7 @@ class _RecordFormState extends State<RecordForm>
     try {
       await ScanService.deleteOldScans(int.parse(id));
 
-      await ScanService.startScan(id,c['date']?.text.trim(),);
+      await ScanService.startScan(id, c['date']?.text.trim());
     } catch (e) {
       debugPrint('Open Scanner Error: $e');
 
@@ -2097,27 +2117,27 @@ class _RecordFormState extends State<RecordForm>
       child: Scaffold(
         backgroundColor: const Color(0xffEEF3F8),
 
-      appBar: AppBar(
-        elevation: 0,
-        scrolledUnderElevation: 0,
-        backgroundColor: Colors.white.withOpacity(.82),
-        surfaceTintColor: Colors.transparent,
+        appBar: AppBar(
+          elevation: 0,
+          scrolledUnderElevation: 0,
+          backgroundColor: Colors.white.withOpacity(.82),
+          surfaceTintColor: Colors.transparent,
 
-        title: Text(
-          widget.record == null ? 'ثبت نامه' : 'ویرایش نامه',
-          style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w700),
-        ),
+          title: Text(
+            widget.record == null ? 'ثبت نامه' : 'ویرایش نامه',
+            style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w700),
+          ),
 
-        centerTitle: false,
+          centerTitle: false,
 
-        bottom: PreferredSize(
-          preferredSize: const Size.fromHeight(64),
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(12, 4, 12, 10),
-            child: _buildGlassTabBar(),
+          bottom: PreferredSize(
+            preferredSize: const Size.fromHeight(64),
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(12, 4, 12, 10),
+              child: _buildGlassTabBar(),
+            ),
           ),
         ),
-      ),
 
         body: TabBarView(
           controller: _tabController,
@@ -2324,14 +2344,15 @@ class _RecordFormState extends State<RecordForm>
           const SizedBox(width: 9),
         ],
 
-        Expanded(
-          child: _glassButton(
-            label: 'ذخیره',
-            icon: Icons.check_rounded,
-            onPressed: save,
-            primary: true,
+        if (!_autoSaveEnabled)
+          Expanded(
+            child: _glassButton(
+              label: 'ذخیره',
+              icon: Icons.check_rounded,
+              onPressed: save,
+              primary: true,
+            ),
           ),
-        ),
 
         const SizedBox(width: 9),
 

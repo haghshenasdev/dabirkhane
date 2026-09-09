@@ -7,6 +7,7 @@ class AppSettings {
   static const _camScannerPath1Key = 'camscanner_path_1';
   static const _camScannerPath2Key = 'camscanner_path_2';
   static const _readWithoutGallerySaveKey = 'read_without_gallery_save';
+  static const _autoSaveRecordFormKey = 'auto_save_record_form';
 
   static const String _scannerTypeKey = 'scanner_type';
 
@@ -32,6 +33,18 @@ class AppSettings {
   static const String _suggestionsOnvanKey = 'form_suggestions_onvan';
 
   static const String _suggestionsCategoryKey = 'form_suggestions_category';
+
+  static Future<bool> getAutoSaveRecordForm() async {
+    final prefs = await SharedPreferences.getInstance();
+
+    return prefs.getBool(_autoSaveRecordFormKey) ?? false;
+  }
+
+  static Future<void> setAutoSaveRecordForm(bool value) async {
+    final prefs = await SharedPreferences.getInstance();
+
+    await prefs.setBool(_autoSaveRecordFormKey, value);
+  }
 
   static Future<bool> getFormSuggestionsEnabled(String field) async {
     final prefs = await SharedPreferences.getInstance();

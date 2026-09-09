@@ -312,6 +312,12 @@ class SettingsPage extends StatelessWidget {
 
           const Divider(),
 
+          _sectionTitle('فرم نامه'),
+
+          const AutoSaveRecordFormTile(),
+
+          const Divider(),
+
           _sectionTitle('پیشنهاد تکمیل فرم'),
 
           const FormSuggestionsSettings(),
@@ -511,6 +517,54 @@ class _FormSuggestionsSettingsState extends State<FormSuggestionsSettings> {
           },
         ),
       ],
+    );
+  }
+}
+
+class AutoSaveRecordFormTile extends StatefulWidget {
+  const AutoSaveRecordFormTile({super.key});
+
+  @override
+  State<AutoSaveRecordFormTile> createState() => _AutoSaveRecordFormTileState();
+}
+
+class _AutoSaveRecordFormTileState extends State<AutoSaveRecordFormTile> {
+  bool enabled = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  Future<void> _load() async {
+    final value = await AppSettings.getAutoSaveRecordForm();
+
+    if (!mounted) return;
+
+    setState(() {
+      enabled = value;
+    });
+  }
+
+  Future<void> _setValue(bool value) async {
+    setState(() {
+      enabled = value;
+    });
+
+    await AppSettings.setAutoSaveRecordForm(value);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return SwitchListTile(
+      secondary: const Icon(Icons.save_outlined),
+      title: const Text('ذخیره خودکار نامه'),
+      subtitle: const Text(
+        'هنگام خروج از فرم، تغییرات به صورت خودکار ذخیره می‌شوند',
+      ),
+      value: enabled,
+      onChanged: _setValue,
     );
   }
 }
