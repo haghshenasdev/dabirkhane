@@ -1,5 +1,6 @@
 import 'dart:io';
 
+import 'package:dabirkhane/model/reminder.dart';
 import 'package:path/path.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:sqflite/sqflite.dart';
@@ -109,7 +110,7 @@ class DatabaseHelper {
 
     return openDatabase(
       dbPath,
-      version: 1,
+      version: 2,
       onCreate: (db, version) async {
         await db.execute('''
           CREATE TABLE IF NOT EXISTS daftare_andicator (
@@ -150,6 +151,54 @@ class DatabaseHelper {
               ON DELETE CASCADE
           );
         ''');
+
+        await db.execute('''
+  CREATE TABLE IF NOT EXISTS reminders (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    record_id INTEGER NOT NULL,
+    due_date TEXT NOT NULL,
+    text TEXT NOT NULL,
+    status INTEGER NOT NULL DEFAULT 0,
+    created_at TEXT NOT NULL,
+    completed_at TEXT
+  );
+''');
+
+        await db.execute('''
+  CREATE INDEX IF NOT EXISTS idx_reminders_record_id
+  ON reminders(record_id);
+''');
+
+        await db.execute('''
+  CREATE INDEX IF NOT EXISTS idx_reminders_due_date
+  ON reminders(due_date);
+''');
+      },
+
+      onUpgrade: (db, oldVersion, newVersion) async {
+        if (oldVersion < 2) {
+          await db.execute('''
+      CREATE TABLE IF NOT EXISTS reminders (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        record_id INTEGER NOT NULL,
+        due_date TEXT NOT NULL,
+        text TEXT NOT NULL,
+        status INTEGER NOT NULL DEFAULT 0,
+        created_at TEXT NOT NULL,
+        completed_at TEXT
+      );
+    ''');
+
+          await db.execute('''
+      CREATE INDEX IF NOT EXISTS idx_reminders_record_id
+      ON reminders(record_id);
+    ''');
+
+          await db.execute('''
+      CREATE INDEX IF NOT EXISTS idx_reminders_due_date
+      ON reminders(due_date);
+    ''');
+        }
       },
     );
   }
@@ -196,6 +245,8 @@ class DatabaseHelper {
     List<String>? categories,
     String? comment,
     String? shomareBadi,
+    // وضعیت یادآور
+    int reminderFilter = 0,
   }) async {
     final db = await database;
 
@@ -229,6 +280,58 @@ class DatabaseHelper {
         '%${search.trim()}%',
         '%${search.trim()}%',
       ]);
+    }
+
+    // ------------------------------------------------------------
+    // فیلتر یادآور
+    //
+    // 0 = همه
+    // 1 = موعدرسیده
+    // 2 = دارای یادآور فعال
+    // 3 = یادآور آینده
+    // ------------------------------------------------------------
+
+    if (reminderFilter == 1) {
+      conditions.add('''
+    EXISTS (
+      SELECT 1
+      FROM reminders r
+      WHERE r.record_id = daftare_andicator.Shomare_Radif
+        AND r.status = ?
+        AND r.due_date <= ?
+    )
+  ''');
+
+      args.add(ReminderStatus.pending);
+      args.add(DateTime.now().toIso8601String());
+    }
+
+    if (reminderFilter == 2) {
+      conditions.add('''
+    EXISTS (
+      SELECT 1
+      FROM reminders r
+      WHERE r.record_id = daftare_andicator.Shomare_Radif
+        AND r.status = ?
+    )
+  ''');
+
+      args.add(ReminderStatus.pending);
+    }
+
+    if (reminderFilter == 3) {
+      conditions.add('''
+    EXISTS (
+      SELECT 1
+      FROM reminders r
+      WHERE r.record_id = daftare_andicator.Shomare_Radif
+        AND r.status = ?
+        AND r.due_date > ?
+    )
+  ''');
+
+      args.add(ReminderStatus.pending);
+      args.add(DateTime.now().toIso8601String());
     }
 
     // ------------------------------------------------------------
@@ -431,6 +534,190 @@ class DatabaseHelper {
     );
 
     return res.map((e) => e['name'] as String).toList();
+  }
+
+  // ============================================================
+  // REMINDERS
+  // ============================================================
+
+  /// ایجاد یک یادآور
+  static Future<int> insertReminder(Reminder reminder) async {
+    final db = await database;
+
+    return db.insert('reminders', reminder.toMap());
+  }
+
+  /// دریافت یک یادآور با ID
+  static Future<Reminder?> getReminderById(int id) async {
+    final db = await database;
+
+    final result = await db.query(
+      'reminders',
+      where: 'id = ?',
+      whereArgs: [id],
+      limit: 1,
+    );
+
+    if (result.isEmpty) {
+      return null;
+    }
+
+    return Reminder.fromMap(Map<String, dynamic>.from(result.first));
+  }
+
+  /// دریافت تمام یادآورهای یک نامه
+  static Future<List<Reminder>> getRemindersForRecord(int recordId) async {
+    final db = await database;
+
+    final result = await db.query(
+      'reminders',
+      where: 'record_id = ?',
+      whereArgs: [recordId],
+      orderBy: 'due_date ASC',
+    );
+
+    return result
+        .map((row) => Reminder.fromMap(Map<String, dynamic>.from(row)))
+        .toList();
+  }
+
+  /// دریافت یادآورهای فعال یک نامه
+  static Future<List<Reminder>> getPendingRemindersForRecord(
+    int recordId,
+  ) async {
+    final db = await database;
+
+    final result = await db.query(
+      'reminders',
+      where: 'record_id = ? AND status = ?',
+      whereArgs: [recordId, ReminderStatus.pending],
+      orderBy: 'due_date ASC',
+    );
+
+    return result
+        .map((row) => Reminder.fromMap(Map<String, dynamic>.from(row)))
+        .toList();
+  }
+
+  /// بروزرسانی یادآور
+  static Future<int> updateReminder(Reminder reminder) async {
+    if (reminder.id == null) {
+      throw ArgumentError('برای بروزرسانی، reminder.id نباید null باشد.');
+    }
+
+    final db = await database;
+
+    return db.update(
+      'reminders',
+      reminder.toMap(),
+      where: 'id = ?',
+      whereArgs: [reminder.id],
+    );
+  }
+
+  /// علامت‌گذاری به عنوان انجام‌شده
+  static Future<int> completeReminder(int id) async {
+    final db = await database;
+
+    return db.update(
+      'reminders',
+      {
+        'status': ReminderStatus.completed,
+        'completed_at': DateTime.now().toIso8601String(),
+      },
+      where: 'id = ?',
+      whereArgs: [id],
+    );
+  }
+
+  /// لغو یادآور
+  static Future<int> cancelReminder(int id) async {
+    final db = await database;
+
+    return db.update(
+      'reminders',
+      {'status': ReminderStatus.cancelled},
+      where: 'id = ?',
+      whereArgs: [id],
+    );
+  }
+
+  /// حذف کامل یادآور
+  static Future<int> deleteReminder(int id) async {
+    final db = await database;
+
+    return db.delete('reminders', where: 'id = ?', whereArgs: [id]);
+  }
+
+  /// یادآورهای فعال و سررسیدشده
+  static Future<List<Reminder>> getDueReminders() async {
+    final db = await database;
+
+    final now = DateTime.now().toIso8601String();
+
+    final result = await db.query(
+      'reminders',
+      where: 'status = ? AND due_date <= ?',
+      whereArgs: [ReminderStatus.pending, now],
+      orderBy: 'due_date ASC',
+    );
+
+    return result
+        .map((row) => Reminder.fromMap(Map<String, dynamic>.from(row)))
+        .toList();
+  }
+
+  /// تعداد یادآورهای سررسیدشده
+  static Future<int> getDueRemindersCount() async {
+    final db = await database;
+
+    final now = DateTime.now().toIso8601String();
+
+    final result = await db.rawQuery(
+      '''
+    SELECT COUNT(*) AS count
+    FROM reminders
+    WHERE status = ?
+      AND due_date <= ?
+    ''',
+      [ReminderStatus.pending, now],
+    );
+
+    return (result.first['count'] as num?)?.toInt() ?? 0;
+  }
+
+  /// تمام یادآورهای فعال
+  static Future<List<Reminder>> getPendingReminders() async {
+    final db = await database;
+
+    final result = await db.query(
+      'reminders',
+      where: 'status = ?',
+      whereArgs: [ReminderStatus.pending],
+      orderBy: 'due_date ASC',
+    );
+
+    return result
+        .map((row) => Reminder.fromMap(Map<String, dynamic>.from(row)))
+        .toList();
+  }
+
+  static Future<Set<int>> getDueReminderRecordIds() async {
+    final db = await database;
+
+    final now = DateTime.now().toIso8601String();
+
+    final result = await db.rawQuery(
+      '''
+    SELECT DISTINCT record_id
+    FROM reminders
+    WHERE status = ?
+      AND due_date <= ?
+    ''',
+      [ReminderStatus.pending, now],
+    );
+
+    return result.map((row) => (row['record_id'] as num).toInt()).toSet();
   }
 
   static Future<void> closeDb() async {

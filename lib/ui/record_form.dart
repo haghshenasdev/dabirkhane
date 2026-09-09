@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:dabirkhane/providers/scan_service.dart';
+import 'package:dabirkhane/ui/dialogs/reminder_dialog.dart';
 import 'package:dabirkhane/utils/letter_file_organizer.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:file_picker/file_picker.dart';
@@ -2173,7 +2174,12 @@ class _RecordFormState extends State<RecordForm>
 
           centerTitle: false,
 
-          actions: [_buildAutoSaveButton(), const SizedBox(width: 12)],
+          actions: [
+            _buildReminderButton(),
+            const SizedBox(width: 8),
+            _buildAutoSaveButton(),
+            const SizedBox(width: 12),
+          ],
 
           bottom: PreferredSize(
             preferredSize: const Size.fromHeight(64),
@@ -2833,6 +2839,110 @@ class _RecordFormState extends State<RecordForm>
         ),
       ),
     );
+  }
+
+  Widget _buildReminderButton() {
+    return InkWell(
+      borderRadius: BorderRadius.circular(14),
+      onTap: _openReminderDialog,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 250),
+        padding: const EdgeInsets.symmetric(horizontal: 13, vertical: 8),
+        decoration: BoxDecoration(
+          color: Theme.of(context).colorScheme.primary.withOpacity(0.10),
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(
+            color: Theme.of(context).colorScheme.primary.withOpacity(0.22),
+          ),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              Icons.notifications_none_rounded,
+              size: 20,
+              color: Theme.of(context).colorScheme.primary,
+            ),
+            const SizedBox(width: 6),
+            Text(
+              'یادآور',
+              style: TextStyle(
+                fontSize: 13,
+                fontWeight: FontWeight.w600,
+                color: Theme.of(context).colorScheme.primary,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _openReminderDialog() async {
+    int? recordId = _savedRecordId;
+
+    // اگر نامه قبلاً ذخیره شده است
+    if (recordId == null && widget.record != null) {
+      final value = widget.record!['Shomare_Radif'];
+
+      if (value != null) {
+        recordId = value is int ? value : int.tryParse(value.toString());
+      }
+    }
+
+    // اگر نامه جدید هنوز ذخیره نشده است،
+    // ابتدا آن را ذخیره می‌کنیم تا ID داشته باشیم.
+    if (recordId == null) {
+      final saved = await _saveDataOnly();
+
+      if (!saved || !mounted) {
+        return;
+      }
+
+      recordId = _savedRecordId;
+    }
+
+    if (recordId == null || !mounted) {
+      return;
+    }
+
+    final letterDateText = c['date']?.text.trim() ?? '';
+
+    final letterDate = _parseLetterDate(letterDateText);
+
+    if (letterDate == null) {
+      _showMessage('تاریخ نامه معتبر نیست.');
+      return;
+    }
+
+    await showDialog(
+      context: context,
+      barrierDismissible: true,
+      builder: (_) {
+        return ReminderDialog(recordId: recordId!, letterDate: letterDate);
+      },
+    );
+  }
+
+  DateTime? _parseLetterDate(String value) {
+    try {
+      final parts = value.trim().split(RegExp(r'[/\-.]'));
+
+      if (parts.length != 3) {
+        return null;
+      }
+
+      final year = int.parse(parts[0]);
+      final month = int.parse(parts[1]);
+      final day = int.parse(parts[2]);
+
+      final jalali = Jalali(year, month, day);
+
+      return jalali.toDateTime();
+    } catch (e) {
+      debugPrint('Parse letter date error: $e');
+      return null;
+    }
   }
 
   // ============================================================

@@ -27,6 +27,12 @@ class _HomePageState extends State<HomePage> {
   String query = '';
   final ScrollController _scrollController = ScrollController();
 
+  int reminderFilter = 0;
+
+  Set<int> dueReminderRecordIds = {};
+
+  int dueReminderCount = 0;
+
   bool isLoading = false;
   bool hasMore = true;
 
@@ -116,6 +122,7 @@ class _HomePageState extends State<HomePage> {
         comment: comment,
         shomareBadi: shomareBadi,
         categories: selectedCategories,
+        reminderFilter: reminderFilter,
       );
 
       final mutableData = data
@@ -392,6 +399,7 @@ class _HomePageState extends State<HomePage> {
     super.initState();
 
     loadMore();
+    _loadReminderStatus();
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) {
@@ -664,7 +672,11 @@ class _HomePageState extends State<HomePage> {
                     ),
                   ),
 
-                  const SizedBox(height: 20),
+                  const SizedBox(height: 12),
+
+                  if (dueReminderCount > 0) _buildDueReminderBanner(),
+
+                  const SizedBox(height: 12),
 
                   //----------------------------------------------------
                   // List
@@ -837,6 +849,31 @@ class _HomePageState extends State<HomePage> {
 
         const SizedBox(height: 14),
 
+        DropdownButtonFormField<int>(
+          value: reminderFilter,
+          decoration: decoration(
+            "وضعیت یادآور",
+            Icons.notifications_none_rounded,
+          ),
+          items: const [
+            DropdownMenuItem(value: 0, child: Text('همه نامه‌ها')),
+            DropdownMenuItem(value: 1, child: Text('یادآورهای موعدرسیده')),
+            DropdownMenuItem(value: 2, child: Text('دارای یادآور فعال')),
+            DropdownMenuItem(value: 3, child: Text('یادآورهای آینده')),
+          ],
+          onChanged: (value) {
+            if (value == null) return;
+
+            setState(() {
+              reminderFilter = value;
+            });
+
+            loadMore(reset: true);
+          },
+        ),
+
+        const SizedBox(height: 14),
+
         //-----------------------------------------
         // دسته بندی
         //-----------------------------------------
@@ -991,6 +1028,7 @@ class _HomePageState extends State<HomePage> {
 
                 commentFilterController.clear();
                 shomareBadiFilterController.clear();
+                reminderFilter = 0;
 
                 query = "";
 
@@ -1007,6 +1045,11 @@ class _HomePageState extends State<HomePage> {
 
   Widget buildRecordCard(Map<String, dynamic> r, int i) {
     final isSelected = selectedIndexes.contains(i);
+
+    final recordId = _getRecordId(r);
+
+    final hasDueReminder =
+        recordId != null && dueReminderRecordIds.contains(recordId);
 
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 6),
@@ -1194,6 +1237,42 @@ class _HomePageState extends State<HomePage> {
                 //----------------------------------------------------
                 // انتخاب
                 //----------------------------------------------------
+                if (hasDueReminder)
+                  Positioned(
+                    right: 0,
+                    top: 0,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 10,
+                        vertical: 6,
+                      ),
+                      decoration: BoxDecoration(
+                        color: Colors.orange.shade100,
+                        borderRadius: BorderRadius.circular(20),
+                        border: Border.all(color: Colors.orange.shade300),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        textDirection: TextDirection.rtl,
+                        children: [
+                          Icon(
+                            Icons.notifications_active_rounded,
+                            size: 16,
+                            color: Colors.orange.shade800,
+                          ),
+                          const SizedBox(width: 5),
+                          Text(
+                            'موعدرسیده',
+                            style: TextStyle(
+                              fontSize: 11,
+                              fontWeight: FontWeight.bold,
+                              color: Colors.orange.shade900,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
                 if (selectionMode)
                   Positioned(
                     left: 0,
@@ -1449,9 +1528,92 @@ class _HomePageState extends State<HomePage> {
         // برای دریافت وجود داشته باشد.
         hasMore = true;
       });
+
+      await _loadReminderStatus();
     } catch (e, stackTrace) {
       debugPrint('❌ _refreshAfterRecordSaved error: $e');
       debugPrintStack(stackTrace: stackTrace);
     }
+  }
+
+  Future<void> _loadReminderStatus() async {
+    try {
+      final ids = await DatabaseHelper.getDueReminderRecordIds();
+      final count = await DatabaseHelper.getDueRemindersCount();
+
+      if (!mounted) return;
+
+      setState(() {
+        dueReminderRecordIds = ids;
+        dueReminderCount = count;
+      });
+    } catch (e, stackTrace) {
+      debugPrint('load reminder status error: $e');
+      debugPrintStack(stackTrace: stackTrace);
+    }
+  }
+
+  Widget _buildDueReminderBanner() {
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        borderRadius: BorderRadius.circular(18),
+        onTap: () {
+          setState(() {
+            reminderFilter = 1;
+          });
+
+          loadMore(reset: true);
+        },
+        child: Container(
+          width: double.infinity,
+          padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
+          decoration: BoxDecoration(
+            color: Colors.orange.shade50,
+            borderRadius: BorderRadius.circular(18),
+            border: Border.all(color: Colors.orange.shade200),
+          ),
+          child: Row(
+            textDirection: TextDirection.rtl,
+            children: [
+              Container(
+                width: 42,
+                height: 42,
+                decoration: BoxDecoration(
+                  color: Colors.orange.shade100,
+                  borderRadius: BorderRadius.circular(14),
+                ),
+                child: Icon(
+                  Icons.notifications_active_rounded,
+                  color: Colors.orange.shade800,
+                ),
+              ),
+
+              const SizedBox(width: 12),
+
+              Expanded(
+                child: Text(
+                  '$dueReminderCount نامه دارای یادآور موعدرسیده است',
+                  textDirection: TextDirection.rtl,
+                  textAlign: TextAlign.right,
+                  style: const TextStyle(
+                    fontSize: 15,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ),
+
+              const SizedBox(width: 8),
+
+              Icon(
+                Icons.arrow_back_ios_new_rounded,
+                size: 16,
+                color: Colors.orange.shade800,
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
   }
 }
