@@ -169,7 +169,7 @@ class _GlassToastWidgetState extends State<_GlassToastWidget>
                           width: 36,
                           height: 36,
                           decoration: BoxDecoration(
-                            color: colorScheme.primary.withOpacity(0.14),
+                            color: colorScheme.primary.withOpacity(0.20),
                             shape: BoxShape.circle,
                           ),
                           child: Icon(
