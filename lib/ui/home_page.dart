@@ -126,10 +126,21 @@ class _HomePageState extends State<HomePage> {
       }
 
       setState(() {
-        records.addAll(mutableData);
+        for (final item in mutableData) {
+          final id = _getRecordId(item);
+
+          if (id == null) {
+            continue;
+          }
+
+          final exists = records.any((r) => _getRecordId(r) == id);
+
+          if (!exists) {
+            records.add(item);
+          }
+        }
 
         _rebuildFiltered();
-
         isLoading = false;
       });
     } catch (e, stackTrace) {
@@ -1208,14 +1219,14 @@ class _HomePageState extends State<HomePage> {
 
       final updatedRecord = Map<String, dynamic>.from(record);
 
-      final index = records.indexWhere((e) => _getRecordId(e) == id);
+      // ------------------------------------------------------------
+      // آیا رکورد قبلاً در لیست وجود دارد؟
+      // ------------------------------------------------------------
+      final existingIndex = records.indexWhere((e) => _getRecordId(e) == id);
 
-      // ------------------------------------------------------------
-      // اگر رکورد از قبل داخل لیست است، فقط همان را Update کن.
-      // ------------------------------------------------------------
-      if (index != -1) {
+      if (existingIndex != -1) {
         setState(() {
-          records[index] = updatedRecord;
+          records[existingIndex] = updatedRecord;
           _rebuildFiltered();
         });
 
@@ -1223,26 +1234,46 @@ class _HomePageState extends State<HomePage> {
       }
 
       // ------------------------------------------------------------
-      // رکورد جدید است.
-      //
-      // ابتدا بررسی می‌کنیم آیا با فیلتر فعلی سازگار است یا خیر.
+      // اگر فیلتر فعال است، بررسی کن رکورد جدید باید نمایش داده شود یا نه
       // ------------------------------------------------------------
-      final matches = _recordMatchesCurrentFilters(updatedRecord);
-
-      if (!matches) {
+      if (!_recordMatchesCurrentFilters(updatedRecord)) {
         return;
       }
 
       // ------------------------------------------------------------
-      // رکورد جدید را ابتدای لیست قرار می‌دهیم.
+      // پیدا کردن محل صحیح رکورد جدید
+      //
+      // چون getPaged بر اساس Shomare_Radif به صورت DESC است،
+      // رکورد جدید باید در جای صحیح خودش قرار بگیرد.
       // ------------------------------------------------------------
+      final newId = _getRecordId(updatedRecord);
+
+      if (newId == null) {
+        return;
+      }
+
+      int insertIndex = records.length;
+
+      for (int i = 0; i < records.length; i++) {
+        final currentId = _getRecordId(records[i]);
+
+        if (currentId == null) {
+          continue;
+        }
+
+        if (newId > currentId) {
+          insertIndex = i;
+          break;
+        }
+      }
+
       setState(() {
-        records.insert(0, updatedRecord);
+        records.insert(insertIndex, updatedRecord);
+
         _rebuildFiltered();
       });
     } catch (e, stackTrace) {
       debugPrint('refreshOneRecord error: $e');
-
       debugPrintStack(stackTrace: stackTrace);
     }
   }
