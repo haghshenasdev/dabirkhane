@@ -43,6 +43,10 @@ class _HomePageState extends State<HomePage> {
   final TextEditingController toDateController = TextEditingController();
   final TextEditingController onvanController = TextEditingController();
   final TextEditingController _controller = TextEditingController();
+  final TextEditingController commentFilterController = TextEditingController();
+
+  final TextEditingController shomareBadiFilterController =
+      TextEditingController();
 
   final TextEditingController categoryFilterController =
       TextEditingController();
@@ -63,6 +67,8 @@ class _HomePageState extends State<HomePage> {
     onvanController.dispose();
     _controller.dispose();
     categoryFilterController.dispose();
+    commentFilterController.dispose();
+    shomareBadiFilterController.dispose();
 
     super.dispose();
   }
@@ -94,6 +100,8 @@ class _HomePageState extends State<HomePage> {
       final fromDate = fromDateController.text.trim();
       final toDate = toDateController.text.trim();
       final onvan = onvanController.text.trim();
+      final comment = commentFilterController.text.trim();
+      final shomareBadi = shomareBadiFilterController.text.trim();
 
       final selectedCategories = List<String>.from(selectedCategoryFilters);
 
@@ -104,6 +112,8 @@ class _HomePageState extends State<HomePage> {
         fromDate: fromDate,
         toDate: toDate,
         onvan: onvan,
+        comment: comment,
+        shomareBadi: shomareBadi,
         categories: selectedCategories,
       );
 
@@ -759,6 +769,55 @@ class _HomePageState extends State<HomePage> {
         const SizedBox(height: 14),
 
         //-----------------------------------------
+        // توضیحات و شماره بعد
+        //-----------------------------------------
+        desktop
+            ? Row(
+                children: [
+                  Expanded(
+                    child: TextField(
+                      controller: commentFilterController,
+                      textDirection: TextDirection.rtl,
+                      decoration: decoration("توضیحات", Icons.notes_outlined),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: TextField(
+                      controller: shomareBadiFilterController,
+                      keyboardType: TextInputType.text,
+                      textDirection: TextDirection.rtl,
+                      decoration: decoration(
+                        "شماره بعد",
+                        Icons.format_list_numbered,
+                      ),
+                    ),
+                  ),
+                ],
+              )
+            : Column(
+                children: [
+                  TextField(
+                    controller: commentFilterController,
+                    textDirection: TextDirection.rtl,
+                    decoration: decoration("توضیحات", Icons.notes_outlined),
+                  ),
+                  const SizedBox(height: 12),
+                  TextField(
+                    controller: shomareBadiFilterController,
+                    keyboardType: TextInputType.text,
+                    textDirection: TextDirection.rtl,
+                    decoration: decoration(
+                      "شماره بعد",
+                      Icons.format_list_numbered,
+                    ),
+                  ),
+                ],
+              ),
+
+        const SizedBox(height: 14),
+
+        //-----------------------------------------
         // دسته بندی
         //-----------------------------------------
         TextField(
@@ -909,6 +968,9 @@ class _HomePageState extends State<HomePage> {
                 selectedCategoryFilters.clear();
 
                 categoryFilterSuggestions.clear();
+
+                commentFilterController.clear();
+                shomareBadiFilterController.clear();
 
                 query = "";
 
@@ -1298,6 +1360,8 @@ class _HomePageState extends State<HomePage> {
         fromDate: fromDateController.text.trim(),
         toDate: toDateController.text.trim(),
         onvan: onvanController.text.trim(),
+        comment: commentFilterController.text.trim(),
+        shomareBadi: shomareBadiFilterController.text.trim(),
         categories: List<String>.from(selectedCategoryFilters),
       );
 

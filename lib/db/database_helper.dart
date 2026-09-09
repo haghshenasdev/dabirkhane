@@ -194,6 +194,8 @@ class DatabaseHelper {
     required String? toDate,
     required String? onvan,
     List<String>? categories,
+    String? comment,
+    String? shomareBadi,
   }) async {
     final db = await database;
 
@@ -235,6 +237,18 @@ class DatabaseHelper {
     if (onvan != null && onvan.trim().isNotEmpty) {
       conditions.add('onvan LIKE ?');
       args.add('%${onvan.trim()}%');
+    }
+
+    // 📝 فیلتر توضیحات
+    if (comment != null && comment.isNotEmpty) {
+      conditions.add('comment LIKE ?');
+      args.add('%$comment%');
+    }
+
+    // 🔢 فیلتر شماره بعد
+    if (shomareBadi != null && shomareBadi.isNotEmpty) {
+      conditions.add('shomare_badi LIKE ?');
+      args.add('%$shomareBadi%');
     }
 
     // ------------------------------------------------------------
