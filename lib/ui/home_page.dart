@@ -511,7 +511,7 @@ class _HomePageState extends State<HomePage> {
                 );
 
                 if (id != null) {
-                  await refreshOneRecord(id);
+                  await _refreshAfterRecordSaved();
                 }
               },
             ),
@@ -953,7 +953,7 @@ class _HomePageState extends State<HomePage> {
               );
 
               if (id != null) {
-                await refreshOneRecord(id);
+                await _refreshAfterRecordSaved();
               }
             }
           },
@@ -1209,75 +1209,6 @@ class _HomePageState extends State<HomePage> {
     categoryFilterSuggestions.clear();
   }
 
-  Future<void> refreshOneRecord(int id) async {
-    try {
-      final record = await DatabaseHelper.getById(id);
-
-      if (record == null || !mounted) {
-        return;
-      }
-
-      final updatedRecord = Map<String, dynamic>.from(record);
-
-      // ------------------------------------------------------------
-      // آیا رکورد قبلاً در لیست وجود دارد؟
-      // ------------------------------------------------------------
-      final existingIndex = records.indexWhere((e) => _getRecordId(e) == id);
-
-      if (existingIndex != -1) {
-        setState(() {
-          records[existingIndex] = updatedRecord;
-          _rebuildFiltered();
-        });
-
-        return;
-      }
-
-      // ------------------------------------------------------------
-      // اگر فیلتر فعال است، بررسی کن رکورد جدید باید نمایش داده شود یا نه
-      // ------------------------------------------------------------
-      if (!_recordMatchesCurrentFilters(updatedRecord)) {
-        return;
-      }
-
-      // ------------------------------------------------------------
-      // پیدا کردن محل صحیح رکورد جدید
-      //
-      // چون getPaged بر اساس Shomare_Radif به صورت DESC است،
-      // رکورد جدید باید در جای صحیح خودش قرار بگیرد.
-      // ------------------------------------------------------------
-      final newId = _getRecordId(updatedRecord);
-
-      if (newId == null) {
-        return;
-      }
-
-      int insertIndex = records.length;
-
-      for (int i = 0; i < records.length; i++) {
-        final currentId = _getRecordId(records[i]);
-
-        if (currentId == null) {
-          continue;
-        }
-
-        if (newId > currentId) {
-          insertIndex = i;
-          break;
-        }
-      }
-
-      setState(() {
-        records.insert(insertIndex, updatedRecord);
-
-        _rebuildFiltered();
-      });
-    } catch (e, stackTrace) {
-      debugPrint('refreshOneRecord error: $e');
-      debugPrintStack(stackTrace: stackTrace);
-    }
-  }
-
   bool _recordMatchesCurrentFilters(Map<String, dynamic> record) {
     // ------------------------------------------------------------
     // جستجوی عمومی
@@ -1355,5 +1286,74 @@ class _HomePageState extends State<HomePage> {
     }
 
     return true;
+  }
+
+  Future<void> _refreshAfterRecordSaved() async {
+    try {
+      // فقط جدیدترین 30 رکورد را دوباره از دیتابیس بگیر
+      final data = await DatabaseHelper.getPaged(
+        limit: limit,
+        beforeId: null,
+        search: query,
+        fromDate: fromDateController.text.trim(),
+        toDate: toDateController.text.trim(),
+        onvan: onvanController.text.trim(),
+        categories: List<String>.from(selectedCategoryFilters),
+      );
+
+      if (!mounted) return;
+
+      final latestRecords = data
+          .map((row) => Map<String, dynamic>.from(row))
+          .toList();
+
+      if (latestRecords.isEmpty) {
+        return;
+      }
+
+      setState(() {
+        // رکوردهای جدید را بر اساس ID داخل لیست فعلی merge کن
+        for (final newRecord in latestRecords) {
+          final newId = _getRecordId(newRecord);
+
+          if (newId == null) continue;
+
+          final existingIndex = records.indexWhere(
+            (record) => _getRecordId(record) == newId,
+          );
+
+          if (existingIndex >= 0) {
+            // اگر قبلاً وجود دارد، اطلاعاتش را به‌روز کن
+            records[existingIndex] = newRecord;
+          } else {
+            // اگر جدید است، به لیست اضافه کن
+            records.add(newRecord);
+          }
+        }
+
+        // مرتب‌سازی مجدد
+        records.sort((a, b) {
+          final aId = _getRecordId(a) ?? 0;
+          final bId = _getRecordId(b) ?? 0;
+
+          return bId.compareTo(aId);
+        });
+
+        _rebuildFiltered();
+
+        // اگر قبلاً hasMore=false شده بود،
+        // ممکن است با اضافه شدن نامه جدید دوباره رکورد دیگری
+        // برای دریافت وجود داشته باشد.
+        hasMore = true;
+      });
+
+      debugPrint(
+        '✅ لیست پس از ثبت نامه بروزرسانی شد. '
+        'تعداد رکوردهای فعلی: ${records.length}',
+      );
+    } catch (e, stackTrace) {
+      debugPrint('❌ _refreshAfterRecordSaved error: $e');
+      debugPrintStack(stackTrace: stackTrace);
+    }
   }
 }
