@@ -24,8 +24,10 @@ class _ReminderDialogState extends State<ReminderDialog> {
   final _textController = TextEditingController();
 
   List<Reminder> _reminders = [];
+
   bool _loading = true;
   bool _saving = false;
+  int? _processingReminderId;
 
   @override
   void initState() {
@@ -40,11 +42,17 @@ class _ReminderDialogState extends State<ReminderDialog> {
     super.dispose();
   }
 
+  // ============================================================
+  // Load
+  // ============================================================
+
   Future<void> _loadReminders() async {
     try {
       final reminders = await DatabaseHelper.getRemindersForRecord(
         widget.recordId,
       );
+
+      reminders.sort((a, b) => b.dueDate.compareTo(a.dueDate));
 
       if (!mounted) return;
 
@@ -53,6 +61,8 @@ class _ReminderDialogState extends State<ReminderDialog> {
         _loading = false;
       });
     } catch (e) {
+      debugPrint('load reminders error: $e');
+
       if (!mounted) return;
 
       setState(() {
@@ -61,10 +71,19 @@ class _ReminderDialogState extends State<ReminderDialog> {
     }
   }
 
+  // ============================================================
+  // Date
+  // ============================================================
+
   DateTime _calculateDueDate(int days) {
     final rawDate = widget.letterDate.add(Duration(days: days));
 
+    // همیشه ساعت ۹ صبح
     return DateTime(rawDate.year, rawDate.month, rawDate.day, 9, 0);
+  }
+
+  DateTime _normalizeToNine(DateTime date) {
+    return DateTime(date.year, date.month, date.day, 9, 0);
   }
 
   String _formatJalali(DateTime date) {
@@ -72,6 +91,14 @@ class _ReminderDialogState extends State<ReminderDialog> {
 
     return '${jalali.year}/${jalali.month.toString().padLeft(2, '0')}/${jalali.day.toString().padLeft(2, '0')}';
   }
+
+  bool _isDue(Reminder reminder) {
+    return reminder.isPending && !reminder.dueDate.isAfter(DateTime.now());
+  }
+
+  // ============================================================
+  // Save new reminder
+  // ============================================================
 
   Future<void> _saveReminder() async {
     final days = int.tryParse(_daysController.text.trim());
@@ -107,8 +134,6 @@ class _ReminderDialogState extends State<ReminderDialog> {
 
       final reminderId = await DatabaseHelper.insertReminder(reminder);
 
-      final savedReminder = reminder.copyWith(id: reminderId);
-
       await NotificationService.instance.scheduleReminder(
         reminderId: reminderId,
         recordId: widget.recordId,
@@ -133,7 +158,10 @@ class _ReminderDialogState extends State<ReminderDialog> {
           behavior: SnackBarBehavior.floating,
         ),
       );
-    } catch (e) {
+    } catch (e, stackTrace) {
+      debugPrint('save reminder error: $e');
+      debugPrintStack(stackTrace: stackTrace);
+
       if (!mounted) return;
 
       _showError('خطا در ثبت یادآور:\n$e');
@@ -145,6 +173,227 @@ class _ReminderDialogState extends State<ReminderDialog> {
       }
     }
   }
+
+  // ============================================================
+  // Complete
+  // ============================================================
+
+  Future<void> _completeReminder(Reminder reminder) async {
+    if (reminder.id == null) return;
+    if (!reminder.isPending) return;
+
+    setState(() {
+      _processingReminderId = reminder.id;
+    });
+
+    try {
+      await NotificationService.instance.cancelReminder(reminder.id!);
+
+      await DatabaseHelper.completeReminder(reminder.id!);
+
+      await _loadReminders();
+
+      if (!mounted) return;
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'پیگیری نامه انجام شد.',
+            textDirection: TextDirection.rtl,
+          ),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+    } catch (e, stackTrace) {
+      debugPrint('complete reminder error: $e');
+      debugPrintStack(stackTrace: stackTrace);
+
+      if (!mounted) return;
+
+      _showError('خطا در ثبت انجام شدن یادآور:\n$e');
+    } finally {
+      if (mounted) {
+        setState(() {
+          _processingReminderId = null;
+        });
+      }
+    }
+  }
+
+  // ============================================================
+  // Extend
+  // ============================================================
+
+  Future<void> _extendReminder(Reminder reminder, int days) async {
+    if (reminder.id == null) return;
+    if (!reminder.isPending) return;
+
+    setState(() {
+      _processingReminderId = reminder.id;
+    });
+
+    try {
+      final now = DateTime.now();
+
+      // اگر موعد قبلی گذشته باشد، تمدید از امروز حساب می‌شود.
+      // اگر هنوز نرسیده باشد، از موعد فعلی حساب می‌شود.
+      final baseDate = reminder.dueDate.isAfter(now) ? reminder.dueDate : now;
+
+      final rawDate = baseDate.add(Duration(days: days));
+
+      final newDueDate = _normalizeToNine(rawDate);
+
+      await NotificationService.instance.cancelReminder(reminder.id!);
+
+      final updatedReminder = reminder.copyWith(
+        dueDate: newDueDate,
+        status: ReminderStatus.pending,
+        completedAt: null,
+      );
+
+      await DatabaseHelper.updateReminder(updatedReminder);
+
+      await NotificationService.instance.scheduleReminder(
+        reminderId: reminder.id!,
+        recordId: reminder.recordId,
+        dueDate: newDueDate,
+        text: reminder.text,
+      );
+
+      await _loadReminders();
+
+      if (!mounted) return;
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'یادآور تا ${_formatJalali(newDueDate)} تمدید شد.',
+            textDirection: TextDirection.rtl,
+          ),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+    } catch (e, stackTrace) {
+      debugPrint('extend reminder error: $e');
+      debugPrintStack(stackTrace: stackTrace);
+
+      if (!mounted) return;
+
+      _showError('خطا در تمدید یادآور:\n$e');
+    } finally {
+      if (mounted) {
+        setState(() {
+          _processingReminderId = null;
+        });
+      }
+    }
+  }
+
+  Future<void> _showExtendMenu(Reminder reminder) async {
+    if (reminder.id == null || !reminder.isPending) return;
+
+    final selectedDays = await showModalBottomSheet<int>(
+      context: context,
+      backgroundColor: Colors.transparent,
+      builder: (context) {
+        final colorScheme = Theme.of(context).colorScheme;
+
+        return Directionality(
+          textDirection: TextDirection.rtl,
+          child: Container(
+            padding: const EdgeInsets.fromLTRB(20, 12, 20, 24),
+            decoration: BoxDecoration(
+              color: colorScheme.surface,
+              borderRadius: const BorderRadius.vertical(
+                top: Radius.circular(24),
+              ),
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Container(
+                  width: 42,
+                  height: 4,
+                  margin: const EdgeInsets.only(bottom: 18),
+                  decoration: BoxDecoration(
+                    color: colorScheme.onSurface.withOpacity(.18),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                ),
+
+                const Text(
+                  'تمدید پیگیری',
+                  style: TextStyle(fontSize: 17, fontWeight: FontWeight.bold),
+                ),
+
+                const SizedBox(height: 8),
+
+                Text(
+                  'موعد جدید را انتخاب کنید',
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: colorScheme.onSurface.withOpacity(.60),
+                  ),
+                ),
+
+                const SizedBox(height: 18),
+
+                Row(
+                  children: [
+                    Expanded(child: _extendChoice(context, days: 7)),
+                    const SizedBox(width: 8),
+                    Expanded(child: _extendChoice(context, days: 15)),
+                    const SizedBox(width: 8),
+                    Expanded(child: _extendChoice(context, days: 30)),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+
+    if (selectedDays == null) return;
+
+    await _extendReminder(reminder, selectedDays);
+  }
+
+  Widget _extendChoice(BuildContext context, {required int days}) {
+    final colorScheme = Theme.of(context).colorScheme;
+
+    return InkWell(
+      borderRadius: BorderRadius.circular(14),
+      onTap: () {
+        Navigator.pop(context, days);
+      },
+      child: Container(
+        padding: const EdgeInsets.symmetric(vertical: 14),
+        decoration: BoxDecoration(
+          color: colorScheme.primary.withOpacity(.08),
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: colorScheme.primary.withOpacity(.16)),
+        ),
+        child: Column(
+          children: [
+            Icon(Icons.update_rounded, color: colorScheme.primary),
+            const SizedBox(height: 5),
+            Text(
+              '$days روز',
+              style: TextStyle(
+                fontWeight: FontWeight.w700,
+                color: colorScheme.primary,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // ============================================================
+  // Delete
+  // ============================================================
 
   Future<void> _deleteReminder(Reminder reminder) async {
     if (reminder.id == null) return;
@@ -178,14 +427,154 @@ class _ReminderDialogState extends State<ReminderDialog> {
 
     if (confirmed != true) return;
 
-    await NotificationService.instance.cancelReminder(reminder.id!);
+    try {
+      await NotificationService.instance.cancelReminder(reminder.id!);
 
-    await DatabaseHelper.deleteReminder(reminder.id!);
+      await DatabaseHelper.deleteReminder(reminder.id!);
 
-    if (!mounted) return;
+      if (!mounted) return;
 
-    await _loadReminders();
+      await _loadReminders();
+    } catch (e) {
+      if (!mounted) return;
+
+      _showError('خطا در حذف یادآور:\n$e');
+    }
   }
+
+  // ============================================================
+  // Reminder item
+  // ============================================================
+
+  Widget _buildReminderItem(Reminder reminder) {
+    final colorScheme = Theme.of(context).colorScheme;
+
+    final due = _isDue(reminder);
+    final processing = _processingReminderId == reminder.id;
+
+    final Color itemColor;
+
+    if (reminder.isCompleted) {
+      itemColor = Colors.green;
+    } else if (due) {
+      itemColor = Colors.orange.shade700;
+    } else {
+      itemColor = colorScheme.primary;
+    }
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 10),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: itemColor.withOpacity(.07),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: itemColor.withOpacity(.16)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            children: [
+              Icon(
+                reminder.isCompleted
+                    ? Icons.check_circle_rounded
+                    : due
+                    ? Icons.notifications_active_rounded
+                    : Icons.notifications_none_rounded,
+                color: itemColor,
+              ),
+
+              const SizedBox(width: 10),
+
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.end,
+                  children: [
+                    Text(
+                      reminder.text,
+                      textDirection: TextDirection.rtl,
+                      textAlign: TextAlign.right,
+                      style: TextStyle(
+                        fontWeight: FontWeight.w700,
+                        color: reminder.isCompleted
+                            ? colorScheme.onSurface.withOpacity(.60)
+                            : null,
+                      ),
+                    ),
+
+                    const SizedBox(height: 4),
+
+                    Text(
+                      reminder.isCompleted
+                          ? 'انجام شده • ${_formatJalali(reminder.dueDate)}'
+                          : due
+                          ? 'موعد پیگیری رسیده • ${_formatJalali(reminder.dueDate)}'
+                          : 'سررسید: ${_formatJalali(reminder.dueDate)} ساعت ۰۹:۰۰',
+                      textDirection: TextDirection.rtl,
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: itemColor.withOpacity(.80),
+                        fontWeight: due && reminder.isPending
+                            ? FontWeight.w600
+                            : FontWeight.normal,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+
+              IconButton(
+                tooltip: 'حذف',
+                onPressed: processing ? null : () => _deleteReminder(reminder),
+                icon: const Icon(Icons.delete_outline_rounded, size: 20),
+              ),
+            ],
+          ),
+
+          // فقط برای یادآور موعدرسیده دکمه‌های عملیاتی نمایش داده شوند
+          if (due && reminder.isPending) ...[
+            const SizedBox(height: 10),
+
+            Row(
+              children: [
+                Expanded(
+                  child: OutlinedButton.icon(
+                    onPressed: processing
+                        ? null
+                        : () => _showExtendMenu(reminder),
+                    icon: const Icon(Icons.update_rounded, size: 18),
+                    label: const Text('تمدید'),
+                  ),
+                ),
+
+                const SizedBox(width: 8),
+
+                Expanded(
+                  child: FilledButton.icon(
+                    onPressed: processing
+                        ? null
+                        : () => _completeReminder(reminder),
+                    icon: processing
+                        ? const SizedBox(
+                            width: 16,
+                            height: 16,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
+                        : const Icon(Icons.check_rounded, size: 18),
+                    label: const Text('انجام شد'),
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  // ============================================================
+  // Error
+  // ============================================================
 
   void _showError(String message) {
     ScaffoldMessenger.of(context).showSnackBar(
@@ -196,61 +585,9 @@ class _ReminderDialogState extends State<ReminderDialog> {
     );
   }
 
-  Widget _buildReminderItem(Reminder reminder) {
-    final dueText = _formatJalali(reminder.dueDate);
-
-    return Container(
-      margin: const EdgeInsets.only(bottom: 8),
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: Theme.of(context).colorScheme.primary.withOpacity(0.07),
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(
-          color: Theme.of(context).colorScheme.primary.withOpacity(0.15),
-        ),
-      ),
-      child: Row(
-        children: [
-          Icon(
-            reminder.isCompleted
-                ? Icons.check_circle_outline_rounded
-                : Icons.notifications_active_outlined,
-            color: Theme.of(context).colorScheme.primary,
-          ),
-          const SizedBox(width: 10),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.end,
-              children: [
-                Text(
-                  reminder.text,
-                  textDirection: TextDirection.rtl,
-                  textAlign: TextAlign.right,
-                  style: const TextStyle(fontWeight: FontWeight.w600),
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  'سررسید: $dueText',
-                  textDirection: TextDirection.rtl,
-                  style: TextStyle(
-                    fontSize: 12,
-                    color: Theme.of(
-                      context,
-                    ).colorScheme.onSurface.withOpacity(0.65),
-                  ),
-                ),
-              ],
-            ),
-          ),
-          IconButton(
-            tooltip: 'حذف',
-            onPressed: () => _deleteReminder(reminder),
-            icon: const Icon(Icons.delete_outline_rounded, size: 20),
-          ),
-        ],
-      ),
-    );
-  }
+  // ============================================================
+  // Build
+  // ============================================================
 
   @override
   Widget build(BuildContext context) {
@@ -267,7 +604,7 @@ class _ReminderDialogState extends State<ReminderDialog> {
       child: ClipRRect(
         borderRadius: BorderRadius.circular(24),
         child: Container(
-          constraints: const BoxConstraints(maxWidth: 560, maxHeight: 720),
+          constraints: const BoxConstraints(maxWidth: 560, maxHeight: 760),
           decoration: BoxDecoration(
             color: Color.alphaBlend(
               colorScheme.primary.withOpacity(0.10),
@@ -290,13 +627,16 @@ class _ReminderDialogState extends State<ReminderDialog> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
+                  // ======================================================
+                  // Header
+                  // ======================================================
                   Row(
                     children: [
                       Container(
                         width: 44,
                         height: 44,
                         decoration: BoxDecoration(
-                          color: colorScheme.primary.withOpacity(0.14),
+                          color: colorScheme.primary.withOpacity(.14),
                           shape: BoxShape.circle,
                         ),
                         child: Icon(
@@ -304,7 +644,9 @@ class _ReminderDialogState extends State<ReminderDialog> {
                           color: colorScheme.primary,
                         ),
                       ),
+
                       const SizedBox(width: 12),
+
                       const Expanded(
                         child: Text(
                           'یادآور نامه',
@@ -314,6 +656,7 @@ class _ReminderDialogState extends State<ReminderDialog> {
                           ),
                         ),
                       ),
+
                       IconButton(
                         onPressed: () => Navigator.pop(context),
                         icon: const Icon(Icons.close_rounded),
@@ -323,6 +666,9 @@ class _ReminderDialogState extends State<ReminderDialog> {
 
                   const SizedBox(height: 20),
 
+                  // ======================================================
+                  // Letter date
+                  // ======================================================
                   Text('تاریخ نامه', style: theme.textTheme.bodySmall),
 
                   const SizedBox(height: 5),
@@ -337,6 +683,9 @@ class _ReminderDialogState extends State<ReminderDialog> {
 
                   const SizedBox(height: 20),
 
+                  // ======================================================
+                  // Days
+                  // ======================================================
                   TextField(
                     controller: _daysController,
                     keyboardType: TextInputType.number,
@@ -356,8 +705,9 @@ class _ReminderDialogState extends State<ReminderDialog> {
 
                   if (previewDate != null) ...[
                     const SizedBox(height: 8),
+
                     Text(
-                      'تاریخ سررسید: ${_formatJalali(previewDate)}',
+                      'تاریخ سررسید: ${_formatJalali(previewDate)} ساعت ۰۹:۰۰',
                       textDirection: TextDirection.rtl,
                       style: TextStyle(
                         color: colorScheme.primary,
@@ -368,6 +718,9 @@ class _ReminderDialogState extends State<ReminderDialog> {
 
                   const SizedBox(height: 16),
 
+                  // ======================================================
+                  // Text
+                  // ======================================================
                   TextField(
                     controller: _textController,
                     maxLines: 3,
@@ -388,6 +741,9 @@ class _ReminderDialogState extends State<ReminderDialog> {
 
                   const SizedBox(height: 16),
 
+                  // ======================================================
+                  // Add
+                  // ======================================================
                   SizedBox(
                     height: 48,
                     child: FilledButton.icon(
@@ -403,6 +759,9 @@ class _ReminderDialogState extends State<ReminderDialog> {
                     ),
                   ),
 
+                  // ======================================================
+                  // Existing reminders
+                  // ======================================================
                   if (!_loading && _reminders.isNotEmpty) ...[
                     const SizedBox(height: 24),
 

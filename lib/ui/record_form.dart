@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:io';
 
+import 'package:dabirkhane/model/reminder.dart';
 import 'package:dabirkhane/providers/scan_service.dart';
 import 'package:dabirkhane/ui/dialogs/reminder_dialog.dart';
 import 'package:dabirkhane/utils/letter_file_organizer.dart';
@@ -13,6 +14,7 @@ import 'package:shamsi_date/shamsi_date.dart';
 import 'package:path/path.dart' as path;
 import 'package:permission_handler/permission_handler.dart';
 import 'package:window_manager/window_manager.dart';
+import 'package:dabirkhane/services/notification_service.dart';
 
 import '../db/database_helper.dart';
 import '../utils/JalaliDateFormatter.dart';
@@ -104,6 +106,7 @@ class _RecordFormState extends State<RecordForm>
   bool _autoSaveEnabled = false;
   bool _saveAndReturnAfterScan = false;
   bool _hasActiveReminder = false;
+  Reminder? _todayReminder;
 
   // ============================================================
   // Fields
@@ -358,6 +361,7 @@ class _RecordFormState extends State<RecordForm>
 
       _savedRecordId = id;
       _captureSavedState();
+      await _loadReminderStatus();
 
       return true;
     } catch (e, stackTrace) {
@@ -2272,6 +2276,7 @@ class _RecordFormState extends State<RecordForm>
         child: ListView(
           padding: const EdgeInsets.fromLTRB(12, 14, 12, 24),
           children: [
+            _buildTodayReminderBanner(),
             // ==========================================================
             // شماره نامه + تاریخ
             // ==========================================================
@@ -2979,6 +2984,7 @@ class _RecordFormState extends State<RecordForm>
 
       setState(() {
         _hasActiveReminder = false;
+        _todayReminder = null;
       });
 
       return;
@@ -2989,15 +2995,306 @@ class _RecordFormState extends State<RecordForm>
         recordId,
       );
 
+      final now = DateTime.now();
+
+      final todayReminder = reminders.cast<Reminder?>().firstWhere(
+        (reminder) =>
+            reminder != null &&
+            reminder.dueDate.year == now.year &&
+            reminder.dueDate.month == now.month &&
+            reminder.dueDate.day == now.day,
+        orElse: () => null,
+      );
+
       if (!mounted) return;
 
       setState(() {
         _hasActiveReminder = reminders.isNotEmpty;
+        _todayReminder = todayReminder;
       });
     } catch (e, stackTrace) {
       debugPrint('load reminder status error: $e');
       debugPrintStack(stackTrace: stackTrace);
     }
+  }
+
+  Widget _buildTodayReminderBanner() {
+    final reminder = _todayReminder;
+
+    if (reminder == null || !reminder.isPending) {
+      return const SizedBox.shrink();
+    }
+
+    final colorScheme = Theme.of(context).colorScheme;
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.all(13),
+      decoration: BoxDecoration(
+        color: Colors.orange.withOpacity(.10),
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: Colors.orange.withOpacity(.25)),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(.035),
+            blurRadius: 12,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            children: [
+              Container(
+                width: 38,
+                height: 38,
+                decoration: BoxDecoration(
+                  color: Colors.orange.withOpacity(.15),
+                  shape: BoxShape.circle,
+                ),
+                child: const Icon(
+                  Icons.notifications_active_rounded,
+                  color: Colors.orange,
+                  size: 21,
+                ),
+              ),
+
+              const SizedBox(width: 10),
+
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.end,
+                  children: [
+                    const Text(
+                      'موعد پیگیری این نامه امروز است',
+                      textDirection: TextDirection.rtl,
+                      style: TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+
+                    const SizedBox(height: 3),
+
+                    Text(
+                      reminder.text,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      textDirection: TextDirection.rtl,
+                      textAlign: TextAlign.right,
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: colorScheme.onSurface.withOpacity(.68),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+
+          const SizedBox(height: 10),
+
+          Row(
+            children: [
+              // تمدید
+              Expanded(
+                child: OutlinedButton.icon(
+                  onPressed: () async {
+                    await _extendTodayReminder(reminder);
+                  },
+                  icon: const Icon(Icons.update_rounded, size: 17),
+                  label: const Text('تمدید'),
+                ),
+              ),
+
+              const SizedBox(width: 8),
+
+              // انجام شد
+              Expanded(
+                child: FilledButton.icon(
+                  onPressed: () async {
+                    await _completeTodayReminder(reminder);
+                  },
+                  icon: const Icon(Icons.check_rounded, size: 17),
+                  label: const Text('انجام شد'),
+                ),
+              ),
+
+              const SizedBox(width: 8),
+
+              // مدیریت یادآور
+              IconButton(
+                tooltip: 'مدیریت یادآور',
+                onPressed: _openReminderDialog,
+                icon: const Icon(Icons.more_horiz_rounded),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _completeTodayReminder(Reminder reminder) async {
+    if (reminder.id == null) return;
+
+    try {
+      await NotificationService.instance.cancelReminder(reminder.id!);
+
+      await DatabaseHelper.completeReminder(reminder.id!);
+
+      await _loadReminderStatus();
+
+      if (!mounted) return;
+
+      _showMessage('پیگیری نامه انجام شد.');
+    } catch (e, stackTrace) {
+      debugPrint('complete today reminder error: $e');
+      debugPrintStack(stackTrace: stackTrace);
+
+      if (!mounted) return;
+
+      _showMessage('خطا در انجام یادآور:\n$e');
+    }
+  }
+
+  Future<void> _extendTodayReminder(Reminder reminder) async {
+    if (reminder.id == null) return;
+
+    final selectedDays = await showModalBottomSheet<int>(
+      context: context,
+      backgroundColor: Colors.transparent,
+      builder: (context) {
+        final colorScheme = Theme.of(context).colorScheme;
+
+        return Directionality(
+          textDirection: TextDirection.rtl,
+          child: Container(
+            padding: const EdgeInsets.fromLTRB(20, 12, 20, 24),
+            decoration: BoxDecoration(
+              color: colorScheme.surface,
+              borderRadius: const BorderRadius.vertical(
+                top: Radius.circular(24),
+              ),
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Container(
+                  width: 42,
+                  height: 4,
+                  margin: const EdgeInsets.only(bottom: 18),
+                  decoration: BoxDecoration(
+                    color: colorScheme.onSurface.withOpacity(.18),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                ),
+
+                const Text(
+                  'تمدید پیگیری',
+                  style: TextStyle(fontSize: 17, fontWeight: FontWeight.bold),
+                ),
+
+                const SizedBox(height: 18),
+
+                Row(
+                  children: [
+                    Expanded(child: _buildExtendOption(context, 7)),
+                    const SizedBox(width: 8),
+                    Expanded(child: _buildExtendOption(context, 15)),
+                    const SizedBox(width: 8),
+                    Expanded(child: _buildExtendOption(context, 30)),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+
+    if (selectedDays == null) return;
+
+    try {
+      final now = DateTime.now();
+
+      // چون موعد امروز/گذشته است،
+      // تمدید از امروز محاسبه می‌شود.
+      final rawDate = now.add(Duration(days: selectedDays));
+
+      final newDueDate = DateTime(
+        rawDate.year,
+        rawDate.month,
+        rawDate.day,
+        9,
+        0,
+      );
+
+      await NotificationService.instance.cancelReminder(reminder.id!);
+
+      final updatedReminder = reminder.copyWith(
+        dueDate: newDueDate,
+        status: ReminderStatus.pending,
+        completedAt: null,
+      );
+
+      await DatabaseHelper.updateReminder(updatedReminder);
+
+      await NotificationService.instance.scheduleReminder(
+        reminderId: reminder.id!,
+        recordId: reminder.recordId,
+        dueDate: newDueDate,
+        text: reminder.text,
+      );
+
+      await _loadReminderStatus();
+
+      if (!mounted) return;
+
+      _showMessage('پیگیری برای $selectedDays روز تمدید شد.');
+    } catch (e, stackTrace) {
+      debugPrint('extend today reminder error: $e');
+      debugPrintStack(stackTrace: stackTrace);
+
+      if (!mounted) return;
+
+      _showMessage('خطا در تمدید یادآور:\n$e');
+    }
+  }
+
+  Widget _buildExtendOption(BuildContext context, int days) {
+    final colorScheme = Theme.of(context).colorScheme;
+
+    return InkWell(
+      borderRadius: BorderRadius.circular(14),
+      onTap: () {
+        Navigator.pop(context, days);
+      },
+      child: Container(
+        padding: const EdgeInsets.symmetric(vertical: 14),
+        decoration: BoxDecoration(
+          color: colorScheme.primary.withOpacity(.08),
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: colorScheme.primary.withOpacity(.16)),
+        ),
+        child: Column(
+          children: [
+            Icon(Icons.update_rounded, color: colorScheme.primary),
+            const SizedBox(height: 5),
+            Text(
+              '$days روز',
+              style: TextStyle(
+                fontWeight: FontWeight.w700,
+                color: colorScheme.primary,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 
   // ============================================================
