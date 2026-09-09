@@ -51,7 +51,7 @@ class NotificationService {
     // ----------------------------------------------------------
 
     const androidSettings = AndroidInitializationSettings(
-      '@mipmap/ic_launcher',
+      'launcher_icon',
     );
 
     // ----------------------------------------------------------
@@ -124,7 +124,7 @@ class NotificationService {
       channelDescription: _channelDescription,
       importance: Importance.high,
       priority: Priority.high,
-      icon: '@mipmap/ic_launcher',
+      icon: 'launcher_icon',
     );
 
     const windowsDetails = WindowsNotificationDetails();
@@ -266,7 +266,7 @@ class NotificationService {
       log('مرحله 3: ساخت AndroidInitializationSettings');
 
       const androidSettings = AndroidInitializationSettings(
-        '@mipmap/ic_launcher',
+        'launcher_icon',
       );
 
       log('✅ Android settings ساخته شد.');
