@@ -3,6 +3,7 @@ import 'dart:io';
 
 import 'package:dabirkhane/model/reminder.dart';
 import 'package:dabirkhane/providers/scan_service.dart';
+import 'package:dabirkhane/ui/dialogs/record_history_dialog.dart';
 import 'package:dabirkhane/ui/dialogs/reminder_dialog.dart';
 import 'package:dabirkhane/utils/letter_file_organizer.dart';
 import 'package:share_plus/share_plus.dart';
@@ -2400,6 +2401,17 @@ class _RecordFormState extends State<RecordForm>
   Widget _buildFormButtons() {
     return Row(
       children: [
+        if (widget.record != null) ...[
+          Expanded(
+            child: _glassButton(
+              label: 'تاریخچه',
+              icon: Icons.history_rounded,
+              onPressed: _showRecordHistory,
+            ),
+          ),
+          const SizedBox(width: 9),
+        ],
+
         if (widget.record == null) ...[
           Expanded(
             child: _glassButton(
@@ -3306,6 +3318,49 @@ class _RecordFormState extends State<RecordForm>
           ],
         ),
       ),
+    );
+  }
+
+  Future<void> _saveCategoryHistory(int recordId) async {
+    final oldCategories = List<String>.from(_initialCategories);
+
+    final newCategories = List<String>.from(selectedCategories);
+
+    final oldValue = oldCategories.join('، ');
+    final newValue = newCategories.join('، ');
+
+    if (oldValue == newValue) {
+      return;
+    }
+
+    await DatabaseHelper.addRecordHistory(
+      recordId: recordId,
+      action: 'categories',
+      fieldName: 'دسته‌بندی',
+      oldValue: oldValue,
+      newValue: newValue,
+    );
+  }
+
+  Future<void> _showRecordHistory() async {
+    final rawId = widget.record?['Shomare_Radif'];
+
+    if (rawId == null) {
+      return;
+    }
+
+    final recordId = rawId is int ? rawId : int.tryParse(rawId.toString());
+
+    if (recordId == null) {
+      _showMessage('شماره نامه معتبر نیست.');
+      return;
+    }
+
+    await showDialog(
+      context: context,
+      builder: (_) {
+        return RecordHistoryDialog(recordId: recordId);
+      },
     );
   }
 

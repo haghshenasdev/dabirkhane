@@ -110,7 +110,7 @@ class DatabaseHelper {
 
     return openDatabase(
       dbPath,
-      version: 2,
+      version: 3,
       onCreate: (db, version) async {
         await db.execute('''
           CREATE TABLE IF NOT EXISTS daftare_andicator (
@@ -173,6 +173,28 @@ class DatabaseHelper {
   CREATE INDEX IF NOT EXISTS idx_reminders_due_date
   ON reminders(due_date);
 ''');
+
+        await db.execute('''
+  CREATE TABLE IF NOT EXISTS record_history (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    record_id INTEGER NOT NULL,
+    action TEXT NOT NULL,
+    field_name TEXT,
+    old_value TEXT,
+    new_value TEXT,
+    created_at TEXT NOT NULL
+  );
+''');
+
+        await db.execute('''
+  CREATE INDEX IF NOT EXISTS idx_record_history_record_id
+  ON record_history(record_id);
+''');
+
+        await db.execute('''
+  CREATE INDEX IF NOT EXISTS idx_record_history_created_at
+  ON record_history(created_at);
+''');
       },
 
       onUpgrade: (db, oldVersion, newVersion) async {
@@ -198,6 +220,30 @@ class DatabaseHelper {
       CREATE INDEX IF NOT EXISTS idx_reminders_due_date
       ON reminders(due_date);
     ''');
+        }
+
+        if (oldVersion < 3) {
+          await db.execute('''
+    CREATE TABLE IF NOT EXISTS record_history (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      record_id INTEGER NOT NULL,
+      action TEXT NOT NULL,
+      field_name TEXT,
+      old_value TEXT,
+      new_value TEXT,
+      created_at TEXT NOT NULL
+    );
+  ''');
+
+          await db.execute('''
+    CREATE INDEX IF NOT EXISTS idx_record_history_record_id
+    ON record_history(record_id);
+  ''');
+
+          await db.execute('''
+    CREATE INDEX IF NOT EXISTS idx_record_history_created_at
+    ON record_history(created_at);
+  ''');
         }
       },
     );
@@ -428,18 +474,87 @@ class DatabaseHelper {
   static Future<int> insert(Map<String, dynamic> data) async {
     final db = await database;
 
-    return db.insert('daftare_andicator', data);
+    return db.transaction((txn) async {
+      final id = await txn.insert('daftare_andicator', data);
+
+      await txn.insert('record_history', {
+        'record_id': id,
+        'action': 'create',
+        'field_name': null,
+        'old_value': null,
+        'new_value': 'نامه ایجاد شد',
+        'created_at': DateTime.now().toIso8601String(),
+      });
+
+      return id;
+    });
   }
 
   static Future<int> update(int id, Map<String, dynamic> data) async {
     final db = await database;
 
-    return db.update(
-      'daftare_andicator',
-      data,
-      where: 'Shomare_Radif = ?',
-      whereArgs: [id],
-    );
+    return db.transaction((txn) async {
+      final oldResult = await txn.query(
+        'daftare_andicator',
+        where: 'Shomare_Radif = ?',
+        whereArgs: [id],
+        limit: 1,
+      );
+
+      if (oldResult.isEmpty) {
+        throw Exception('نامه شماره $id برای بروزرسانی پیدا نشد.');
+      }
+
+      final oldData = Map<String, dynamic>.from(oldResult.first);
+
+      final changedFields = <Map<String, dynamic>>[];
+
+      for (final entry in data.entries) {
+        final field = entry.key;
+
+        // شماره ردیف شناسه اصلی است و نباید به عنوان تغییر
+        // در تاریخچه ثبت شود.
+        if (field == 'Shomare_Radif') {
+          continue;
+        }
+
+        final oldValue = oldData[field]?.toString() ?? '';
+
+        final newValue = entry.value?.toString() ?? '';
+
+        if (oldValue != newValue) {
+          changedFields.add({
+            'field': field,
+            'oldValue': oldValue,
+            'newValue': newValue,
+          });
+        }
+      }
+
+      final result = await txn.update(
+        'daftare_andicator',
+        data,
+        where: 'Shomare_Radif = ?',
+        whereArgs: [id],
+      );
+
+      if (changedFields.isNotEmpty) {
+        final now = DateTime.now().toIso8601String();
+
+        for (final change in changedFields) {
+          await txn.insert('record_history', {
+            'record_id': id,
+            'action': 'update',
+            'field_name': _historyFieldLabel(change['field'] as String),
+            'old_value': change['oldValue'],
+            'new_value': change['newValue'],
+            'created_at': now,
+          });
+        }
+      }
+
+      return result;
+    });
   }
 
   static Future<List<Map<String, dynamic>>> getAll() async {
@@ -720,11 +835,66 @@ class DatabaseHelper {
     return result.map((row) => (row['record_id'] as num).toInt()).toSet();
   }
 
+  static Future<List<Map<String, dynamic>>> getRecordHistory(
+    int recordId,
+  ) async {
+    final db = await database;
+
+    final result = await db.query(
+      'record_history',
+      where: 'record_id = ?',
+      whereArgs: [recordId],
+      orderBy: 'created_at DESC, id DESC',
+    );
+
+    return result.map((row) => Map<String, dynamic>.from(row)).toList();
+  }
+
+  static Future<void> addRecordHistory({
+    required int recordId,
+    required String action,
+    String? fieldName,
+    String? oldValue,
+    String? newValue,
+  }) async {
+    final db = await database;
+
+    await db.insert('record_history', {
+      'record_id': recordId,
+      'action': action,
+      'field_name': fieldName,
+      'old_value': oldValue,
+      'new_value': newValue,
+      'created_at': DateTime.now().toIso8601String(),
+    });
+  }
+
   static Future<void> closeDb() async {
     if (_db != null) {
       await _db!.close();
       _db = null;
     }
+  }
+
+  static String _historyFieldLabel(String field) {
+    const labels = {
+      'Shomare_Radif': 'شماره نامه',
+      'goshashte': 'شماره قبلی',
+      'date': 'تاریخ',
+      'saheb_name': 'صاحب نامه',
+      'guy': 'موضوع',
+      'from_pywa': 'پیوست نامه',
+      'sh_name_reside': 'شماره تماس',
+      't_name_reside': 'تاریخ نامه',
+      'onvan': 'گیرنده نامه',
+      'comment': 'توضیحات',
+      'shomare_badi': 'شماره بعدی',
+      'wordmost2': 'پیوست مکاتبه',
+      't_name_ersali': 'تاریخ مکاتبه',
+      'adres_name': 'آدرس',
+    };
+
+    return labels[field] ?? field;
   }
 
   static Future<Map<String, dynamic>?> getById(int id) async {
