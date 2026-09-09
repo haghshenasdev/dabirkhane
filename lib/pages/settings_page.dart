@@ -1,5 +1,6 @@
 import 'dart:io';
 import 'package:dabirkhane/db/database_helper.dart';
+import 'package:dabirkhane/services/notification_service.dart';
 import 'package:dabirkhane/utils/CamScannerPathsTile.dart';
 import 'package:dabirkhane/utils/ScannerTypeTile.dart';
 import 'package:dabirkhane/utils/app_settings.dart';
@@ -324,6 +325,68 @@ class SettingsPage extends StatelessWidget {
           const FormSuggestionsSettings(),
 
           const Divider(),
+
+          ListTile(
+            leading: const Icon(Icons.notifications_active_outlined),
+            title: const Text('تست اعلان‌ها'),
+            subtitle: const Text('بررسی و عیب‌یابی سرویس اعلان'),
+            onTap: () async {
+              showDialog(
+                context: context,
+                barrierDismissible: false,
+                builder: (_) {
+                  return const AlertDialog(
+                    content: SizedBox(
+                      height: 80,
+                      child: Center(
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            CircularProgressIndicator(),
+                            SizedBox(height: 16),
+                            Text('در حال بررسی اعلان‌ها...'),
+                          ],
+                        ),
+                      ),
+                    ),
+                  );
+                },
+              );
+
+              final result = await NotificationService.instance
+                  .debugInitialize();
+
+              if (!context.mounted) return;
+
+              Navigator.of(context).pop();
+
+              showDialog(
+                context: context,
+                builder: (_) {
+                  return AlertDialog(
+                    title: const Row(
+                      children: [
+                        Icon(Icons.bug_report_outlined),
+                        SizedBox(width: 8),
+                        Text('نتیجه تست اعلان'),
+                      ],
+                    ),
+                    content: SingleChildScrollView(
+                      child: SelectableText(result),
+                    ),
+                    actions: [
+                      TextButton(
+                        onPressed: () {
+                          Navigator.of(context).pop();
+                        },
+                        child: const Text('بستن'),
+                      ),
+                    ],
+                  );
+                },
+              );
+            },
+          ),
 
           const Divider(),
 
