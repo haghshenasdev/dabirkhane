@@ -566,6 +566,324 @@ class _RecordFormState extends State<RecordForm>
     });
   }
 
+  Future<void> _showCategoryPicker() async {
+    // دسته‌بندی‌های موجود در دیتابیس
+    final categories = await DatabaseHelper.searchCategories('');
+
+    if (!mounted) return;
+
+    // انتخاب‌های موقت داخل دیالوگ
+    final tempSelected = <String>{...selectedCategories};
+
+    final result = await showDialog<List<String>>(
+      context: context,
+      barrierDismissible: true,
+      builder: (dialogContext) {
+        final searchController = TextEditingController();
+        List<String> filteredCategories = List<String>.from(categories);
+
+        return StatefulBuilder(
+          builder: (context, setDialogState) {
+            void filterCategories(String value) {
+              final query = value.trim().toLowerCase();
+
+              setDialogState(() {
+                if (query.isEmpty) {
+                  filteredCategories = List<String>.from(categories);
+                } else {
+                  filteredCategories = categories
+                      .where((item) => item.toLowerCase().contains(query))
+                      .toList();
+                }
+              });
+            }
+
+            return Directionality(
+              textDirection: TextDirection.rtl,
+              child: Dialog(
+                backgroundColor: Colors.transparent,
+                elevation: 0,
+                insetPadding: const EdgeInsets.symmetric(
+                  horizontal: 24,
+                  vertical: 30,
+                ),
+                child: _glassContainer(
+                  padding: const EdgeInsets.all(18),
+                  radius: 24,
+                  opacity: .96,
+                  child: ConstrainedBox(
+                    constraints: const BoxConstraints(
+                      maxWidth: 520,
+                      maxHeight: 620,
+                    ),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        // عنوان
+                        Row(
+                          children: [
+                            Container(
+                              width: 42,
+                              height: 42,
+                              decoration: BoxDecoration(
+                                shape: BoxShape.circle,
+                                color: Theme.of(
+                                  context,
+                                ).colorScheme.primary.withOpacity(.09),
+                              ),
+                              child: Icon(
+                                Icons.category_outlined,
+                                color: Theme.of(context).colorScheme.primary,
+                                size: 21,
+                              ),
+                            ),
+
+                            const SizedBox(width: 11),
+
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  const Text(
+                                    'انتخاب دسته‌بندی',
+                                    style: TextStyle(
+                                      fontSize: 16,
+                                      fontWeight: FontWeight.w700,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 3),
+                                  Text(
+                                    '${tempSelected.length} دسته انتخاب شده',
+                                    style: TextStyle(
+                                      fontSize: 11,
+                                      color: Theme.of(
+                                        context,
+                                      ).colorScheme.onSurface.withOpacity(.50),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+
+                            IconButton(
+                              tooltip: 'بستن',
+                              onPressed: () {
+                                Navigator.pop(dialogContext);
+                              },
+                              icon: const Icon(Icons.close_rounded),
+                            ),
+                          ],
+                        ),
+
+                        const SizedBox(height: 14),
+
+                        // جستجو
+                        TextField(
+                          controller: searchController,
+                          onChanged: filterCategories,
+                          textDirection: TextDirection.rtl,
+                          decoration: _glassInputDecoration(
+                            label: 'جستجوی دسته‌بندی',
+                            prefixIcon: const Icon(Icons.search_rounded),
+                            suffixIcon: searchController.text.isNotEmpty
+                                ? IconButton(
+                                    onPressed: () {
+                                      searchController.clear();
+                                      filterCategories('');
+                                    },
+                                    icon: const Icon(Icons.clear_rounded),
+                                  )
+                                : null,
+                          ),
+                        ),
+
+                        const SizedBox(height: 12),
+
+                        // لیست دسته‌بندی‌ها
+                        Expanded(
+                          child: filteredCategories.isEmpty
+                              ? Center(
+                                  child: Padding(
+                                    padding: const EdgeInsets.all(30),
+                                    child: Column(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        Icon(
+                                          Icons.category_outlined,
+                                          size: 42,
+                                          color: Theme.of(context)
+                                              .colorScheme
+                                              .onSurface
+                                              .withOpacity(.25),
+                                        ),
+                                        const SizedBox(height: 10),
+                                        Text(
+                                          'دسته‌بندی‌ای پیدا نشد',
+                                          style: TextStyle(
+                                            fontSize: 13,
+                                            color: Theme.of(context)
+                                                .colorScheme
+                                                .onSurface
+                                                .withOpacity(.50),
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                )
+                              : ListView.separated(
+                                  shrinkWrap: true,
+                                  itemCount: filteredCategories.length,
+                                  separatorBuilder: (_, __) {
+                                    return Divider(
+                                      height: 1,
+                                      color: Theme.of(
+                                        context,
+                                      ).colorScheme.outline.withOpacity(.07),
+                                    );
+                                  },
+                                  itemBuilder: (_, index) {
+                                    final category = filteredCategories[index];
+
+                                    final isSelected = tempSelected.contains(
+                                      category,
+                                    );
+
+                                    return Material(
+                                      color: Colors.transparent,
+                                      child: InkWell(
+                                        borderRadius: BorderRadius.circular(12),
+                                        onTap: () {
+                                          setDialogState(() {
+                                            if (isSelected) {
+                                              tempSelected.remove(category);
+                                            } else {
+                                              tempSelected.add(category);
+                                            }
+                                          });
+                                        },
+                                        child: Padding(
+                                          padding: const EdgeInsets.symmetric(
+                                            horizontal: 6,
+                                            vertical: 8,
+                                          ),
+                                          child: Row(
+                                            children: [
+                                              Checkbox(
+                                                value: isSelected,
+                                                onChanged: (value) {
+                                                  setDialogState(() {
+                                                    if (value == true) {
+                                                      tempSelected.add(
+                                                        category,
+                                                      );
+                                                    } else {
+                                                      tempSelected.remove(
+                                                        category,
+                                                      );
+                                                    }
+                                                  });
+                                                },
+                                              ),
+
+                                              const SizedBox(width: 5),
+
+                                              Container(
+                                                width: 34,
+                                                height: 34,
+                                                decoration: BoxDecoration(
+                                                  shape: BoxShape.circle,
+                                                  color: Theme.of(context)
+                                                      .colorScheme
+                                                      .primary
+                                                      .withOpacity(.08),
+                                                ),
+                                                child: Icon(
+                                                  Icons.label_outline_rounded,
+                                                  size: 18,
+                                                  color: Theme.of(
+                                                    context,
+                                                  ).colorScheme.primary,
+                                                ),
+                                              ),
+
+                                              const SizedBox(width: 10),
+
+                                              Expanded(
+                                                child: Text(
+                                                  category,
+                                                  textDirection:
+                                                      TextDirection.rtl,
+                                                  style: TextStyle(
+                                                    fontSize: 13,
+                                                    fontWeight: isSelected
+                                                        ? FontWeight.w700
+                                                        : FontWeight.w500,
+                                                  ),
+                                                ),
+                                              ),
+                                            ],
+                                          ),
+                                        ),
+                                      ),
+                                    );
+                                  },
+                                ),
+                        ),
+
+                        const SizedBox(height: 14),
+
+                        // دکمه‌ها
+                        Row(
+                          children: [
+                            Expanded(
+                              child: _glassButton(
+                                label: 'انصراف',
+                                icon: Icons.close_rounded,
+                                onPressed: () {
+                                  Navigator.pop(dialogContext);
+                                },
+                              ),
+                            ),
+
+                            const SizedBox(width: 8),
+
+                            Expanded(
+                              child: _glassButton(
+                                label: 'تأیید انتخاب',
+                                icon: Icons.check_rounded,
+                                primary: true,
+                                onPressed: () {
+                                  Navigator.pop(
+                                    dialogContext,
+                                    tempSelected.toList(),
+                                  );
+                                },
+                              ),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            );
+          },
+        );
+      },
+    );
+
+    if (result == null || !mounted) return;
+
+    setState(() {
+      selectedCategories = List<String>.from(result);
+      categorySuggestions.clear();
+    });
+
+    categoryController.clear();
+  }
+
   // ============================================================
   // Files
   // ============================================================
@@ -1284,7 +1602,6 @@ class _RecordFormState extends State<RecordForm>
   // ============================================================
   // Category
   // ============================================================
-
   Widget buildCategoryField() {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -1297,18 +1614,35 @@ class _RecordFormState extends State<RecordForm>
             decoration: _glassInputDecoration(
               label: 'دسته‌بندی',
               prefixIcon: const Icon(Icons.label_outline_rounded),
-              suffixIcon: categoryController.text.isNotEmpty
-                  ? IconButton(
+
+              suffixIcon: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  // دکمه انتخاب از دسته‌بندی‌های موجود
+                  IconButton(
+                    tooltip: 'انتخاب از دسته‌بندی‌های موجود',
+                    icon: const Icon(Icons.list_alt_rounded),
+                    onPressed: _showCategoryPicker,
+                  ),
+
+                  // دکمه افزودن دسته‌بندی تایپ‌شده
+                  if (categoryController.text.trim().isNotEmpty)
+                    IconButton(
+                      tooltip: 'افزودن دسته‌بندی',
                       icon: const Icon(Icons.add_rounded),
                       onPressed: () {
                         _addCategory(categoryController.text);
                       },
-                    )
-                  : null,
+                    ),
+                ],
+              ),
             ),
             textDirection: TextDirection.rtl,
             onChanged: (value) {
               _debounceCategory?.cancel();
+
+              // برای اینکه ظاهر دکمه + با تایپ تغییر کند
+              setState(() {});
 
               if (!_categorySuggestionsEnabled) {
                 if (categorySuggestions.isNotEmpty) {
@@ -1323,9 +1657,12 @@ class _RecordFormState extends State<RecordForm>
                 const Duration(milliseconds: 300),
                 () async {
                   if (value.trim().isEmpty) {
+                    if (!mounted) return;
+
                     setState(() {
                       categorySuggestions.clear();
                     });
+
                     return;
                   }
 
