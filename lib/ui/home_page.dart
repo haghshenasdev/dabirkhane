@@ -30,7 +30,7 @@ class _HomePageState extends State<HomePage> {
   bool hasMore = true;
 
   int limit = 30;
-  int offset = 0;
+  int? _lastCursorId;
 
   Timer? _debounce;
 
@@ -55,6 +55,7 @@ class _HomePageState extends State<HomePage> {
     _debounce?.cancel();
     _debounceCategoryFilter?.cancel();
 
+    _scrollController.removeListener(_onScroll);
     _scrollController.dispose();
 
     fromDateController.dispose();
@@ -70,19 +71,24 @@ class _HomePageState extends State<HomePage> {
     if (isLoading) return;
 
     if (reset) {
-      offset = 0;
+      _lastCursorId = null;
       hasMore = true;
 
-      setState(() {
-        records = [];
-      });
+      if (mounted) {
+        setState(() {
+          records = [];
+          filtered = [];
+        });
+      }
     }
 
     if (!hasMore) return;
 
     isLoading = true;
 
-    setState(() {});
+    if (mounted) {
+      setState(() {});
+    }
 
     try {
       final fromDate = fromDateController.text.trim();
@@ -93,7 +99,7 @@ class _HomePageState extends State<HomePage> {
 
       final data = await DatabaseHelper.getPaged(
         limit: limit,
-        offset: offset,
+        beforeId: _lastCursorId,
         search: query,
         fromDate: fromDate,
         toDate: toDate,
@@ -105,24 +111,24 @@ class _HomePageState extends State<HomePage> {
           .map((row) => Map<String, dynamic>.from(row))
           .toList();
 
+      if (!mounted) {
+        return;
+      }
+
       if (mutableData.length < limit) {
         hasMore = false;
       }
 
-      offset += mutableData.length;
-
-      if (!mounted) return;
+      if (mutableData.isNotEmpty) {
+        // چون مرتب‌سازی DESC است، آخرین آیتم
+        // کوچک‌ترین Shomare_Radif این صفحه است.
+        _lastCursorId = _getRecordId(mutableData.last);
+      }
 
       setState(() {
         records.addAll(mutableData);
 
-        filtered = records.where((r) {
-          final q = query.toLowerCase();
-
-          return (r['onvan'] ?? '').toString().toLowerCase().contains(q) ||
-              (r['saheb_name'] ?? '').toString().toLowerCase().contains(q) ||
-              r['Shomare_Radif'].toString().contains(q);
-        }).toList();
+        _rebuildFiltered();
 
         isLoading = false;
       });
@@ -136,6 +142,30 @@ class _HomePageState extends State<HomePage> {
         });
       }
     }
+  }
+
+  int? _getRecordId(Map<String, dynamic> record) {
+    final value = record['Shomare_Radif'];
+
+    if (value is int) {
+      return value;
+    }
+
+    return int.tryParse(value?.toString() ?? '');
+  }
+
+  void _rebuildFiltered() {
+    final q = query.trim().toLowerCase();
+
+    filtered = records.where((r) {
+      if (q.isEmpty) {
+        return true;
+      }
+
+      return (r['onvan'] ?? '').toString().toLowerCase().contains(q) ||
+          (r['saheb_name'] ?? '').toString().toLowerCase().contains(q) ||
+          (r['Shomare_Radif'] ?? '').toString().contains(q);
+    }).toList();
   }
 
   Future<bool> confirmImport() async {
@@ -338,18 +368,27 @@ class _HomePageState extends State<HomePage> {
   @override
   void initState() {
     super.initState();
+
     loadMore();
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      FocusScope.of(context).unfocus();
-    });
-
-    _scrollController.addListener(() {
-      if (_scrollController.position.pixels >=
-          _scrollController.position.maxScrollExtent - 200) {
-        loadMore();
+      if (mounted) {
+        FocusScope.of(context).unfocus();
       }
     });
+
+    _scrollController.addListener(_onScroll);
+  }
+
+  void _onScroll() {
+    if (!_scrollController.hasClients) {
+      return;
+    }
+
+    if (_scrollController.position.pixels >=
+        _scrollController.position.maxScrollExtent - 200) {
+      loadMore();
+    }
   }
 
   @override
@@ -771,6 +810,7 @@ class _HomePageState extends State<HomePage> {
                       setState(() {
                         selectedCategoryFilters.remove(cat);
                       });
+                      loadMore(reset: true);
                     },
                   );
                 }).toList(),
@@ -1150,6 +1190,8 @@ class _HomePageState extends State<HomePage> {
       setState(() {
         selectedCategoryFilters.add(value);
       });
+
+      loadMore(reset: true);
     }
 
     categoryFilterController.clear();
@@ -1166,29 +1208,121 @@ class _HomePageState extends State<HomePage> {
 
       final updatedRecord = Map<String, dynamic>.from(record);
 
-      final index = records.indexWhere((e) => e['Shomare_Radif'] == id);
+      final index = records.indexWhere((e) => _getRecordId(e) == id);
 
-      setState(() {
-        if (index == -1) {
-          // رکورد جدید
-          records.insert(0, updatedRecord);
-        } else {
-          // رکورد ویرایش شده
+      // ------------------------------------------------------------
+      // اگر رکورد از قبل داخل لیست است، فقط همان را Update کن.
+      // ------------------------------------------------------------
+      if (index != -1) {
+        setState(() {
           records[index] = updatedRecord;
-        }
+          _rebuildFiltered();
+        });
 
-        // فیلتر فعلی هم بلافاصله به‌روز شود
-        filtered = records.where((r) {
-          final q = query.toLowerCase();
+        return;
+      }
 
-          return (r['onvan'] ?? '').toString().toLowerCase().contains(q) ||
-              (r['saheb_name'] ?? '').toString().toLowerCase().contains(q) ||
-              r['Shomare_Radif'].toString().contains(q);
-        }).toList();
+      // ------------------------------------------------------------
+      // رکورد جدید است.
+      //
+      // ابتدا بررسی می‌کنیم آیا با فیلتر فعلی سازگار است یا خیر.
+      // ------------------------------------------------------------
+      final matches = _recordMatchesCurrentFilters(updatedRecord);
+
+      if (!matches) {
+        return;
+      }
+
+      // ------------------------------------------------------------
+      // رکورد جدید را ابتدای لیست قرار می‌دهیم.
+      // ------------------------------------------------------------
+      setState(() {
+        records.insert(0, updatedRecord);
+        _rebuildFiltered();
       });
     } catch (e, stackTrace) {
       debugPrint('refreshOneRecord error: $e');
+
       debugPrintStack(stackTrace: stackTrace);
     }
+  }
+
+  bool _recordMatchesCurrentFilters(Map<String, dynamic> record) {
+    // ------------------------------------------------------------
+    // جستجوی عمومی
+    // ------------------------------------------------------------
+
+    final q = query.trim().toLowerCase();
+
+    if (q.isNotEmpty) {
+      final matchesSearch =
+          (record['guy'] ?? '').toString().toLowerCase().contains(q) ||
+          (record['saheb_name'] ?? '').toString().toLowerCase().contains(q) ||
+          (record['Shomare_Radif'] ?? '').toString().contains(q) ||
+          (record['sh_name_reside'] ?? '').toString().toLowerCase().contains(q);
+
+      if (!matchesSearch) {
+        return false;
+      }
+    }
+
+    // ------------------------------------------------------------
+    // فیلتر عنوان / گیرنده
+    // ------------------------------------------------------------
+
+    final onvan = onvanController.text.trim();
+
+    if (onvan.isNotEmpty) {
+      final value = (record['onvan'] ?? '').toString();
+
+      if (!value.contains(onvan)) {
+        return false;
+      }
+    }
+
+    // ------------------------------------------------------------
+    // فیلتر تاریخ شروع
+    // ------------------------------------------------------------
+
+    final fromDate = fromDateController.text.trim();
+
+    if (fromDate.isNotEmpty) {
+      final date = (record['date'] ?? '').toString();
+
+      if (date.compareTo(fromDate) < 0) {
+        return false;
+      }
+    }
+
+    // ------------------------------------------------------------
+    // فیلتر تاریخ پایان
+    // ------------------------------------------------------------
+
+    final toDate = toDateController.text.trim();
+
+    if (toDate.isNotEmpty) {
+      final date = (record['date'] ?? '').toString();
+
+      if (date.compareTo(toDate) > 0) {
+        return false;
+      }
+    }
+
+    // ------------------------------------------------------------
+    // فیلتر دسته‌بندی
+    //
+    // چون دسته‌بندی‌ها در جدول جدا هستند، برای رکورد جدید
+    // اینجا بررسی نمی‌کنیم.
+    //
+    // اگر فیلتر دسته‌بندی فعال باشد، برای جلوگیری از نمایش
+    // اشتباه رکورد جدید، آن را فعلاً وارد لیست نمی‌کنیم.
+    // با refresh بعدی از دیتابیس وارد خواهد شد.
+    // ------------------------------------------------------------
+
+    if (selectedCategoryFilters.isNotEmpty) {
+      return false;
+    }
+
+    return true;
   }
 }
