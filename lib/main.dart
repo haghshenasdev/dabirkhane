@@ -21,7 +21,7 @@ void main() async {
 
   await ScanService.initialize();
 
-  await NotificationService.instance.initialize();
+  // await NotificationService.instance.initialize();
 
   runApp(
     ChangeNotifierProvider(create: (_) => themeProvider, child: const MyApp()),
