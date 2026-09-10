@@ -1052,7 +1052,6 @@ class BackupRestoreService {
         return ['database', 'files'];
     }
   }
-  
 }
 
 class _JalaliMonth {

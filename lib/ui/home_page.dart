@@ -1,23 +1,17 @@
 import 'dart:async';
-import 'dart:convert';
 import 'dart:io';
+
 import 'package:dabirkhane/services/csv_export_service.dart';
 import 'package:dabirkhane/ui/dialogs/backup_restore_dialog.dart';
 import 'package:dabirkhane/ui/dialogs/csv_export_dialog.dart';
 import 'package:dabirkhane/utils/glass_toast.dart';
-import 'package:path/path.dart' as path;
-import 'package:path_provider/path_provider.dart';
-import 'dart:io';
-import 'package:share_plus/share_plus.dart';
 
 import '../pages/settings_page.dart';
 import '../pages/stats_page.dart';
 import 'package:flutter/material.dart';
-import 'package:file_picker/file_picker.dart';
 import 'package:shamsi_date/shamsi_date.dart';
 import '../db/database_helper.dart';
 import 'record_form.dart';
-import 'package:file_selector/file_selector.dart';
 
 class HomePage extends StatefulWidget {
   @override
@@ -39,13 +33,30 @@ class _HomePageState extends State<HomePage> {
   bool isLoading = false;
   bool hasMore = true;
 
-  int limit = 30;
+  int limit = 10;
   int? _lastCursorId;
 
   Timer? _debounce;
 
   bool selectionMode = false;
-  Set<int> selectedIndexes = {};
+
+  // ------------------------------------------------------------
+  // انتخاب رکوردها
+  //
+  // دیگر بر اساس index نیست.
+  // ID واقعی رکورد (Shomare_Radif) ذخیره می‌شود.
+  // ------------------------------------------------------------
+
+  Set<int> selectedRecordIds = {};
+
+  // وقتی true باشد یعنی تمام نتایج فیلتر فعلی انتخاب شده‌اند.
+  //
+  // در این حالت لازم نیست همه رکوردها را از دیتابیس بخوانیم.
+  bool selectAllMode = false;
+
+  // اگر selectAllMode فعال باشد، این IDها استثنا هستند
+  // یعنی کاربر این رکوردها را از انتخاب خارج کرده است.
+  Set<int> _excludedSelectedIds = {};
 
   bool showAdvancedFilter = false;
 
@@ -61,6 +72,7 @@ class _HomePageState extends State<HomePage> {
 
   final TextEditingController categoryFilterController =
       TextEditingController();
+
   List<String> selectedCategoryFilters = [];
   List<String> categoryFilterSuggestions = [];
   Timer? _debounceCategoryFilter;
@@ -85,12 +97,128 @@ class _HomePageState extends State<HomePage> {
     super.dispose();
   }
 
+  // ============================================================
+  // مدیریت انتخاب
+  // ============================================================
+
+  bool _isRecordSelected(int? id) {
+    if (id == null) {
+      return false;
+    }
+
+    // اگر انتخاب همه فعال است:
+    // همه انتخاب هستند به جز مواردی که در excluded هستند.
+    if (selectAllMode) {
+      return !_excludedSelectedIds.contains(id);
+    }
+
+    return selectedRecordIds.contains(id);
+  }
+
+  int get _selectedCountOnLoadedRecords {
+    if (selectAllMode) {
+      return records.where((record) {
+        final id = _getRecordId(record);
+        return id != null && !_excludedSelectedIds.contains(id);
+      }).length;
+    }
+
+    return selectedRecordIds.length;
+  }
+
+  void _enterSelectionMode(int recordId) {
+    setState(() {
+      selectionMode = true;
+
+      selectAllMode = false;
+      _excludedSelectedIds.clear();
+
+      selectedRecordIds.add(recordId);
+    });
+  }
+
+  void _toggleRecordSelection(int recordId) {
+    setState(() {
+      if (selectAllMode) {
+        if (_excludedSelectedIds.contains(recordId)) {
+          // دوباره انتخابش کن
+          _excludedSelectedIds.remove(recordId);
+        } else {
+          // از انتخاب همه خارجش کن
+          _excludedSelectedIds.add(recordId);
+        }
+
+        return;
+      }
+
+      if (selectedRecordIds.contains(recordId)) {
+        selectedRecordIds.remove(recordId);
+      } else {
+        selectedRecordIds.add(recordId);
+      }
+
+      if (selectedRecordIds.isEmpty) {
+        selectionMode = false;
+      }
+    });
+  }
+
+  void _selectAllFilteredRecords() {
+    setState(() {
+      selectionMode = true;
+
+      // خیلی مهم:
+      // هیچ رکورد دیگری از دیتابیس خوانده نمی‌شود.
+      selectAllMode = true;
+
+      // رکوردهایی که کاربر از انتخاب همه خارج کرده بود پاک می‌شوند.
+      _excludedSelectedIds.clear();
+
+      // در حالت selectAll دیگر نیازی به نگهداری ID تک تک رکوردها نداریم.
+      selectedRecordIds.clear();
+    });
+  }
+
+  void _clearSelection() {
+    setState(() {
+      selectionMode = false;
+      selectAllMode = false;
+
+      selectedRecordIds.clear();
+      _excludedSelectedIds.clear();
+    });
+  }
+
+  // وقتی جستجو یا فیلتر عوض می‌شود، انتخاب قبلی را پاک می‌کنیم.
+  //
+  // چون انتخاب همه مربوط به «نتیجه فیلتر قبلی» بوده است.
+  void _clearSelectionForFilterChange() {
+    if (!selectionMode &&
+        !selectAllMode &&
+        selectedRecordIds.isEmpty &&
+        _excludedSelectedIds.isEmpty) {
+      return;
+    }
+
+    selectionMode = false;
+    selectAllMode = false;
+    selectedRecordIds.clear();
+    _excludedSelectedIds.clear();
+  }
+
+  // ============================================================
+  // Pagination
+  // ============================================================
+
   Future<void> loadMore({bool reset = false}) async {
     if (isLoading) return;
 
     if (reset) {
       _lastCursorId = null;
       hasMore = true;
+
+      // تغییر فیلتر = پایان انتخاب قبلی
+      _clearSelectionForFilterChange();
 
       if (mounted) {
         setState(() {
@@ -143,8 +271,6 @@ class _HomePageState extends State<HomePage> {
       }
 
       if (mutableData.isNotEmpty) {
-        // چون مرتب‌سازی DESC است، آخرین آیتم
-        // کوچک‌ترین Shomare_Radif این صفحه است.
         _lastCursorId = _getRecordId(mutableData.last);
       }
 
@@ -239,10 +365,12 @@ class _HomePageState extends State<HomePage> {
   void applyFilter() {
     filtered = records.where((r) {
       final q = query.toLowerCase();
+
       return (r['onvan'] ?? '').toString().toLowerCase().contains(q) ||
           (r['saheb_name'] ?? '').toString().toLowerCase().contains(q) ||
           r['Shomare_Radif'].toString().contains(q);
     }).toList();
+
     setState(() {});
   }
 
@@ -290,7 +418,9 @@ class _HomePageState extends State<HomePage> {
 
         title: selectionMode
             ? Text(
-                "${selectedIndexes.length} مورد انتخاب شده",
+                selectAllMode
+                    ? "همه نتایج انتخاب شده"
+                    : "${selectedRecordIds.length} مورد انتخاب شده",
                 style: const TextStyle(fontWeight: FontWeight.bold),
               )
             : const Text(
@@ -301,28 +431,24 @@ class _HomePageState extends State<HomePage> {
         leading: selectionMode
             ? IconButton(
                 icon: const Icon(Icons.close),
-                onPressed: () {
-                  setState(() {
-                    selectionMode = false;
-                    selectedIndexes.clear();
-                  });
-                },
+                onPressed: _clearSelection,
               )
             : null,
 
         actions: selectionMode
             ? [
                 IconButton(
-                  icon: const Icon(Icons.done_all),
-                  tooltip: "انتخاب همه",
+                  icon: Icon(selectAllMode ? Icons.deselect : Icons.done_all),
+                  tooltip: selectAllMode ? "لغو انتخاب همه" : "انتخاب همه",
                   onPressed: () {
-                    setState(() {
-                      selectedIndexes = Set.from(
-                        List.generate(records.length, (i) => i),
-                      );
-                    });
+                    if (selectAllMode) {
+                      _clearSelection();
+                    } else {
+                      _selectAllFilteredRecords();
+                    }
                   },
                 ),
+
                 IconButton(
                   icon: const Icon(Icons.table_chart),
                   tooltip: "CSV",
@@ -335,20 +461,26 @@ class _HomePageState extends State<HomePage> {
                   icon: const Icon(Icons.refresh),
                   onPressed: () => loadMore(reset: true),
                 ),
+
                 IconButton(
                   tooltip: "آمار",
                   icon: const Icon(Icons.bar_chart),
                   onPressed: () {
+                    _unfocusSearch();
+
                     Navigator.push(
                       context,
                       MaterialPageRoute(builder: (_) => const StatsPage()),
                     );
                   },
                 ),
+
                 IconButton(
                   tooltip: 'پشتیبان‌گیری و بازیابی',
                   icon: const Icon(Icons.backup_rounded),
                   onPressed: () async {
+                    _unfocusSearch();
+
                     final result = await showDialog<bool>(
                       context: context,
                       builder: (_) => const BackupRestoreDialog(),
@@ -358,16 +490,23 @@ class _HomePageState extends State<HomePage> {
                       await loadMore(reset: true);
                       await _loadReminderStatus();
                     }
+
+                    _unfocusSearch();
                   },
                 ),
+
                 IconButton(
                   tooltip: "تنظیمات",
                   icon: const Icon(Icons.settings),
-                  onPressed: () {
-                    Navigator.push(
+                  onPressed: () async {
+                    _unfocusSearch();
+
+                    await Navigator.push(
                       context,
                       MaterialPageRoute(builder: (_) => SettingsPage()),
                     );
+
+                    _unfocusSearch();
                   },
                 ),
               ],
@@ -381,6 +520,8 @@ class _HomePageState extends State<HomePage> {
               icon: const Icon(Icons.add),
               label: const Text("ثبت نامه"),
               onPressed: () async {
+                _unfocusSearch();
+
                 final result = await Navigator.push<Map<String, dynamic>>(
                   context,
                   MaterialPageRoute(builder: (_) => const RecordForm()),
@@ -462,11 +603,8 @@ class _HomePageState extends State<HomePage> {
 
                                 decoration: InputDecoration(
                                   hintText: "جستجوی نامه...",
-
                                   prefixIcon: const Icon(Icons.search),
-
                                   filled: true,
-
                                   fillColor: Colors.grey.shade100,
 
                                   border: OutlineInputBorder(
@@ -480,7 +618,11 @@ class _HomePageState extends State<HomePage> {
                                           icon: const Icon(Icons.clear),
                                           onPressed: () {
                                             _controller.clear();
+
                                             query = "";
+
+                                            _clearSelectionForFilterChange();
+
                                             loadMore(reset: true);
                                           },
                                         ),
@@ -493,6 +635,9 @@ class _HomePageState extends State<HomePage> {
                                     const Duration(milliseconds: 400),
                                     () {
                                       query = v;
+
+                                      _clearSelectionForFilterChange();
+
                                       loadMore(reset: true);
                                     },
                                   );
@@ -508,11 +653,13 @@ class _HomePageState extends State<HomePage> {
                                   showAdvancedFilter = !showAdvancedFilter;
                                 });
                               },
+
                               icon: Icon(
                                 showAdvancedFilter
                                     ? Icons.expand_less
                                     : Icons.filter_alt_outlined,
                               ),
+
                               label: const Text("فیلتر"),
                             ),
                           ],
@@ -525,7 +672,6 @@ class _HomePageState extends State<HomePage> {
 
                           secondChild: Padding(
                             padding: const EdgeInsets.only(top: 18),
-
                             child: buildAdvancedFilter(),
                           ),
 
@@ -556,7 +702,9 @@ class _HomePageState extends State<HomePage> {
                           )
                         : ListView.builder(
                             controller: _scrollController,
+
                             itemCount: records.length + (hasMore ? 1 : 0),
+
                             itemBuilder: (_, i) {
                               if (i >= records.length) {
                                 return const Padding(
@@ -678,7 +826,9 @@ class _HomePageState extends State<HomePage> {
                       decoration: decoration("توضیحات", Icons.notes_outlined),
                     ),
                   ),
+
                   const SizedBox(width: 12),
+
                   Expanded(
                     child: TextField(
                       controller: shomareBadiFilterController,
@@ -699,7 +849,9 @@ class _HomePageState extends State<HomePage> {
                     textDirection: TextDirection.rtl,
                     decoration: decoration("توضیحات", Icons.notes_outlined),
                   ),
+
                   const SizedBox(height: 12),
+
                   TextField(
                     controller: shomareBadiFilterController,
                     keyboardType: TextInputType.text,
@@ -716,18 +868,23 @@ class _HomePageState extends State<HomePage> {
 
         DropdownButtonFormField<int>(
           value: reminderFilter,
+
           decoration: decoration(
             "وضعیت یادآور",
             Icons.notifications_none_rounded,
           ),
+
           items: const [
             DropdownMenuItem(value: 0, child: Text('همه نامه‌ها')),
             DropdownMenuItem(value: 1, child: Text('یادآورهای موعدرسیده')),
             DropdownMenuItem(value: 2, child: Text('دارای یادآور فعال')),
             DropdownMenuItem(value: 3, child: Text('یادآورهای آینده')),
           ],
+
           onChanged: (value) {
             if (value == null) return;
+
+            _clearSelectionForFilterChange();
 
             setState(() {
               reminderFilter = value;
@@ -744,6 +901,7 @@ class _HomePageState extends State<HomePage> {
         //-----------------------------------------
         TextField(
           controller: categoryFilterController,
+
           decoration: decoration("دسته بندی", Icons.category_outlined),
 
           onChanged: (value) {
@@ -763,6 +921,8 @@ class _HomePageState extends State<HomePage> {
                 final result = await DatabaseHelper.searchCategories(
                   value.trim(),
                 );
+
+                if (!mounted) return;
 
                 setState(() {
                   categoryFilterSuggestions = result;
@@ -799,9 +959,12 @@ class _HomePageState extends State<HomePage> {
                     deleteIcon: const Icon(Icons.close),
 
                     onDeleted: () {
+                      _clearSelectionForFilterChange();
+
                       setState(() {
                         selectedCategoryFilters.remove(cat);
                       });
+
                       loadMore(reset: true);
                     },
                   );
@@ -819,9 +982,7 @@ class _HomePageState extends State<HomePage> {
 
             decoration: BoxDecoration(
               color: Colors.white,
-
               borderRadius: BorderRadius.circular(14),
-
               border: Border.all(color: Colors.grey.shade300),
             ),
 
@@ -871,6 +1032,8 @@ class _HomePageState extends State<HomePage> {
               label: const Text("اعمال فیلتر"),
 
               onPressed: () {
+                _clearSelectionForFilterChange();
+
                 loadMore(reset: true);
               },
             ),
@@ -881,6 +1044,8 @@ class _HomePageState extends State<HomePage> {
               label: const Text("پاک کردن"),
 
               onPressed: () {
+                _clearSelectionForFilterChange();
+
                 fromDateController.clear();
                 toDateController.clear();
                 onvanController.clear();
@@ -893,6 +1058,7 @@ class _HomePageState extends State<HomePage> {
 
                 commentFilterController.clear();
                 shomareBadiFilterController.clear();
+
                 reminderFilter = 0;
 
                 query = "";
@@ -909,42 +1075,40 @@ class _HomePageState extends State<HomePage> {
   }
 
   Widget buildRecordCard(Map<String, dynamic> r, int i) {
-    final isSelected = selectedIndexes.contains(i);
-
     final recordId = _getRecordId(r);
+
+    final isSelected = _isRecordSelected(recordId);
 
     final hasDueReminder =
         recordId != null && dueReminderRecordIds.contains(recordId);
 
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 6),
+
       child: Material(
         color: Colors.transparent,
+
         child: InkWell(
           borderRadius: BorderRadius.circular(22),
 
           onTap: () async {
             if (selectionMode) {
-              setState(() {
-                if (isSelected) {
-                  selectedIndexes.remove(i);
-                } else {
-                  selectedIndexes.add(i);
-                }
+              if (recordId == null) return;
 
-                if (selectedIndexes.isEmpty) {
-                  selectionMode = false;
-                }
-              });
+              _toggleRecordSelection(recordId);
             } else {
+              _unfocusSearch();
+
               final result = await Navigator.push<Map<String, dynamic>>(
                 context,
                 MaterialPageRoute(builder: (_) => RecordForm(record: r)),
               );
 
               _unfocusSearch();
+
               if (result != null) {
                 final int? id = result['id'] as int?;
+
                 final bool scanned = result['scanned'] == true;
 
                 if (result['reminderChanged'] == true) {
@@ -973,10 +1137,9 @@ class _HomePageState extends State<HomePage> {
           },
 
           onLongPress: () {
-            setState(() {
-              selectionMode = true;
-              selectedIndexes.add(i);
-            });
+            if (recordId == null) return;
+
+            _enterSelectionMode(recordId);
           },
 
           child: AnimatedContainer(
@@ -993,6 +1156,7 @@ class _HomePageState extends State<HomePage> {
 
               border: Border.all(
                 color: isSelected ? Colors.blue : Colors.white,
+
                 width: isSelected ? 2 : 1.2,
               ),
 
@@ -1009,22 +1173,27 @@ class _HomePageState extends State<HomePage> {
               children: [
                 Column(
                   crossAxisAlignment: CrossAxisAlignment.end,
+
                   children: [
                     //----------------------------------------------------
                     // عنوان
                     //----------------------------------------------------
                     Row(
                       textDirection: TextDirection.rtl,
+
                       children: [
                         Expanded(
                           child: Text(
                             r["guy"] ?? "—",
                             textAlign: TextAlign.right,
+
                             style: const TextStyle(
                               fontSize: 18,
                               fontWeight: FontWeight.bold,
                             ),
+
                             maxLines: 2,
+
                             overflow: TextOverflow.ellipsis,
                           ),
                         ),
@@ -1034,10 +1203,12 @@ class _HomePageState extends State<HomePage> {
                         Container(
                           width: 42,
                           height: 42,
+
                           decoration: BoxDecoration(
                             color: Colors.blue.shade50,
                             borderRadius: BorderRadius.circular(14),
                           ),
+
                           child: const Icon(
                             Icons.mail_outline,
                             color: Colors.blue,
@@ -1053,47 +1224,66 @@ class _HomePageState extends State<HomePage> {
                     //----------------------------------------------------
                     Row(
                       textDirection: TextDirection.rtl,
+
                       crossAxisAlignment: CrossAxisAlignment.center,
+
                       children: [
                         const Icon(
                           Icons.person_outline,
                           size: 18,
                           color: Colors.blueGrey,
                         ),
+
                         const SizedBox(width: 8),
+
                         Expanded(
                           child: Text(
                             r["saheb_name"] ?? "—",
+
                             textAlign: TextAlign.right,
+
                             textDirection: TextDirection.rtl,
+
                             style: const TextStyle(fontSize: 15),
+
                             overflow: TextOverflow.ellipsis,
                           ),
                         ),
+
                         if (hasDueReminder) ...[
                           const SizedBox(width: 12),
+
                           Container(
                             padding: const EdgeInsets.symmetric(
                               horizontal: 9,
                               vertical: 5,
                             ),
+
                             decoration: BoxDecoration(
                               color: Colors.orange.shade100,
+
                               borderRadius: BorderRadius.circular(16),
+
                               border: Border.all(color: Colors.orange.shade300),
                             ),
+
                             child: Row(
                               mainAxisSize: MainAxisSize.min,
+
                               textDirection: TextDirection.rtl,
+
                               children: [
                                 Icon(
                                   Icons.notifications_active_rounded,
                                   size: 14,
                                   color: Colors.orange.shade800,
                                 ),
+
                                 const SizedBox(width: 4),
+
                                 Text(
                                   'موعدرسیده',
+
                                   style: TextStyle(
                                     fontSize: 10,
                                     fontWeight: FontWeight.bold,
@@ -1144,14 +1334,19 @@ class _HomePageState extends State<HomePage> {
                   Positioned(
                     left: 0,
                     top: 0,
+
                     child: AnimatedSwitcher(
                       duration: const Duration(milliseconds: 150),
+
                       child: Icon(
                         isSelected
                             ? Icons.check_circle
                             : Icons.radio_button_unchecked,
+
                         key: ValueKey(isSelected),
+
                         color: isSelected ? Colors.blue : Colors.grey,
+
                         size: 28,
                       ),
                     ),
@@ -1167,12 +1362,15 @@ class _HomePageState extends State<HomePage> {
   Widget _recordChip(IconData icon, String text) {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+
       decoration: BoxDecoration(
         color: Colors.grey.shade100,
         borderRadius: BorderRadius.circular(20),
       ),
+
       child: Row(
         mainAxisSize: MainAxisSize.min,
+
         children: [
           Icon(icon, size: 16, color: Colors.blueGrey),
 
@@ -1187,15 +1385,41 @@ class _HomePageState extends State<HomePage> {
     );
   }
 
-  Future<void> exportSelectedToCsv() async {
-    if (selectedIndexes.isEmpty) {
-      return;
-    }
+  // ============================================================
+  // CSV
+  // ============================================================
 
-    final selectedRecords = selectedIndexes
-        .where((i) => i >= 0 && i < records.length)
-        .map((i) => records[i])
-        .toList();
+  Future<void> exportSelectedToCsv() async {
+    // ------------------------------------------------------------
+    // نکته:
+    //
+    // در حالت انتخاب عادی، فقط رکوردهای انتخاب‌شده فعلی را داریم.
+    //
+    // در حالت selectAll، فعلاً رکوردهای لودشده را برای CSV استفاده
+    // می‌کنیم. برای اینکه CSV واقعاً تمام صفحات دیتابیس را نیز
+    // شامل شود، باید CsvExportService به صورت streaming/chunked
+    // با DatabaseHelper کار کند.
+    // ------------------------------------------------------------
+
+    List<Map<String, dynamic>> selectedRecords;
+
+    if (selectAllMode) {
+      selectedRecords = records.where((record) {
+        final id = _getRecordId(record);
+
+        if (id == null) {
+          return false;
+        }
+
+        return !_excludedSelectedIds.contains(id);
+      }).toList();
+    } else {
+      selectedRecords = records.where((record) {
+        final id = _getRecordId(record);
+
+        return id != null && selectedRecordIds.contains(id);
+      }).toList();
+    }
 
     if (selectedRecords.isEmpty) {
       return;
@@ -1207,8 +1431,13 @@ class _HomePageState extends State<HomePage> {
 
     final selectedFields = await showDialog<List<CsvExportField>>(
       context: context,
+
       builder: (_) {
-        return CsvExportDialog(recordCount: selectedRecords.length);
+        return CsvExportDialog(
+          recordCount: selectAllMode
+              ? _selectedCountOnLoadedRecords
+              : selectedRecords.length,
+        );
       },
     );
 
@@ -1258,11 +1487,7 @@ class _HomePageState extends State<HomePage> {
         ),
       );
 
-      // بعد از خروجی از حالت انتخاب خارج شو
-      setState(() {
-        selectionMode = false;
-        selectedIndexes.clear();
-      });
+      _clearSelection();
     } catch (e, stackTrace) {
       debugPrint('CSV export error: $e');
 
@@ -1276,8 +1501,14 @@ class _HomePageState extends State<HomePage> {
     }
   }
 
+  // ============================================================
+  // دسته بندی
+  // ============================================================
+
   void _addCategoryFilter(String value) {
     if (value.isEmpty) return;
+
+    _clearSelectionForFilterChange();
 
     if (!selectedCategoryFilters.contains(value)) {
       setState(() {
@@ -1291,11 +1522,11 @@ class _HomePageState extends State<HomePage> {
     categoryFilterSuggestions.clear();
   }
 
-  bool _recordMatchesCurrentFilters(Map<String, dynamic> record) {
-    // ------------------------------------------------------------
-    // جستجوی عمومی
-    // ------------------------------------------------------------
+  // ============================================================
+  // بررسی فیلتر
+  // ============================================================
 
+  bool _recordMatchesCurrentFilters(Map<String, dynamic> record) {
     final q = query.trim().toLowerCase();
 
     if (q.isNotEmpty) {
@@ -1310,10 +1541,6 @@ class _HomePageState extends State<HomePage> {
       }
     }
 
-    // ------------------------------------------------------------
-    // فیلتر عنوان / گیرنده
-    // ------------------------------------------------------------
-
     final onvan = onvanController.text.trim();
 
     if (onvan.isNotEmpty) {
@@ -1323,10 +1550,6 @@ class _HomePageState extends State<HomePage> {
         return false;
       }
     }
-
-    // ------------------------------------------------------------
-    // فیلتر تاریخ شروع
-    // ------------------------------------------------------------
 
     final fromDate = fromDateController.text.trim();
 
@@ -1338,10 +1561,6 @@ class _HomePageState extends State<HomePage> {
       }
     }
 
-    // ------------------------------------------------------------
-    // فیلتر تاریخ پایان
-    // ------------------------------------------------------------
-
     final toDate = toDateController.text.trim();
 
     if (toDate.isNotEmpty) {
@@ -1352,17 +1571,6 @@ class _HomePageState extends State<HomePage> {
       }
     }
 
-    // ------------------------------------------------------------
-    // فیلتر دسته‌بندی
-    //
-    // چون دسته‌بندی‌ها در جدول جدا هستند، برای رکورد جدید
-    // اینجا بررسی نمی‌کنیم.
-    //
-    // اگر فیلتر دسته‌بندی فعال باشد، برای جلوگیری از نمایش
-    // اشتباه رکورد جدید، آن را فعلاً وارد لیست نمی‌کنیم.
-    // با refresh بعدی از دیتابیس وارد خواهد شد.
-    // ------------------------------------------------------------
-
     if (selectedCategoryFilters.isNotEmpty) {
       return false;
     }
@@ -1370,9 +1578,12 @@ class _HomePageState extends State<HomePage> {
     return true;
   }
 
+  // ============================================================
+  // Refresh بعد از ذخیره رکورد
+  // ============================================================
+
   Future<void> _refreshAfterRecordSaved() async {
     try {
-      // فقط جدیدترین 30 رکورد را دوباره از دیتابیس بگیر
       final data = await DatabaseHelper.getPaged(
         limit: limit,
         beforeId: null,
@@ -1396,28 +1607,27 @@ class _HomePageState extends State<HomePage> {
       }
 
       setState(() {
-        // رکوردهای جدید را بر اساس ID داخل لیست فعلی merge کن
         for (final newRecord in latestRecords) {
           final newId = _getRecordId(newRecord);
 
-          if (newId == null) continue;
+          if (newId == null) {
+            continue;
+          }
 
           final existingIndex = records.indexWhere(
             (record) => _getRecordId(record) == newId,
           );
 
           if (existingIndex >= 0) {
-            // اگر قبلاً وجود دارد، اطلاعاتش را به‌روز کن
             records[existingIndex] = newRecord;
           } else {
-            // اگر جدید است، به لیست اضافه کن
             records.add(newRecord);
           }
         }
 
-        // مرتب‌سازی مجدد
         records.sort((a, b) {
           final aId = _getRecordId(a) ?? 0;
+
           final bId = _getRecordId(b) ?? 0;
 
           return bId.compareTo(aId);
@@ -1425,32 +1635,37 @@ class _HomePageState extends State<HomePage> {
 
         _rebuildFiltered();
 
-        // اگر قبلاً hasMore=false شده بود،
-        // ممکن است با اضافه شدن نامه جدید دوباره رکورد دیگری
-        // برای دریافت وجود داشته باشد.
         hasMore = true;
       });
 
       await _loadReminderStatus();
     } catch (e, stackTrace) {
       debugPrint('❌ _refreshAfterRecordSaved error: $e');
+
       debugPrintStack(stackTrace: stackTrace);
     }
   }
 
+  // ============================================================
+  // Reminder
+  // ============================================================
+
   Future<void> _loadReminderStatus() async {
     try {
       final ids = await DatabaseHelper.getDueReminderRecordIds();
+
       final count = await DatabaseHelper.getDueRemindersCount();
 
       if (!mounted) return;
 
       setState(() {
         dueReminderRecordIds = ids;
+
         dueReminderCount = count;
       });
     } catch (e, stackTrace) {
       debugPrint('load reminder status error: $e');
+
       debugPrintStack(stackTrace: stackTrace);
     }
   }
@@ -1460,55 +1675,72 @@ class _HomePageState extends State<HomePage> {
 
     return Material(
       color: Colors.transparent,
+
       child: Container(
         width: double.infinity,
+
         padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
+
         decoration: BoxDecoration(
           color: Colors.orange.shade50,
+
           borderRadius: BorderRadius.circular(18),
+
           border: Border.all(color: Colors.orange.shade200),
         ),
+
         child: Row(
           textDirection: TextDirection.rtl,
+
           children: [
-            // آیکون یادآور
             Container(
               width: 42,
               height: 42,
+
               decoration: BoxDecoration(
                 color: Colors.orange.shade100,
+
                 borderRadius: BorderRadius.circular(14),
               ),
+
               child: Icon(
                 Icons.notifications_active_rounded,
+
                 color: Colors.orange.shade800,
               ),
             ),
 
             const SizedBox(width: 12),
 
-            // متن بنر
             Expanded(
               child: InkWell(
                 borderRadius: BorderRadius.circular(12),
+
                 onTap: reminderFilterActive
                     ? null
                     : () {
+                        _clearSelectionForFilterChange();
+
                         setState(() {
                           reminderFilter = 1;
                         });
 
                         loadMore(reset: true);
                       },
+
                 child: Padding(
                   padding: const EdgeInsets.symmetric(
                     vertical: 4,
                     horizontal: 2,
                   ),
+
                   child: Text(
                     '$dueReminderCount نامه دارای یادآور موعدرسیده است',
+
                     textDirection: TextDirection.rtl,
+
                     textAlign: TextAlign.right,
+
                     style: const TextStyle(
                       fontSize: 15,
                       fontWeight: FontWeight.bold,
@@ -1520,7 +1752,6 @@ class _HomePageState extends State<HomePage> {
 
             const SizedBox(width: 10),
 
-            // وقتی فیلتر فعال نیست، فلش نمایش بده
             if (!reminderFilterActive)
               Icon(
                 Icons.arrow_back_ios_new_rounded,
@@ -1528,26 +1759,34 @@ class _HomePageState extends State<HomePage> {
                 color: Colors.orange.shade800,
               ),
 
-            // وقتی فیلتر فعال است، دکمه برداشتن فیلتر
             if (reminderFilterActive)
               OutlinedButton.icon(
                 onPressed: () {
+                  _clearSelectionForFilterChange();
+
                   setState(() {
                     reminderFilter = 0;
                   });
 
                   loadMore(reset: true);
                 },
+
                 icon: const Icon(Icons.filter_alt_off_rounded, size: 17),
+
                 label: const Text('برداشتن فیلتر'),
+
                 style: OutlinedButton.styleFrom(
                   foregroundColor: Colors.orange.shade900,
+
                   side: BorderSide(color: Colors.orange.shade300),
+
                   backgroundColor: Colors.white.withOpacity(0.65),
+
                   padding: const EdgeInsets.symmetric(
                     horizontal: 12,
                     vertical: 9,
                   ),
+
                   shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(12),
                   ),
@@ -1559,10 +1798,15 @@ class _HomePageState extends State<HomePage> {
     );
   }
 
+  // ============================================================
+  // بستن کیبورد
+  // ============================================================
+
   void _unfocusSearch() {
     if (!mounted) return;
 
     _searchFocusNode.unfocus();
+
     FocusScope.of(context).unfocus();
   }
 }
