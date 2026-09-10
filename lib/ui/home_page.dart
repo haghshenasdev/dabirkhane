@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'package:dabirkhane/services/csv_export_service.dart';
+import 'package:dabirkhane/ui/dialogs/backup_restore_dialog.dart';
 import 'package:dabirkhane/ui/dialogs/csv_export_dialog.dart';
 import 'package:dabirkhane/utils/glass_toast.dart';
 import 'package:path/path.dart' as path;
@@ -199,30 +200,6 @@ class _HomePageState extends State<HomePage> {
     }).toList();
   }
 
-  Future<bool> confirmImport() async {
-    return await showDialog<bool>(
-          context: context,
-          builder: (_) => AlertDialog(
-            title: Text('هشدار'),
-            content: Text(
-              'با این کار دیتابیس فعلی جایگزین می‌شود.\n'
-              'آیا مطمئن هستید؟',
-            ),
-            actions: [
-              TextButton(
-                child: Text('انصراف'),
-                onPressed: () => Navigator.pop(context, false),
-              ),
-              ElevatedButton(
-                child: Text('بله، ادامه بده'),
-                onPressed: () => Navigator.pop(context, true),
-              ),
-            ],
-          ),
-        ) ??
-        false;
-  }
-
   void showMessage(String title, String message) {
     showDialog(
       context: context,
@@ -237,135 +214,6 @@ class _HomePageState extends State<HomePage> {
         ],
       ),
     );
-  }
-
-  Future<void> importDb() async {
-    FilePickerResult? result = await FilePicker.platform.pickFiles(
-      type: FileType.custom,
-      allowedExtensions: ['sqlite', 'db'],
-    );
-
-    if (result == null) return;
-
-    // تأیید کاربر
-    final ok = await confirmImport();
-    if (!ok) return;
-
-    try {
-      // 1️⃣ مسیر دیتابیس را بگیر (بدون باز کردنش)
-      final String targetPath = await DatabaseHelper.getDbPath();
-      final File targetFile = File(targetPath);
-
-      // 2️⃣ اگر دیتابیس باز است، ببند
-      await DatabaseHelper.closeDb();
-
-      // 3️⃣ حذف فایل قبلی
-      if (await targetFile.exists()) {
-        final backupPath = '$targetPath.backup';
-        await targetFile.copy(backupPath);
-        await targetFile.delete();
-      }
-
-      // 4️⃣ کپی دیتابیس جدید
-      final File selectedFile = File(result.files.single.path!);
-      await selectedFile.copy(targetPath);
-
-      // 5️⃣ دیتابیس جدید باز شود
-      await DatabaseHelper.database;
-
-      // 6️⃣ بارگذاری مجدد دیتا
-      await load();
-
-      showMessage('موفقیت', 'دیتابیس با موفقیت جایگزین شد.');
-    } catch (e) {
-      showMessage(
-        'خطا',
-        'ویندوز اجازه جایگزینی فایل را نداد.\n'
-            'لطفاً مطمئن شوید فایل دیتابیس در برنامه یا جای دیگری باز نباشد.\n\n$e',
-      );
-      debugPrint(e.toString());
-    }
-  }
-
-  Future<void> exportDb() async {
-    try {
-      final db = await DatabaseHelper.database;
-      final File dbFile = File(db.path);
-
-      if (!await dbFile.exists()) {
-        showMessage('خطا', 'فایل دیتابیس پیدا نشد.');
-        return;
-      }
-
-      // ---------------------------------------------
-      // Android
-      // ---------------------------------------------
-      if (Platform.isAndroid) {
-        final tempDir = await getTemporaryDirectory();
-
-        final backupFile = File(
-          path.join(tempDir.path, 'dabirkhane_backup.sqlite'),
-        );
-
-        // اگر فایل قبلی وجود دارد حذف شود
-        if (await backupFile.exists()) {
-          await backupFile.delete();
-        }
-
-        // ساخت کپی از دیتابیس
-        await dbFile.copy(backupFile.path);
-
-        // اشتراک‌گذاری
-        await Share.shareXFiles(
-          [XFile(backupFile.path, mimeType: 'application/x-sqlite3')],
-          subject: 'پشتیبان دیتابیس دبیرخانه',
-          text: 'فایل پشتیبان دیتابیس دبیرخانه',
-        );
-
-        // پاک کردن فایل موقت
-        if (await backupFile.exists()) {
-          await backupFile.delete();
-        }
-
-        return;
-      }
-
-      // ---------------------------------------------
-      // Windows
-      // ---------------------------------------------
-      if (Platform.isWindows) {
-        final String? dir = await FilePicker.platform.getDirectoryPath();
-
-        if (dir == null) {
-          return;
-        }
-
-        final String target = path.join(dir, 'dabirkhane.sqlite');
-
-        final File targetFile = File(target);
-
-        if (await targetFile.exists()) {
-          await targetFile.delete();
-        }
-
-        await dbFile.copy(target);
-
-        showMessage(
-          'موفقیت',
-          'پشتیبان دیتابیس با موفقیت ذخیره شد.\n\n'
-              '$target',
-        );
-
-        return;
-      }
-
-      // ---------------------------------------------
-      // سایر پلتفرم‌ها
-      // ---------------------------------------------
-      showMessage('خطا', 'پشتیبان‌گیری در این پلتفرم پشتیبانی نمی‌شود.');
-    } catch (e) {
-      showMessage('خطا', 'خطا در پشتیبان‌گیری دیتابیس:\n$e');
-    }
   }
 
   Future<void> load() async {
@@ -496,14 +344,19 @@ class _HomePageState extends State<HomePage> {
                   },
                 ),
                 IconButton(
-                  tooltip: "بازیابی",
-                  icon: const Icon(Icons.download),
-                  onPressed: importDb,
-                ),
-                IconButton(
-                  tooltip: "پشتیبان گیری",
-                  icon: const Icon(Icons.upload),
-                  onPressed: exportDb,
+                  tooltip: 'پشتیبان‌گیری و بازیابی',
+                  icon: const Icon(Icons.backup_rounded),
+                  onPressed: () async {
+                    final result = await showDialog<bool>(
+                      context: context,
+                      builder: (_) => const BackupRestoreDialog(),
+                    );
+
+                    if (result == true && mounted) {
+                      await loadMore(reset: true);
+                      await _loadReminderStatus();
+                    }
+                  },
                 ),
                 IconButton(
                   tooltip: "تنظیمات",
