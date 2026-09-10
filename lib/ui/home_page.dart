@@ -53,6 +53,7 @@ class _HomePageState extends State<HomePage> {
   final TextEditingController toDateController = TextEditingController();
   final TextEditingController onvanController = TextEditingController();
   final TextEditingController _controller = TextEditingController();
+  final FocusNode _searchFocusNode = FocusNode();
   final TextEditingController commentFilterController = TextEditingController();
 
   final TextEditingController shomareBadiFilterController =
@@ -76,6 +77,7 @@ class _HomePageState extends State<HomePage> {
     toDateController.dispose();
     onvanController.dispose();
     _controller.dispose();
+    _searchFocusNode.dispose();
     categoryFilterController.dispose();
     commentFilterController.dispose();
     shomareBadiFilterController.dispose();
@@ -410,6 +412,8 @@ class _HomePageState extends State<HomePage> {
                     }
                   }
                 }
+
+                _unfocusSearch();
               },
             ),
 
@@ -453,6 +457,8 @@ class _HomePageState extends State<HomePage> {
                             Expanded(
                               child: TextField(
                                 controller: _controller,
+                                focusNode: _searchFocusNode,
+                                autofocus: false,
 
                                 decoration: InputDecoration(
                                   hintText: "جستجوی نامه...",
@@ -936,6 +942,7 @@ class _HomePageState extends State<HomePage> {
                 MaterialPageRoute(builder: (_) => RecordForm(record: r)),
               );
 
+              _unfocusSearch();
               if (result != null) {
                 final int? id = result['id'] as int?;
                 final bool scanned = result['scanned'] == true;
@@ -1550,5 +1557,12 @@ class _HomePageState extends State<HomePage> {
         ),
       ),
     );
+  }
+
+  void _unfocusSearch() {
+    if (!mounted) return;
+
+    _searchFocusNode.unfocus();
+    FocusScope.of(context).unfocus();
   }
 }
