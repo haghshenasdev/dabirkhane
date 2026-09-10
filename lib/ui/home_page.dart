@@ -1,6 +1,8 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'package:dabirkhane/services/csv_export_service.dart';
+import 'package:dabirkhane/ui/dialogs/csv_export_dialog.dart';
 import 'package:dabirkhane/utils/glass_toast.dart';
 import 'package:path/path.dart' as path;
 import 'package:path_provider/path_provider.dart';
@@ -1326,57 +1328,92 @@ class _HomePageState extends State<HomePage> {
   }
 
   Future<void> exportSelectedToCsv() async {
-    if (selectedIndexes.isEmpty) return;
+    if (selectedIndexes.isEmpty) {
+      return;
+    }
 
     final selectedRecords = selectedIndexes
         .where((i) => i >= 0 && i < records.length)
         .map((i) => records[i])
         .toList();
 
-    if (selectedRecords.isEmpty) return;
-
-    final headers = selectedRecords.first.keys
-        .map((e) => e.toString())
-        .toList();
-
-    final StringBuffer csv = StringBuffer();
-    csv.writeln(headers.join(','));
-
-    for (final record in selectedRecords) {
-      final row = headers
-          .map((h) {
-            final value = record[h]?.toString() ?? '';
-            final escaped = value.replaceAll('"', '""');
-            return '"$escaped"';
-          })
-          .join(',');
-
-      csv.writeln(row);
+    if (selectedRecords.isEmpty) {
+      return;
     }
 
+    // ------------------------------------------------------------
+    // نمایش دیالوگ انتخاب فیلدها
+    // ------------------------------------------------------------
+
+    final selectedFields = await showDialog<List<CsvExportField>>(
+      context: context,
+      builder: (_) {
+        return CsvExportDialog(recordCount: selectedRecords.length);
+      },
+    );
+
+    if (!mounted || selectedFields == null) {
+      return;
+    }
+
+    if (selectedFields.isEmpty) {
+      return;
+    }
+
+    // ------------------------------------------------------------
+    // نام فایل
+    // ------------------------------------------------------------
+
     final now = Jalali.now();
+
     final formattedDate =
-        '${now.year}_${now.month.toString().padLeft(2, '0')}_${now.day.toString().padLeft(2, '0')}';
+        '${now.year}_'
+        '${now.month.toString().padLeft(2, '0')}_'
+        '${now.day.toString().padLeft(2, '0')}';
 
     final fileName = 'خروجی دبیرخانه-$formattedDate.csv';
 
-    final path = await getSaveLocation(
-      suggestedName: fileName,
-      acceptedTypeGroups: const [
-        XTypeGroup(label: 'CSV', extensions: ['csv']),
-      ],
-    );
+    // ------------------------------------------------------------
+    // ایجاد و ذخیره / اشتراک‌گذاری
+    // ------------------------------------------------------------
 
-    if (path == null) return;
+    try {
+      await CsvExportService.instance.export(
+        records: selectedRecords,
+        fields: selectedFields,
+        fileName: fileName,
+      );
 
-    final bytes = const Utf8Encoder().convert(csv.toString());
-    final bom = [0xEF, 0xBB, 0xBF];
-    await File(path.path).writeAsBytes([...bom, ...bytes], flush: true);
+      if (!mounted) {
+        return;
+      }
 
-    debugPrint('✅ CSV فارسی ذخیره شد: $path');
-    ScaffoldMessenger.of(
-      context,
-    ).showSnackBar(SnackBar(content: Text('✅ خروجی ذخیره شد: ${path.path}')));
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            Platform.isAndroid
+                ? 'فایل CSV آماده و برای اشتراک‌گذاری ارسال شد.'
+                : 'فایل CSV با موفقیت ایجاد شد.',
+          ),
+        ),
+      );
+
+      // بعد از خروجی از حالت انتخاب خارج شو
+      setState(() {
+        selectionMode = false;
+        selectedIndexes.clear();
+      });
+    } catch (e, stackTrace) {
+      debugPrint('CSV export error: $e');
+
+      debugPrintStack(stackTrace: stackTrace);
+
+      if (!mounted) {
+        return;
+      }
+
+      showMessage('خطا', 'ایجاد خروجی CSV با خطا مواجه شد.\n\n$e');
+    }
   }
 
   void _addCategoryFilter(String value) {
