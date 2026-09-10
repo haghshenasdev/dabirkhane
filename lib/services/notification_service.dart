@@ -51,7 +51,7 @@ class NotificationService {
     // ----------------------------------------------------------
 
     const androidSettings = AndroidInitializationSettings(
-      'launcher_icon',
+      'icon',
     );
 
     // ----------------------------------------------------------
@@ -124,7 +124,7 @@ class NotificationService {
       channelDescription: _channelDescription,
       importance: Importance.high,
       priority: Priority.high,
-      icon: 'launcher_icon',
+      icon: 'icon',
     );
 
     const windowsDetails = WindowsNotificationDetails();
@@ -266,7 +266,7 @@ class NotificationService {
       log('مرحله 3: ساخت AndroidInitializationSettings');
 
       const androidSettings = AndroidInitializationSettings(
-        'launcher_icon',
+        'icon',
       );
 
       log('✅ Android settings ساخته شد.');
