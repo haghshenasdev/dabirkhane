@@ -1,4 +1,5 @@
 import 'dart:io';
+
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:path_provider/path_provider.dart';
 
@@ -14,6 +15,104 @@ class AppSettings {
   static const String scannerCamScanner = 'camscanner';
   static const String scannerFastScanner = 'fastscanner';
 
+  // ============================================================
+  // Backup / Restore history
+  // ============================================================
+
+  static const _lastBackupAtKey = 'last_backup_at';
+  static const _lastBackupTypeKey = 'last_backup_type';
+  static const _lastBackupItemsKey = 'last_backup_items';
+
+  static const _lastRestoreAtKey = 'last_restore_at';
+  static const _lastRestoreTypeKey = 'last_restore_type';
+  static const _lastRestoreItemsKey = 'last_restore_items';
+
+  // -----------------------------
+  // Last Backup
+  // -----------------------------
+
+  static Future<void> saveLastBackup({
+    required String type,
+    required List<String> items,
+  }) async {
+    final prefs = await SharedPreferences.getInstance();
+
+    await prefs.setString(_lastBackupAtKey, DateTime.now().toIso8601String());
+
+    await prefs.setString(_lastBackupTypeKey, type);
+
+    await prefs.setStringList(_lastBackupItemsKey, items);
+  }
+
+  static Future<DateTime?> getLastBackupAt() async {
+    final prefs = await SharedPreferences.getInstance();
+
+    final value = prefs.getString(_lastBackupAtKey);
+
+    if (value == null || value.isEmpty) {
+      return null;
+    }
+
+    return DateTime.tryParse(value);
+  }
+
+  static Future<String?> getLastBackupType() async {
+    final prefs = await SharedPreferences.getInstance();
+
+    return prefs.getString(_lastBackupTypeKey);
+  }
+
+  static Future<List<String>> getLastBackupItems() async {
+    final prefs = await SharedPreferences.getInstance();
+
+    return prefs.getStringList(_lastBackupItemsKey) ?? <String>[];
+  }
+
+  // -----------------------------
+  // Last Restore
+  // -----------------------------
+
+  static Future<void> saveLastRestore({
+    required String type,
+    required List<String> items,
+  }) async {
+    final prefs = await SharedPreferences.getInstance();
+
+    await prefs.setString(_lastRestoreAtKey, DateTime.now().toIso8601String());
+
+    await prefs.setString(_lastRestoreTypeKey, type);
+
+    await prefs.setStringList(_lastRestoreItemsKey, items);
+  }
+
+  static Future<DateTime?> getLastRestoreAt() async {
+    final prefs = await SharedPreferences.getInstance();
+
+    final value = prefs.getString(_lastRestoreAtKey);
+
+    if (value == null || value.isEmpty) {
+      return null;
+    }
+
+    return DateTime.tryParse(value);
+  }
+
+  static Future<String?> getLastRestoreType() async {
+    final prefs = await SharedPreferences.getInstance();
+
+    return prefs.getString(_lastRestoreTypeKey);
+  }
+
+  static Future<List<String>> getLastRestoreItems() async {
+    final prefs = await SharedPreferences.getInstance();
+
+    return prefs.getStringList(_lastRestoreItemsKey) ?? <String>[];
+  }
+
+  // ============================================================
+  // Scanner
+  // ============================================================
+
   static Future<String> getScannerType() async {
     final prefs = await SharedPreferences.getInstance();
 
@@ -26,6 +125,10 @@ class AppSettings {
     await prefs.setString(_scannerTypeKey, value);
   }
 
+  // ============================================================
+  // Suggestions
+  // ============================================================
+
   static const String _suggestionsSahebNameKey = 'form_suggestions_saheb_name';
 
   static const String _suggestionsGuyKey = 'form_suggestions_guy';
@@ -33,12 +136,12 @@ class AppSettings {
   static const String _suggestionsOnvanKey = 'form_suggestions_onvan';
 
   static const String _suggestionsCategoryKey = 'form_suggestions_category';
+
   static const String _saveAndReturnAfterScanKey = 'save_and_return_after_scan';
 
   static Future<bool> getSaveAndReturnAfterScan() async {
     final prefs = await SharedPreferences.getInstance();
 
-    // پیش‌فرض خاموش باشد
     return prefs.getBool(_saveAndReturnAfterScanKey) ?? false;
   }
 
@@ -106,6 +209,10 @@ class AppSettings {
     }
   }
 
+  // ============================================================
+  // CamScanner
+  // ============================================================
+
   static const String defaultCamScannerPath1 =
       "/storage/emulated/0/DCIM/CamScanner";
 
@@ -134,64 +241,84 @@ class AppSettings {
     final prefs = await SharedPreferences.getInstance();
 
     await prefs.setString(_camScannerPath1Key, path1);
+
     await prefs.setString(_camScannerPath2Key, path2);
   }
 
   static Future<String> getCamScannerPath1() async {
     final prefs = await SharedPreferences.getInstance();
+
     return prefs.getString(_camScannerPath1Key) ?? defaultCamScannerPath1;
   }
 
+  static Future<String> getCamScannerPath2() async {
+    final prefs = await SharedPreferences.getInstance();
+
+    return prefs.getString(_camScannerPath2Key) ?? defaultCamScannerPath2;
+  }
+
+  // ============================================================
+  // Read without gallery
+  // ============================================================
+
   static Future<bool> getReadWithoutGallerySave() async {
     final prefs = await SharedPreferences.getInstance();
+
     return prefs.getBool(_readWithoutGallerySaveKey) ?? true;
   }
 
   static Future<void> setReadWithoutGallerySave(bool value) async {
     final prefs = await SharedPreferences.getInstance();
+
     await prefs.setBool(_readWithoutGallerySaveKey, value);
   }
 
   static Future<void> toggleReadWithoutGallerySave() async {
     final current = await getReadWithoutGallerySave();
+
     await setReadWithoutGallerySave(!current);
   }
 
-  static Future<String> getCamScannerPath2() async {
-    final prefs = await SharedPreferences.getInstance();
-    return prefs.getString(_camScannerPath2Key) ?? defaultCamScannerPath2;
-  }
+  // ============================================================
+  // Letters directory
+  // ============================================================
 
   /// گرفتن مسیر پوشه نامه‌ها
   static Future<Directory> getLettersDirectory() async {
     final prefs = await SharedPreferences.getInstance();
+
     final savedPath = prefs.getString(_lettersPathKey);
 
     if (savedPath != null && savedPath.isNotEmpty) {
       final dir = Directory(savedPath);
+
       if (await dir.exists()) {
         return dir;
       }
     }
 
-    // مسیر پیش‌فرض
     final appDir = await getApplicationDocumentsDirectory();
+
     final defaultDir = Directory('${appDir.path}/letters');
+
     if (!await defaultDir.exists()) {
       await defaultDir.create(recursive: true);
     }
+
     return defaultDir;
   }
 
   /// ذخیره مسیر جدید
   static Future<void> setLettersDirectory(String path) async {
     final prefs = await SharedPreferences.getInstance();
+
     await prefs.setString(_lettersPathKey, path);
   }
 
-  /// گرفتن مسیر ذخیره‌شده (برای نمایش)
+  /// گرفتن مسیر ذخیره‌شده
   static Future<String?> getSavedLettersPath() async {
     final prefs = await SharedPreferences.getInstance();
+
     return prefs.getString(_lettersPathKey);
   }
 }

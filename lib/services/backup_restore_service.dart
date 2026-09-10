@@ -73,16 +73,34 @@ class BackupRestoreService {
     try {
       onProgress?.call(0.05, 'در حال آماده‌سازی...');
 
+      late final BackupResult result;
+
       switch (type) {
         case BackupType.database:
-          return await _createDatabaseBackup(onProgress: onProgress);
+          result = await _createDatabaseBackup(onProgress: onProgress);
+          break;
 
         case BackupType.previousMonthFiles:
-          return await _createPreviousMonthFilesBackup(onProgress: onProgress);
+          result = await _createPreviousMonthFilesBackup(
+            onProgress: onProgress,
+          );
+          break;
 
         case BackupType.full:
-          return await _createFullBackup(onProgress: onProgress);
+          result = await _createFullBackup(onProgress: onProgress);
+          break;
       }
+
+      // فقط در صورت موفق بودن عملیات،
+      // اطلاعات آخرین بکاپ ذخیره می‌شود.
+      if (result.success) {
+        await AppSettings.saveLastBackup(
+          type: _backupTypeToString(type),
+          items: _backupItems(type),
+        );
+      }
+
+      return result;
     } catch (e) {
       return BackupResult(success: false, message: 'خطا در ایجاد پشتیبان:\n$e');
     }
@@ -102,20 +120,43 @@ class BackupRestoreService {
 
       final extension = path.extension(backupFile.path).toLowerCase();
 
+      late final RestoreResult result;
+
       if (extension == '.sqlite' || extension == '.db') {
-        return await _restoreDatabase(backupFile, onProgress: onProgress);
+        result = await _restoreDatabase(backupFile, onProgress: onProgress);
+      } else if (extension == '.zip') {
+        result = await _restoreZip(backupFile, onProgress: onProgress);
+      } else {
+        return const RestoreResult(
+          success: false,
+          message:
+              'نوع فایل انتخاب‌شده قابل تشخیص نیست.\n'
+              'فقط فایل‌های SQLite و ZIP پشتیبانی می‌شوند.',
+        );
       }
 
-      if (extension == '.zip') {
-        return await _restoreZip(backupFile, onProgress: onProgress);
+      // فقط در صورت موفقیت، تاریخچه بازیابی ذخیره می‌شود.
+      if (result.success) {
+        final items = <String>[];
+
+        if (result.databaseRestored) {
+          items.add('database');
+        }
+
+        if (result.filesRestored) {
+          items.add('files');
+        }
+
+        // اگر عملیات موفق بوده ولی هیچ‌کدام از فلگ‌ها
+        // فعال نشده باشند، چیزی در تاریخچه ثبت نمی‌کنیم.
+        if (items.isNotEmpty) {
+          final type = items.length == 2 ? 'full' : items.first;
+
+          await AppSettings.saveLastRestore(type: type, items: items);
+        }
       }
 
-      return const RestoreResult(
-        success: false,
-        message:
-            'نوع فایل انتخاب‌شده قابل تشخیص نیست.\n'
-            'فقط فایل‌های SQLite و ZIP پشتیبانی می‌شوند.',
-      );
+      return result;
     } catch (e) {
       return RestoreResult(success: false, message: 'خطا در بازیابی:\n$e');
     }
@@ -985,6 +1026,33 @@ class BackupRestoreService {
 
     return int.tryParse(value?.toString() ?? '');
   }
+
+  static String _backupTypeToString(BackupType type) {
+    switch (type) {
+      case BackupType.database:
+        return 'database';
+
+      case BackupType.previousMonthFiles:
+        return 'files';
+
+      case BackupType.full:
+        return 'full';
+    }
+  }
+
+  static List<String> _backupItems(BackupType type) {
+    switch (type) {
+      case BackupType.database:
+        return ['database'];
+
+      case BackupType.previousMonthFiles:
+        return ['files'];
+
+      case BackupType.full:
+        return ['database', 'files'];
+    }
+  }
+  
 }
 
 class _JalaliMonth {
