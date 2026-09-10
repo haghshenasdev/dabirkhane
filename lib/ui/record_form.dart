@@ -3178,17 +3178,6 @@ class _RecordFormState extends State<RecordForm>
                       ? colorScheme.primary
                       : colorScheme.onSurface.withOpacity(.50),
                 ),
-                const SizedBox(width: 6),
-                Text(
-                  _autoSaveEnabled ? 'ذخیره خودکار' : 'ذخیره خودکار خاموش',
-                  style: TextStyle(
-                    fontSize: 11,
-                    fontWeight: FontWeight.w600,
-                    color: _autoSaveEnabled
-                        ? colorScheme.primary
-                        : colorScheme.onSurface.withOpacity(.58),
-                  ),
-                ),
               ],
             ),
           ),
@@ -3229,17 +3218,6 @@ class _RecordFormState extends State<RecordForm>
                   : Icons.notifications_none_rounded,
               size: 18,
               color: _hasActiveReminder ? activeColor : inactiveColor,
-            ),
-            const SizedBox(width: 6),
-            Text(
-              _hasActiveReminder ? 'یادآور فعال' : 'یادآور',
-              style: TextStyle(
-                fontSize: 11,
-                fontWeight: FontWeight.w600,
-                color: _hasActiveReminder
-                    ? activeColor
-                    : colorScheme.onSurface.withOpacity(.58),
-              ),
             ),
           ],
         ),
@@ -3713,15 +3691,6 @@ class _RecordFormState extends State<RecordForm>
               Icons.history_rounded,
               size: 18,
               color: colorScheme.onSurface.withOpacity(.50),
-            ),
-            const SizedBox(width: 6),
-            Text(
-              'تاریخچه',
-              style: TextStyle(
-                fontSize: 11,
-                fontWeight: FontWeight.w600,
-                color: colorScheme.onSurface.withOpacity(.58),
-              ),
             ),
           ],
         ),

@@ -1,3 +1,5 @@
+import 'dart:ui';
+
 import 'package:flutter/material.dart';
 import 'package:shamsi_date/shamsi_date.dart';
 
@@ -17,6 +19,7 @@ class _RecordHistoryDialogState extends State<RecordHistoryDialog> {
 
   bool _loading = true;
   String? _error;
+
   List<Map<String, dynamic>> _history = [];
 
   @override
@@ -46,8 +49,8 @@ class _RecordHistoryDialogState extends State<RecordHistoryDialog> {
       if (!mounted) return;
 
       setState(() {
-        _error = e.toString();
         _loading = false;
+        _error = e.toString();
       });
     }
   }
@@ -68,29 +71,60 @@ class _RecordHistoryDialogState extends State<RecordHistoryDialog> {
     final colorScheme = Theme.of(context).colorScheme;
 
     return Dialog(
-      insetPadding: const EdgeInsets.symmetric(horizontal: 40, vertical: 35),
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
-      clipBehavior: Clip.antiAlias,
+      insetPadding: const EdgeInsets.symmetric(horizontal: 22, vertical: 24),
+      backgroundColor: Colors.transparent,
+      elevation: 0,
       child: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 850, maxHeight: 700),
-        child: Directionality(
-          textDirection: TextDirection.rtl,
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              _buildHeader(colorScheme),
-              const Divider(height: 1),
-              Expanded(child: _buildBody(colorScheme)),
-            ],
+        constraints: const BoxConstraints(maxWidth: 900, maxHeight: 760),
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(28),
+          child: BackdropFilter(
+            filter: ImageFilter.blur(sigmaX: 18, sigmaY: 18),
+            child: Container(
+              decoration: BoxDecoration(
+                color: colorScheme.surface.withOpacity(
+                  colorScheme.brightness == Brightness.dark ? .88 : .82,
+                ),
+                borderRadius: BorderRadius.circular(28),
+                border: Border.all(
+                  color: colorScheme.onSurface.withOpacity(.10),
+                ),
+                boxShadow: [
+                  BoxShadow(
+                    color: colorScheme.shadow.withOpacity(.14),
+                    blurRadius: 35,
+                    spreadRadius: 2,
+                    offset: const Offset(0, 12),
+                  ),
+                ],
+              ),
+              child: Directionality(
+                textDirection: TextDirection.rtl,
+                child: Column(
+                  children: [
+                    _buildHeader(colorScheme),
+                    Container(
+                      height: 1,
+                      color: colorScheme.onSurface.withOpacity(.07),
+                    ),
+                    Expanded(child: _buildBody(colorScheme)),
+                  ],
+                ),
+              ),
+            ),
           ),
         ),
       ),
     );
   }
 
+  // --------------------------------------------------------------------------
+  // Header
+  // --------------------------------------------------------------------------
+
   Widget _buildHeader(ColorScheme colorScheme) {
     return Padding(
-      padding: const EdgeInsets.fromLTRB(22, 18, 14, 18),
+      padding: const EdgeInsets.fromLTRB(22, 18, 14, 17),
       child: Row(
         children: [
           Container(
@@ -98,15 +132,18 @@ class _RecordHistoryDialogState extends State<RecordHistoryDialog> {
             height: 46,
             decoration: BoxDecoration(
               color: colorScheme.primary.withOpacity(.10),
-              borderRadius: BorderRadius.circular(14),
+              borderRadius: BorderRadius.circular(15),
+              border: Border.all(color: colorScheme.primary.withOpacity(.10)),
             ),
             child: Icon(
               Icons.history_rounded,
-              color: colorScheme.primary,
               size: 24,
+              color: colorScheme.primary,
             ),
           ),
+
           const SizedBox(width: 12),
+
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -115,17 +152,18 @@ class _RecordHistoryDialogState extends State<RecordHistoryDialog> {
                   'تاریخچه تغییرات نامه',
                   style: TextStyle(fontSize: 16, fontWeight: FontWeight.w800),
                 ),
-                const SizedBox(height: 3),
+                const SizedBox(height: 4),
                 Text(
-                  'نامه شماره ${widget.recordId}',
+                  'سوابق تغییرات نامه شماره ${widget.recordId}',
                   style: TextStyle(
-                    fontSize: 12,
-                    color: colorScheme.onSurface.withOpacity(.55),
+                    fontSize: 11.5,
+                    color: colorScheme.onSurfaceVariant,
                   ),
                 ),
               ],
             ),
           ),
+
           IconButton(
             tooltip: 'بستن',
             onPressed: () {
@@ -137,6 +175,10 @@ class _RecordHistoryDialogState extends State<RecordHistoryDialog> {
       ),
     );
   }
+
+  // --------------------------------------------------------------------------
+  // Body
+  // --------------------------------------------------------------------------
 
   Widget _buildBody(ColorScheme colorScheme) {
     if (_loading) {
@@ -151,33 +193,99 @@ class _RecordHistoryDialogState extends State<RecordHistoryDialog> {
       return _buildEmptyState(colorScheme);
     }
 
+    final groups = _groupHistory(_history);
+
     return Scrollbar(
       controller: _scrollController,
       thumbVisibility: true,
       trackVisibility: true,
       child: ListView.builder(
         controller: _scrollController,
-        padding: const EdgeInsets.fromLTRB(24, 22, 24, 30),
-        itemCount: _history.length,
+        padding: const EdgeInsets.fromLTRB(20, 20, 20, 30),
+        itemCount: groups.length,
         itemBuilder: (context, index) {
-          final item = _history[index];
-
-          return _HistoryItem(item: item, isLast: index == _history.length - 1);
+          return _HistoryGroup(
+            items: groups[index].items,
+            dateTime: groups[index].dateTime,
+            isLast: index == groups.length - 1,
+          );
         },
       ),
     );
   }
 
+  // --------------------------------------------------------------------------
+  // Grouping
+  // --------------------------------------------------------------------------
+
+  List<_HistoryGroupData> _groupHistory(List<Map<String, dynamic>> history) {
+    final Map<String, List<Map<String, dynamic>>> grouped = {};
+
+    for (final item in history) {
+      final rawDate = item['created_at']?.toString() ?? '';
+      final dateTime = DateTime.tryParse(rawDate);
+
+      final key = dateTime != null ? _groupKey(dateTime) : 'unknown_$rawDate';
+
+      grouped.putIfAbsent(key, () => []).add(item);
+    }
+
+    final result = grouped.entries.map((entry) {
+      DateTime? dateTime;
+
+      for (final item in entry.value) {
+        final parsed = DateTime.tryParse(item['created_at']?.toString() ?? '');
+
+        if (parsed != null) {
+          dateTime = parsed;
+          break;
+        }
+      }
+
+      return _HistoryGroupData(dateTime: dateTime, items: entry.value);
+    }).toList();
+
+    result.sort((a, b) {
+      if (a.dateTime == null && b.dateTime == null) {
+        return 0;
+      }
+
+      if (a.dateTime == null) {
+        return 1;
+      }
+
+      if (b.dateTime == null) {
+        return -1;
+      }
+
+      return b.dateTime!.compareTo(a.dateTime!);
+    });
+
+    return result;
+  }
+
+  String _groupKey(DateTime dateTime) {
+    return '${dateTime.year}-'
+        '${dateTime.month.toString().padLeft(2, '0')}-'
+        '${dateTime.day.toString().padLeft(2, '0')}-'
+        '${dateTime.hour.toString().padLeft(2, '0')}-'
+        '${dateTime.minute.toString().padLeft(2, '0')}';
+  }
+
+  // --------------------------------------------------------------------------
+  // Error
+  // --------------------------------------------------------------------------
+
   Widget _buildErrorState(ColorScheme colorScheme) {
     return Center(
-      child: SingleChildScrollView(
+      child: Padding(
         padding: const EdgeInsets.all(30),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
             Icon(
               Icons.error_outline_rounded,
-              size: 42,
+              size: 44,
               color: colorScheme.error,
             ),
             const SizedBox(height: 12),
@@ -188,12 +296,12 @@ class _RecordHistoryDialogState extends State<RecordHistoryDialog> {
             ),
             const SizedBox(height: 8),
             Text(
-              _error!,
+              _error ?? '',
               textAlign: TextAlign.center,
               textDirection: TextDirection.ltr,
               style: TextStyle(
                 fontSize: 11,
-                color: colorScheme.onSurface.withOpacity(.55),
+                color: colorScheme.onSurfaceVariant,
               ),
             ),
             const SizedBox(height: 18),
@@ -208,6 +316,10 @@ class _RecordHistoryDialogState extends State<RecordHistoryDialog> {
     );
   }
 
+  // --------------------------------------------------------------------------
+  // Empty
+  // --------------------------------------------------------------------------
+
   Widget _buildEmptyState(ColorScheme colorScheme) {
     return Center(
       child: Padding(
@@ -215,18 +327,32 @@ class _RecordHistoryDialogState extends State<RecordHistoryDialog> {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(
-              Icons.history_toggle_off_rounded,
-              size: 55,
-              color: colorScheme.onSurface.withOpacity(.25),
+            Container(
+              width: 76,
+              height: 76,
+              decoration: BoxDecoration(
+                color: colorScheme.primary.withOpacity(.07),
+                shape: BoxShape.circle,
+              ),
+              child: Icon(
+                Icons.history_toggle_off_rounded,
+                size: 38,
+                color: colorScheme.primary.withOpacity(.45),
+              ),
             ),
-            const SizedBox(height: 14),
-            Text(
+            const SizedBox(height: 16),
+            const Text(
               'هنوز تغییری برای این نامه ثبت نشده است.',
               textAlign: TextAlign.center,
+              style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700),
+            ),
+            const SizedBox(height: 6),
+            Text(
+              'تغییرات بعدی نامه در این بخش نمایش داده می‌شوند.',
+              textAlign: TextAlign.center,
               style: TextStyle(
-                fontSize: 13,
-                color: colorScheme.onSurface.withOpacity(.55),
+                fontSize: 11,
+                color: colorScheme.onSurfaceVariant,
               ),
             ),
           ],
@@ -236,330 +362,308 @@ class _RecordHistoryDialogState extends State<RecordHistoryDialog> {
   }
 }
 
-class _HistoryItem extends StatelessWidget {
-  final Map<String, dynamic> item;
+// ============================================================================
+// Group
+// ============================================================================
+
+class _HistoryGroup extends StatelessWidget {
+  final List<Map<String, dynamic>> items;
+  final DateTime? dateTime;
   final bool isLast;
 
-  const _HistoryItem({required this.item, required this.isLast});
+  const _HistoryGroup({
+    required this.items,
+    required this.dateTime,
+    required this.isLast,
+  });
 
   @override
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
 
-    final action = item['action']?.toString() ?? '';
-    final fieldName = item['field_name']?.toString();
-    final oldValue = item['old_value']?.toString();
-    final newValue = item['new_value']?.toString();
-    final createdAt = item['created_at']?.toString();
+    final actions = _uniqueActions(items);
 
-    final dateTime = DateTime.tryParse(createdAt ?? '');
+    final accentColor = _getAccentColor(actions, colorScheme);
 
-    final actionInfo = _actionInfo(action, colorScheme);
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        // Timeline
+        SizedBox(
+          width: 28,
+          child: Column(
+            children: [
+              const SizedBox(height: 8),
 
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 18),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          // Timeline
-          SizedBox(
-            width: 44,
-            child: _TimelineIndicator(
-              color: actionInfo.color,
-              lineColor: colorScheme.onSurface.withOpacity(.08),
-              showLine: !isLast,
-            ),
+              Container(
+                width: 11,
+                height: 11,
+                decoration: BoxDecoration(
+                  color: accentColor,
+                  shape: BoxShape.circle,
+                  boxShadow: [
+                    BoxShadow(
+                      color: accentColor.withOpacity(.25),
+                      blurRadius: 7,
+                      spreadRadius: 2,
+                    ),
+                  ],
+                ),
+              ),
+
+              if (!isLast)
+                Container(
+                  width: 1,
+                  height: 210,
+                  margin: const EdgeInsets.only(top: 7),
+                  color: colorScheme.outlineVariant.withOpacity(.55),
+                ),
+            ],
           ),
+        ),
 
-          const SizedBox(width: 12),
+        const SizedBox(width: 8),
 
-          // Content
-          Expanded(
-            child: _HistoryCard(
-              item: item,
-              actionInfo: actionInfo,
-              dateTime: dateTime,
-            ),
+        Expanded(
+          child: _buildGlassCard(context, colorScheme, actions, accentColor),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildGlassCard(
+    BuildContext context,
+    ColorScheme colorScheme,
+    List<String> actions,
+    Color accentColor,
+  ) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 17),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(20),
+        gradient: LinearGradient(
+          begin: Alignment.topRight,
+          end: Alignment.bottomLeft,
+          colors: [
+            colorScheme.surfaceContainerHigh.withOpacity(.72),
+            colorScheme.surfaceContainerLow.withOpacity(.48),
+          ],
+        ),
+        border: Border.all(color: colorScheme.onSurface.withOpacity(.075)),
+        boxShadow: [
+          BoxShadow(
+            color: colorScheme.shadow.withOpacity(.045),
+            blurRadius: 18,
+            offset: const Offset(0, 5),
           ),
         ],
+      ),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(20),
+        child: BackdropFilter(
+          filter: ImageFilter.blur(sigmaX: 12, sigmaY: 12),
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(15, 14, 15, 12),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                // Event header
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Expanded(
+                      child: Wrap(
+                        spacing: 6,
+                        runSpacing: 5,
+                        children: actions.map((action) {
+                          return _ActionLabel(
+                            text: _actionTitle(action),
+                            color: _actionColor(action, colorScheme),
+                          );
+                        }).toList(),
+                      ),
+                    ),
+
+                    if (dateTime != null) ...[
+                      const SizedBox(width: 10),
+                      _DateLabel(dateTime: dateTime!),
+                    ],
+                  ],
+                ),
+
+                const SizedBox(height: 11),
+
+                Container(
+                  height: 1,
+                  color: colorScheme.outlineVariant.withOpacity(.35),
+                ),
+
+                // Changes
+                ...List.generate(items.length, (index) {
+                  return _ChangeRow(
+                    item: items[index],
+                    isLast: index == items.length - 1,
+                  );
+                }),
+              ],
+            ),
+          ),
+        ),
       ),
     );
   }
 
-  _HistoryActionInfo _actionInfo(String action, ColorScheme colorScheme) {
+  List<String> _uniqueActions(List<Map<String, dynamic>> items) {
+    final result = <String>[];
+
+    for (final item in items) {
+      final action = item['action']?.toString() ?? '';
+
+      if (action.isEmpty) {
+        continue;
+      }
+
+      if (!result.contains(action)) {
+        result.add(action);
+      }
+    }
+
+    return result;
+  }
+
+  Color _getAccentColor(List<String> actions, ColorScheme colorScheme) {
+    if (actions.isEmpty) {
+      return colorScheme.primary;
+    }
+
+    return _actionColor(actions.first, colorScheme);
+  }
+
+  String _actionTitle(String action) {
     switch (action) {
       case 'create':
-        return _HistoryActionInfo(
-          title: 'ایجاد نامه',
-          icon: Icons.add_circle_outline_rounded,
-          color: colorScheme.primary,
-        );
+        return 'ایجاد نامه';
 
       case 'update':
-        return _HistoryActionInfo(
-          title: 'ویرایش نامه',
-          icon: Icons.edit_note_rounded,
-          color: Colors.orange,
-        );
+        return 'ویرایش نامه';
 
       case 'categories':
-        return _HistoryActionInfo(
-          title: 'تغییر دسته‌بندی',
-          icon: Icons.label_outline_rounded,
-          color: Colors.deepPurple,
-        );
+        return 'تغییر دسته‌بندی';
 
       case 'reminder_create':
-        return _HistoryActionInfo(
-          title: 'ایجاد یادآور',
-          icon: Icons.notifications_active_outlined,
-          color: Colors.blue,
-        );
+        return 'ایجاد یادآور';
 
       case 'reminder_update':
-        return _HistoryActionInfo(
-          title: 'ویرایش یادآور',
-          icon: Icons.notifications_none_rounded,
-          color: Colors.orange,
-        );
+        return 'ویرایش یادآور';
 
       case 'reminder_complete':
-        return _HistoryActionInfo(
-          title: 'تکمیل یادآور',
-          icon: Icons.task_alt_rounded,
-          color: Colors.green,
-        );
+        return 'تکمیل یادآور';
 
       case 'reminder_cancel':
-        return _HistoryActionInfo(
-          title: 'لغو یادآور',
-          icon: Icons.notifications_off_outlined,
-          color: Colors.red,
-        );
+        return 'لغو یادآور';
 
       case 'reminder_delete':
-        return _HistoryActionInfo(
-          title: 'حذف یادآور',
-          icon: Icons.delete_outline_rounded,
-          color: Colors.red,
-        );
+        return 'حذف یادآور';
 
       default:
-        return _HistoryActionInfo(
-          title: 'تغییر اطلاعات',
-          icon: Icons.change_circle_outlined,
-          color: colorScheme.primary,
-        );
+        return 'تغییر اطلاعات';
+    }
+  }
+
+  Color _actionColor(String action, ColorScheme colorScheme) {
+    switch (action) {
+      case 'create':
+        return colorScheme.primary;
+
+      case 'update':
+        return colorScheme.tertiary;
+
+      case 'categories':
+        return colorScheme.secondary;
+
+      case 'reminder_create':
+        return colorScheme.primary;
+
+      case 'reminder_update':
+        return colorScheme.tertiary;
+
+      case 'reminder_complete':
+        return Colors.green.shade600;
+
+      case 'reminder_cancel':
+      case 'reminder_delete':
+        return colorScheme.error;
+
+      default:
+        return colorScheme.primary;
     }
   }
 }
 
-class _TimelineIndicator extends StatelessWidget {
-  final Color color;
-  final Color lineColor;
-  final bool showLine;
+// ============================================================================
+// Action Label
+// ============================================================================
 
-  const _TimelineIndicator({
-    required this.color,
-    required this.lineColor,
-    required this.showLine,
-  });
+class _ActionLabel extends StatelessWidget {
+  final String text;
+  final Color color;
+
+  const _ActionLabel({required this.text, required this.color});
 
   @override
   Widget build(BuildContext context) {
-    return Column(
-      children: [
-        Container(
-          width: 34,
-          height: 34,
-          decoration: BoxDecoration(
-            shape: BoxShape.circle,
-            color: color.withOpacity(.11),
-          ),
-          child: Icon(Icons.history_rounded, size: 18, color: color),
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
+      decoration: BoxDecoration(
+        color: color.withOpacity(.09),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: color.withOpacity(.10)),
+      ),
+      child: Text(
+        text,
+        style: TextStyle(
+          fontSize: 10.5,
+          fontWeight: FontWeight.w700,
+          color: color,
         ),
-
-        if (showLine)
-          Container(
-            width: 2,
-            height: 95,
-            margin: const EdgeInsets.only(top: 4),
-            color: lineColor,
-          ),
-      ],
+      ),
     );
   }
 }
 
-class _HistoryCard extends StatelessWidget {
-  final Map<String, dynamic> item;
-  final _HistoryActionInfo actionInfo;
-  final DateTime? dateTime;
+// ============================================================================
+// Date
+// ============================================================================
+class _DateLabel extends StatelessWidget {
+  final DateTime dateTime;
 
-  const _HistoryCard({
-    required this.item,
-    required this.actionInfo,
-    required this.dateTime,
-  });
+  const _DateLabel({required this.dateTime});
 
   @override
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
 
-    final fieldName = item['field_name']?.toString();
-    final oldValue = item['old_value']?.toString();
-    final newValue = item['new_value']?.toString();
-
     return Container(
-      padding: const EdgeInsets.all(15),
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
       decoration: BoxDecoration(
-        color: colorScheme.surface,
-        borderRadius: BorderRadius.circular(17),
-        border: Border.all(color: colorScheme.onSurface.withOpacity(.07)),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(.035),
-            blurRadius: 12,
-            offset: const Offset(0, 4),
-          ),
-        ],
+        color: colorScheme.surfaceContainerHighest.withOpacity(.55),
+        borderRadius: BorderRadius.circular(9),
+        border: Border.all(color: colorScheme.outlineVariant.withOpacity(.45)),
       ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Expanded(
-                child: Text(
-                  actionInfo.title,
-                  textDirection: TextDirection.rtl,
-                  style: const TextStyle(
-                    fontSize: 13,
-                    fontWeight: FontWeight.w800,
-                  ),
-                ),
-              ),
-
-              if (dateTime != null) ...[
-                const SizedBox(width: 10),
-                Flexible(
-                  child: Text(
-                    _formatDateTime(dateTime!),
-                    textDirection: TextDirection.rtl,
-                    textAlign: TextAlign.left,
-                    style: TextStyle(
-                      fontSize: 10.5,
-                      color: colorScheme.onSurface.withOpacity(.48),
-                    ),
-                  ),
-                ),
-              ],
-            ],
-          ),
-
-          if (fieldName != null && fieldName.trim().isNotEmpty) ...[
-            const SizedBox(height: 12),
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 6),
-              decoration: BoxDecoration(
-                color: actionInfo.color.withOpacity(.07),
-                borderRadius: BorderRadius.circular(8),
-              ),
-              child: Text(
-                fieldName,
-                textDirection: TextDirection.rtl,
-                style: TextStyle(
-                  fontSize: 11,
-                  fontWeight: FontWeight.w700,
-                  color: actionInfo.color,
-                ),
-              ),
-            ),
-          ],
-
-          if (oldValue != null || newValue != null) ...[
-            const SizedBox(height: 10),
-            _buildChange(context, oldValue ?? '', newValue ?? ''),
-          ],
-        ],
-      ),
-    );
-  }
-
-  Widget _buildChange(BuildContext context, String oldValue, String newValue) {
-    final colorScheme = Theme.of(context).colorScheme;
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        _valueBox(
-          context,
-          label: 'قبلی',
-          value: oldValue,
-          icon: Icons.remove_circle_outline_rounded,
-          color: colorScheme.error,
+      child: Text(
+        _formatDateTime(dateTime),
+        textDirection: TextDirection.rtl,
+        style: TextStyle(
+          fontSize: 12.5,
+          height: 1.4,
+          color: colorScheme.onSurface,
+          fontWeight: FontWeight.w600,
         ),
-        const SizedBox(height: 7),
-        _valueBox(
-          context,
-          label: 'جدید',
-          value: newValue,
-          icon: Icons.add_circle_outline_rounded,
-          color: colorScheme.primary,
-        ),
-      ],
-    );
-  }
-
-  Widget _valueBox(
-    BuildContext context, {
-    required String label,
-    required String value,
-    required IconData icon,
-    required Color color,
-  }) {
-    final colorScheme = Theme.of(context).colorScheme;
-
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 9),
-      decoration: BoxDecoration(
-        color: color.withOpacity(.045),
-        borderRadius: BorderRadius.circular(11),
-        border: Border.all(color: color.withOpacity(.10)),
-      ),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Icon(icon, size: 16, color: color),
-          const SizedBox(width: 8),
-          Text(
-            '$label:',
-            textDirection: TextDirection.rtl,
-            style: TextStyle(
-              fontSize: 10.5,
-              fontWeight: FontWeight.w700,
-              color: color,
-            ),
-          ),
-          const SizedBox(width: 8),
-          Expanded(
-            child: Text(
-              value.isEmpty ? '—' : value,
-              textDirection: TextDirection.rtl,
-              style: TextStyle(
-                fontSize: 11.5,
-                height: 1.6,
-                color: colorScheme.onSurface.withOpacity(.78),
-              ),
-            ),
-          ),
-        ],
       ),
     );
   }
 
-  static String _formatDateTime(DateTime dateTime) {
+  String _formatDateTime(DateTime dateTime) {
     try {
       final j = Jalali.fromDateTime(dateTime);
 
@@ -575,15 +679,154 @@ class _HistoryCard extends StatelessWidget {
     }
   }
 }
+// ============================================================================
+// Change Row
+// ============================================================================
 
-class _HistoryActionInfo {
-  final String title;
-  final IconData icon;
-  final Color color;
+class _ChangeRow extends StatelessWidget {
+  final Map<String, dynamic> item;
+  final bool isLast;
 
-  const _HistoryActionInfo({
-    required this.title,
-    required this.icon,
-    required this.color,
+  const _ChangeRow({required this.item, required this.isLast});
+
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+
+    final fieldName = item['field_name']?.toString().trim() ?? '';
+
+    final oldValue = item['old_value']?.toString() ?? '';
+
+    final newValue = item['new_value']?.toString() ?? '';
+
+    final hasOld = oldValue.isNotEmpty;
+    final hasNew = newValue.isNotEmpty;
+
+    return Container(
+      padding: const EdgeInsets.symmetric(vertical: 10),
+      decoration: isLast
+          ? null
+          : BoxDecoration(
+              border: Border(
+                bottom: BorderSide(
+                  color: colorScheme.outlineVariant.withOpacity(.25),
+                ),
+              ),
+            ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          if (fieldName.isNotEmpty)
+            Text(
+              fieldName,
+              style: TextStyle(
+                fontSize: 11.5,
+                fontWeight: FontWeight.w700,
+                color: colorScheme.onSurface,
+              ),
+            ),
+
+          if (fieldName.isNotEmpty) const SizedBox(height: 6),
+
+          if (hasOld || hasNew)
+            _buildValues(context, oldValue, newValue)
+          else
+            Text(
+              'تغییر انجام شد',
+              style: TextStyle(
+                fontSize: 11,
+                color: colorScheme.onSurfaceVariant,
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildValues(BuildContext context, String oldValue, String newValue) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        if (oldValue.isNotEmpty)
+          _ValueLine(label: 'قبلی', value: oldValue, isOld: true),
+
+        if (oldValue.isNotEmpty && newValue.isNotEmpty)
+          const SizedBox(height: 4),
+
+        if (newValue.isNotEmpty)
+          _ValueLine(label: 'جدید', value: newValue, isOld: false),
+      ],
+    );
+  }
+}
+
+// ============================================================================
+// Value Line
+// ============================================================================
+
+class _ValueLine extends StatelessWidget {
+  final String label;
+  final String value;
+  final bool isOld;
+
+  const _ValueLine({
+    required this.label,
+    required this.value,
+    required this.isOld,
   });
+
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+
+    final color = isOld ? colorScheme.error : colorScheme.primary;
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+      decoration: BoxDecoration(
+        color: color.withOpacity(.035),
+        borderRadius: BorderRadius.circular(9),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            '$label:',
+            textDirection: TextDirection.rtl,
+            style: TextStyle(
+              fontSize: 10.5,
+              fontWeight: FontWeight.w700,
+              color: color,
+            ),
+          ),
+
+          const SizedBox(width: 8),
+
+          Expanded(
+            child: Text(
+              value.isEmpty ? '—' : value,
+              textDirection: TextDirection.rtl,
+              style: TextStyle(
+                fontSize: 11.2,
+                height: 1.55,
+                color: colorScheme.onSurfaceVariant,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ============================================================================
+// Group Data
+// ============================================================================
+
+class _HistoryGroupData {
+  final DateTime? dateTime;
+  final List<Map<String, dynamic>> items;
+
+  const _HistoryGroupData({required this.dateTime, required this.items});
 }
