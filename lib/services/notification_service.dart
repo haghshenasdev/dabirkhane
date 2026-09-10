@@ -28,31 +28,34 @@ class NotificationService {
       return;
     }
 
-    // Initialize timezone database.
+    // ----------------------------------------------------------
+    // Timezone
+    // ----------------------------------------------------------
+
     tz.initializeTimeZones();
 
-    // Set device timezone.
     try {
       final timezoneInfo = await FlutterTimezone.getLocalTimezone();
 
       tz.setLocalLocation(tz.getLocation(timezoneInfo.identifier));
     } catch (e) {
-      // Fallback
       try {
         tz.setLocalLocation(tz.getLocation('Asia/Tehran'));
       } catch (_) {
-        // اگر timezone مورد نظر در دیتابیس وجود نداشت،
-        // timezone پیش‌فرض timezone package استفاده می‌شود.
+        // از timezone پیش‌فرض استفاده می‌شود.
       }
     }
 
     // ----------------------------------------------------------
     // Android
+    //
+    // icon.png باید در این مسیر باشد:
+    //
+    // android/app/src/main/res/drawable/icon.png
+    //
     // ----------------------------------------------------------
 
-    const androidSettings = AndroidInitializationSettings(
-      'icon',
-    );
+    const androidSettings = AndroidInitializationSettings('icon');
 
     // ----------------------------------------------------------
     // Windows
@@ -62,6 +65,7 @@ class NotificationService {
       appName: 'دبیرخانه',
       appUserModelId: 'com.haghshenasdev.dabirkhane',
       guid: '8d9a4f1b-8e5c-4a5a-b5f1-2d7f9f6a1234',
+      iconPath: 'assets/images/logo.png',
     );
 
     // ----------------------------------------------------------
@@ -78,7 +82,10 @@ class NotificationService {
       onDidReceiveNotificationResponse: _onNotificationResponse,
     );
 
+    // ----------------------------------------------------------
     // Android 13+
+    // ----------------------------------------------------------
+
     if (Platform.isAndroid) {
       final androidImplementation = _plugin
           .resolvePlatformSpecificImplementation<
@@ -102,14 +109,6 @@ class NotificationService {
       return;
     }
 
-    // payload فعلاً شماره نامه است.
-    //
-    // در مرحله بعد اینجا می‌توانیم:
-    //
-    // 1. شماره نامه را استخراج کنیم
-    // 2. صفحه Home را باز کنیم
-    // 3. همان نامه را مستقیماً باز کنیم
-
     print('Reminder notification clicked. Record ID: $payload');
   }
 
@@ -118,14 +117,24 @@ class NotificationService {
   // ------------------------------------------------------------
 
   NotificationDetails _notificationDetails() {
+    // ----------------------------------------------------------
+    // Android
+    // ----------------------------------------------------------
+
     const androidDetails = AndroidNotificationDetails(
       _channelId,
       _channelName,
       channelDescription: _channelDescription,
       importance: Importance.high,
       priority: Priority.high,
+
+      // icon.png
       icon: 'icon',
     );
+
+    // ----------------------------------------------------------
+    // Windows
+    // ----------------------------------------------------------
 
     const windowsDetails = WindowsNotificationDetails();
 
@@ -213,10 +222,14 @@ class NotificationService {
     await _plugin.show(
       id: 999999,
       title: 'دبیرخانه',
-      body: 'اعلان‌های یادآور با موفقیت فعال شده‌اند.',
+      body: 'این یک اعلان آزمایشی است.',
       notificationDetails: _notificationDetails(),
     );
   }
+
+  // ------------------------------------------------------------
+  // Debug initialize + test notification
+  // ------------------------------------------------------------
 
   Future<String> debugInitialize() async {
     final logs = <String>[];
@@ -228,10 +241,36 @@ class NotificationService {
     try {
       log('شروع initialize');
 
+      // --------------------------------------------------------
+      // Already initialized
+      // --------------------------------------------------------
+
       if (_initialized) {
         log('⚠️ سرویس قبلاً initialize شده است.');
+
+        try {
+          log('مرحله تست: ارسال Notification تستی...');
+
+          await _plugin.show(
+            id: 999999,
+            title: 'دبیرخانه',
+            body: 'این یک اعلان آزمایشی است.',
+            notificationDetails: _notificationDetails(),
+          );
+
+          log('✅ Notification تستی با موفقیت ارسال شد.');
+        } catch (e, st) {
+          log('❌ خطا در ارسال Notification تستی:\n$e');
+
+          log('StackTrace:\n$st');
+        }
+
         return logs.join('\n\n');
       }
+
+      // --------------------------------------------------------
+      // Timezone
+      // --------------------------------------------------------
 
       log('مرحله 1: initializeTimeZones');
 
@@ -263,24 +302,35 @@ class NotificationService {
         }
       }
 
+      // --------------------------------------------------------
+      // Android settings
+      // --------------------------------------------------------
+
       log('مرحله 3: ساخت AndroidInitializationSettings');
 
-      const androidSettings = AndroidInitializationSettings(
-        'icon',
-      );
+      const androidSettings = AndroidInitializationSettings('icon');
 
       log('✅ Android settings ساخته شد.');
+
+      // --------------------------------------------------------
+      // Windows settings
+      // --------------------------------------------------------
 
       const windowsSettings = WindowsInitializationSettings(
         appName: 'دبیرخانه',
         appUserModelId: 'com.haghshenasdev.dabirkhane',
         guid: '8d9a4f1b-8e5c-4a5a-b5f1-2d7f9f6a1234',
+        iconPath: 'assets/images/logo.png',
       );
 
       const initializationSettings = InitializationSettings(
         android: androidSettings,
         windows: windowsSettings,
       );
+
+      // --------------------------------------------------------
+      // Initialize plugin
+      // --------------------------------------------------------
 
       log('مرحله 4: اجرای plugin.initialize');
 
@@ -290,6 +340,10 @@ class NotificationService {
       );
 
       log('✅ plugin.initialize با موفقیت انجام شد.');
+
+      // --------------------------------------------------------
+      // Android permission
+      // --------------------------------------------------------
 
       if (Platform.isAndroid) {
         log('مرحله 5: بررسی Android notification permission');
@@ -313,9 +367,36 @@ class NotificationService {
         }
       }
 
+      // --------------------------------------------------------
+      // Mark initialized
+      // --------------------------------------------------------
+
       _initialized = true;
 
       log('🎉 initialize با موفقیت کامل شد.');
+
+      // --------------------------------------------------------
+      // Test notification
+      // --------------------------------------------------------
+
+      try {
+        log('مرحله 6: ارسال Notification تستی...');
+
+        await _plugin.show(
+          id: 999999,
+          title: 'دبیرخانه',
+          body: 'این یک اعلان آزمایشی است.',
+          notificationDetails: _notificationDetails(),
+        );
+
+        log('✅ Notification تستی با موفقیت ارسال شد.');
+      } catch (e, st) {
+        log('❌ خطا در ارسال Notification تستی:\n$e');
+
+        log('StackTrace:\n$st');
+      }
+
+      log('🏁 عملیات Debug به پایان رسید.');
 
       return logs.join('\n\n');
     } catch (e, st) {

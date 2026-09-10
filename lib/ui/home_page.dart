@@ -1191,15 +1191,14 @@ class _HomePageState extends State<HomePage> {
                     //----------------------------------------------------
                     Row(
                       textDirection: TextDirection.rtl,
+                      crossAxisAlignment: CrossAxisAlignment.center,
                       children: [
                         const Icon(
                           Icons.person_outline,
                           size: 18,
                           color: Colors.blueGrey,
                         ),
-
                         const SizedBox(width: 8),
-
                         Expanded(
                           child: Text(
                             r["saheb_name"] ?? "—",
@@ -1209,6 +1208,40 @@ class _HomePageState extends State<HomePage> {
                             overflow: TextOverflow.ellipsis,
                           ),
                         ),
+                        if (hasDueReminder) ...[
+                          const SizedBox(width: 12),
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 9,
+                              vertical: 5,
+                            ),
+                            decoration: BoxDecoration(
+                              color: Colors.orange.shade100,
+                              borderRadius: BorderRadius.circular(16),
+                              border: Border.all(color: Colors.orange.shade300),
+                            ),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              textDirection: TextDirection.rtl,
+                              children: [
+                                Icon(
+                                  Icons.notifications_active_rounded,
+                                  size: 14,
+                                  color: Colors.orange.shade800,
+                                ),
+                                const SizedBox(width: 4),
+                                Text(
+                                  'موعدرسیده',
+                                  style: TextStyle(
+                                    fontSize: 10,
+                                    fontWeight: FontWeight.bold,
+                                    color: Colors.orange.shade900,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
                       ],
                     ),
 
@@ -1245,42 +1278,6 @@ class _HomePageState extends State<HomePage> {
                 //----------------------------------------------------
                 // انتخاب
                 //----------------------------------------------------
-                if (hasDueReminder)
-                  Positioned(
-                    right: 0,
-                    top: 0,
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 10,
-                        vertical: 6,
-                      ),
-                      decoration: BoxDecoration(
-                        color: Colors.orange.shade100,
-                        borderRadius: BorderRadius.circular(20),
-                        border: Border.all(color: Colors.orange.shade300),
-                      ),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        textDirection: TextDirection.rtl,
-                        children: [
-                          Icon(
-                            Icons.notifications_active_rounded,
-                            size: 16,
-                            color: Colors.orange.shade800,
-                          ),
-                          const SizedBox(width: 5),
-                          Text(
-                            'موعدرسیده',
-                            style: TextStyle(
-                              fontSize: 11,
-                              fontWeight: FontWeight.bold,
-                              color: Colors.orange.shade900,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
                 if (selectionMode)
                   Positioned(
                     left: 0,
@@ -1562,64 +1559,104 @@ class _HomePageState extends State<HomePage> {
   }
 
   Widget _buildDueReminderBanner() {
+    final bool reminderFilterActive = reminderFilter == 1;
+
     return Material(
       color: Colors.transparent,
-      child: InkWell(
-        borderRadius: BorderRadius.circular(18),
-        onTap: () {
-          setState(() {
-            reminderFilter = 1;
-          });
-
-          loadMore(reset: true);
-        },
-        child: Container(
-          width: double.infinity,
-          padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
-          decoration: BoxDecoration(
-            color: Colors.orange.shade50,
-            borderRadius: BorderRadius.circular(18),
-            border: Border.all(color: Colors.orange.shade200),
-          ),
-          child: Row(
-            textDirection: TextDirection.rtl,
-            children: [
-              Container(
-                width: 42,
-                height: 42,
-                decoration: BoxDecoration(
-                  color: Colors.orange.shade100,
-                  borderRadius: BorderRadius.circular(14),
-                ),
-                child: Icon(
-                  Icons.notifications_active_rounded,
-                  color: Colors.orange.shade800,
-                ),
+      child: Container(
+        width: double.infinity,
+        padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
+        decoration: BoxDecoration(
+          color: Colors.orange.shade50,
+          borderRadius: BorderRadius.circular(18),
+          border: Border.all(color: Colors.orange.shade200),
+        ),
+        child: Row(
+          textDirection: TextDirection.rtl,
+          children: [
+            // آیکون یادآور
+            Container(
+              width: 42,
+              height: 42,
+              decoration: BoxDecoration(
+                color: Colors.orange.shade100,
+                borderRadius: BorderRadius.circular(14),
               ),
+              child: Icon(
+                Icons.notifications_active_rounded,
+                color: Colors.orange.shade800,
+              ),
+            ),
 
-              const SizedBox(width: 12),
+            const SizedBox(width: 12),
 
-              Expanded(
-                child: Text(
-                  '$dueReminderCount نامه دارای یادآور موعدرسیده است',
-                  textDirection: TextDirection.rtl,
-                  textAlign: TextAlign.right,
-                  style: const TextStyle(
-                    fontSize: 15,
-                    fontWeight: FontWeight.bold,
+            // متن بنر
+            Expanded(
+              child: InkWell(
+                borderRadius: BorderRadius.circular(12),
+                onTap: reminderFilterActive
+                    ? null
+                    : () {
+                        setState(() {
+                          reminderFilter = 1;
+                        });
+
+                        loadMore(reset: true);
+                      },
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(
+                    vertical: 4,
+                    horizontal: 2,
+                  ),
+                  child: Text(
+                    '$dueReminderCount نامه دارای یادآور موعدرسیده است',
+                    textDirection: TextDirection.rtl,
+                    textAlign: TextAlign.right,
+                    style: const TextStyle(
+                      fontSize: 15,
+                      fontWeight: FontWeight.bold,
+                    ),
                   ),
                 ),
               ),
+            ),
 
-              const SizedBox(width: 8),
+            const SizedBox(width: 10),
 
+            // وقتی فیلتر فعال نیست، فلش نمایش بده
+            if (!reminderFilterActive)
               Icon(
                 Icons.arrow_back_ios_new_rounded,
                 size: 16,
                 color: Colors.orange.shade800,
               ),
-            ],
-          ),
+
+            // وقتی فیلتر فعال است، دکمه برداشتن فیلتر
+            if (reminderFilterActive)
+              OutlinedButton.icon(
+                onPressed: () {
+                  setState(() {
+                    reminderFilter = 0;
+                  });
+
+                  loadMore(reset: true);
+                },
+                icon: const Icon(Icons.filter_alt_off_rounded, size: 17),
+                label: const Text('برداشتن فیلتر'),
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: Colors.orange.shade900,
+                  side: BorderSide(color: Colors.orange.shade300),
+                  backgroundColor: Colors.white.withOpacity(0.65),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 12,
+                    vertical: 9,
+                  ),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                ),
+              ),
+          ],
         ),
       ),
     );
