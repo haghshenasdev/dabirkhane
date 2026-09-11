@@ -1,5 +1,6 @@
 import 'package:dabirkhane/providers/scan_service.dart';
 import 'package:dabirkhane/services/notification_service.dart';
+import 'package:dabirkhane/utils/app_settings.dart';
 
 import 'providers/theme_provider.dart';
 import 'package:flutter/material.dart';
@@ -21,7 +22,20 @@ void main() async {
 
   await ScanService.initialize();
 
-  // await NotificationService.instance.initialize();
+  // ------------------------------------------------------------
+  // Monthly Backup Reminder
+  // ------------------------------------------------------------
+
+  final backupReminderEnabled =
+      await AppSettings.getMonthlyBackupReminderEnabled();
+
+  if (backupReminderEnabled) {
+    await NotificationService.instance.scheduleMonthlyBackupReminder();
+  } else {
+    await NotificationService.instance.cancelMonthlyBackupReminder();
+  }
+
+  await NotificationService.instance.initialize();
 
   runApp(
     ChangeNotifierProvider(create: (_) => themeProvider, child: const MyApp()),

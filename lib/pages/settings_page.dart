@@ -306,6 +306,9 @@ class SettingsPage extends StatelessWidget {
             },
           ),
           const Divider(),
+
+          const MonthlyBackupReminderTile(),
+          const Divider(),
           _sectionTitle('اسکنر'),
           const ScannerTypeTile(),
           const Divider(),
@@ -679,6 +682,68 @@ class _SaveAndReturnAfterScanTileState
       ),
       value: enabled,
       onChanged: _setValue,
+    );
+  }
+}
+
+class MonthlyBackupReminderTile extends StatefulWidget {
+  const MonthlyBackupReminderTile({super.key});
+
+  @override
+  State<MonthlyBackupReminderTile> createState() =>
+      _MonthlyBackupReminderTileState();
+}
+
+class _MonthlyBackupReminderTileState extends State<MonthlyBackupReminderTile> {
+  bool _enabled = true;
+  bool _loading = true;
+
+  @override
+  void initState() {
+    super.initState();
+
+    _load();
+  }
+
+  Future<void> _load() async {
+    final value = await AppSettings.getMonthlyBackupReminderEnabled();
+
+    if (!mounted) {
+      return;
+    }
+
+    setState(() {
+      _enabled = value;
+      _loading = false;
+    });
+  }
+
+  Future<void> _changeValue(bool value) async {
+    setState(() {
+      _enabled = value;
+    });
+
+    await AppSettings.setMonthlyBackupReminderEnabled(value);
+
+    if (value) {
+      await NotificationService.instance.scheduleMonthlyBackupReminder();
+    } else {
+      await NotificationService.instance.cancelMonthlyBackupReminder();
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return SwitchListTile(
+      secondary: Icon(_enabled ? Icons.backup_outlined : Icons.backup_outlined),
+      title: const Text('یادآور پشتیبان‌گیری ماهانه'),
+      subtitle: Text(
+        _enabled
+            ? 'اول هر ماه برای تهیه نسخه پشتیبان یادآوری می‌شود'
+            : 'یادآور پشتیبان‌گیری غیرفعال است',
+      ),
+      value: _enabled,
+      onChanged: _loading ? null : _changeValue,
     );
   }
 }

@@ -27,6 +27,40 @@ class AppSettings {
   static const _lastRestoreTypeKey = 'last_restore_type';
   static const _lastRestoreItemsKey = 'last_restore_items';
 
+  // ============================================================
+  // Monthly Backup Reminder
+  // ============================================================
+
+  static const _monthlyBackupReminderEnabledKey =
+      'monthly_backup_reminder_enabled';
+
+  static const _monthlyBackupReminderLastShownKey =
+      'monthly_backup_reminder_last_shown';
+
+  static Future<bool> getMonthlyBackupReminderEnabled() async {
+    final prefs = await SharedPreferences.getInstance();
+
+    return prefs.getBool(_monthlyBackupReminderEnabledKey) ?? true;
+  }
+
+  static Future<void> setMonthlyBackupReminderEnabled(bool value) async {
+    final prefs = await SharedPreferences.getInstance();
+
+    await prefs.setBool(_monthlyBackupReminderEnabledKey, value);
+  }
+
+  static Future<String?> getMonthlyBackupReminderLastShown() async {
+    final prefs = await SharedPreferences.getInstance();
+
+    return prefs.getString(_monthlyBackupReminderLastShownKey);
+  }
+
+  static Future<void> setMonthlyBackupReminderLastShown(String monthKey) async {
+    final prefs = await SharedPreferences.getInstance();
+
+    await prefs.setString(_monthlyBackupReminderLastShownKey, monthKey);
+  }
+
   // -----------------------------
   // Last Backup
   // -----------------------------

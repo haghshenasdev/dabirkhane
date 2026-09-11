@@ -19,6 +19,13 @@ class NotificationService {
   static const String _channelName = 'یادآور نامه‌ها';
   static const String _channelDescription = 'اعلان‌های مربوط به یادآور نامه‌ها';
 
+  static const String _backupChannelId = 'backup_reminders';
+  static const String _backupChannelName = 'یادآور پشتیبان‌گیری';
+  static const String _backupChannelDescription =
+      'اعلان‌های مربوط به پشتیبان‌گیری';
+
+  static const int _monthlyBackupReminderBaseId = 700000;
+
   // ------------------------------------------------------------
   // Initialize
   // ------------------------------------------------------------
@@ -407,6 +414,94 @@ class NotificationService {
       log('StackTrace:\n$st');
 
       return logs.join('\n\n');
+    }
+  }
+
+  // ============================================================
+  // Monthly Backup Reminder
+  // ============================================================
+
+  NotificationDetails _backupNotificationDetails() {
+    const androidDetails = AndroidNotificationDetails(
+      _backupChannelId,
+      _backupChannelName,
+      channelDescription: _backupChannelDescription,
+      importance: Importance.high,
+      priority: Priority.high,
+      icon: 'icon',
+    );
+
+    const windowsDetails = WindowsNotificationDetails();
+
+    return const NotificationDetails(
+      android: androidDetails,
+      windows: windowsDetails,
+    );
+  }
+
+  /// تاریخ یادآور پشتیبان‌گیری برای یک ماه
+  ///
+  /// روز اول ماه ساعت 10:00
+  /// اگر روز اول ماه جمعه باشد، شنبه ساعت 10:00
+  tz.TZDateTime _getBackupReminderDate(int year, int month) {
+    var date = tz.TZDateTime(tz.local, year, month, 1, 10, 0);
+
+    // جمعه = 5
+    if (date.weekday == DateTime.friday) {
+      date = date.add(const Duration(days: 1));
+    }
+
+    return date;
+  }
+
+  /// زمان‌بندی 12 ماه آینده
+  Future<void> scheduleMonthlyBackupReminder() async {
+    await initialize();
+
+    // ابتدا فقط Reminderهای مخصوص Backup را حذف می‌کنیم.
+    for (int i = 0; i < 12; i++) {
+      await _plugin.cancel(id: _monthlyBackupReminderBaseId + i);
+    }
+
+    final now = tz.TZDateTime.now(tz.local);
+
+    int scheduledCount = 0;
+
+    for (int offset = 0; offset < 12; offset++) {
+      final totalMonths = now.month - 1 + offset;
+
+      final year = now.year + (totalMonths ~/ 12);
+      final month = (totalMonths % 12) + 1;
+
+      var scheduledDate = _getBackupReminderDate(year, month);
+
+      // اگر تاریخ این ماه گذشته باشد، آن را رد می‌کنیم.
+      if (!scheduledDate.isAfter(now)) {
+        continue;
+      }
+
+      final notificationId = _monthlyBackupReminderBaseId + scheduledCount;
+
+      await _plugin.zonedSchedule(
+        id: notificationId,
+        title: 'یادآور پشتیبان‌گیری',
+        body: 'زمان تهیه نسخه پشتیبان ماهانه دبیرخانه فرا رسیده است.',
+        scheduledDate: scheduledDate,
+        notificationDetails: _backupNotificationDetails(),
+        androidScheduleMode: AndroidScheduleMode.exactAllowWhileIdle,
+        payload: 'monthly_backup',
+      );
+
+      scheduledCount++;
+    }
+  }
+
+  /// لغو تمام Reminderهای مربوط به پشتیبان‌گیری ماهانه
+  Future<void> cancelMonthlyBackupReminder() async {
+    await initialize();
+
+    for (int i = 0; i < 12; i++) {
+      await _plugin.cancel(id: _monthlyBackupReminderBaseId + i);
     }
   }
 }
