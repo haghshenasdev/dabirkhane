@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
@@ -35,11 +36,10 @@ class CsvExportService {
     CsvExportField(key: 'goshashte', title: 'گذشته'),
   ];
 
-  /// تبدیل مقدار یک سلول به فرمت صحیح CSV
-  ///
-  /// دقیقاً مطابق منطق خروجی قبلی:
-  /// - همه مقادیر داخل " قرار می‌گیرند.
-  /// - " داخل متن به "" تبدیل می‌شود.
+  // ============================================================
+  // CSV ESCAPE
+  // ============================================================
+
   String _escapeCsvValue(dynamic value) {
     final text = value?.toString() ?? '';
 
@@ -48,14 +48,35 @@ class CsvExportService {
     return '"$escaped"';
   }
 
-  /// ساخت متن CSV
-  ///
-  /// ساختار:
-  ///
-  /// "ستون اول","ستون دوم","ستون سوم"
-  /// "مقدار","مقدار","مقدار"
-  ///
-  /// این ساختار همان الگوریتم خروجی قبلی شماست.
+  // ============================================================
+  // BUILD HEADER
+  // ============================================================
+
+  String buildHeader({required List<CsvExportField> fields}) {
+    return fields.map((field) => _escapeCsvValue(field.title)).join(',');
+  }
+
+  // ============================================================
+  // BUILD ROW
+  // ============================================================
+
+  String buildRow({
+    required Map<String, dynamic> record,
+    required List<CsvExportField> fields,
+  }) {
+    return fields
+        .map((field) {
+          final value = record[field.key];
+
+          return _escapeCsvValue(value);
+        })
+        .join(',');
+  }
+
+  // ============================================================
+  // BUILD CSV
+  // ============================================================
+
   String buildCsv({
     required List<Map<String, dynamic>> records,
     required List<CsvExportField> fields,
@@ -66,36 +87,19 @@ class CsvExportService {
 
     final StringBuffer csv = StringBuffer();
 
-    // ------------------------------------------------------------
-    // Header
-    // ------------------------------------------------------------
-    final headers = fields
-        .map((field) => _escapeCsvValue(field.title))
-        .join(',');
+    csv.writeln(buildHeader(fields: fields));
 
-    csv.writeln(headers);
-
-    // ------------------------------------------------------------
-    // Rows
-    // ------------------------------------------------------------
     for (final record in records) {
-      final row = fields
-          .map((field) {
-            final value = record[field.key];
-
-            return _escapeCsvValue(value);
-          })
-          .join(',');
-
-      csv.writeln(row);
+      csv.writeln(buildRow(record: record, fields: fields));
     }
 
     return csv.toString();
   }
 
-  /// تبدیل متن CSV به بایت‌های UTF-8 همراه BOM
-  ///
-  /// BOM برای این است که Excel متن فارسی را به‌درستی تشخیص دهد.
+  // ============================================================
+  // UTF-8 BOM
+  // ============================================================
+
   List<int> buildUtf8BomBytes(String csv) {
     final bytes = const Utf8Encoder().convert(csv);
 
@@ -104,13 +108,10 @@ class CsvExportService {
     return [...bom, ...bytes];
   }
 
-  /// خروجی گرفتن CSV
-  ///
-  /// Windows:
-  ///   نمایش Save Dialog و ذخیره فایل در مسیر انتخاب‌شده
-  ///
-  /// Android:
-  ///   ساخت فایل موقت و Share کردن آن
+  // ============================================================
+  // EXPORT معمولی
+  // ============================================================
+
   Future<String?> export({
     required List<Map<String, dynamic>> records,
     required List<CsvExportField> fields,
@@ -120,9 +121,6 @@ class CsvExportService {
       return null;
     }
 
-    // ------------------------------------------------------------
-    // ساخت CSV
-    // ------------------------------------------------------------
     final csv = buildCsv(records: records, fields: fields);
 
     if (csv.isEmpty) {
@@ -132,8 +130,9 @@ class CsvExportService {
     final bytes = buildUtf8BomBytes(csv);
 
     // ============================================================
-    // Windows
+    // WINDOWS
     // ============================================================
+
     if (Platform.isWindows) {
       final saveLocation = await getSaveLocation(
         suggestedName: fileName,
@@ -154,8 +153,9 @@ class CsvExportService {
     }
 
     // ============================================================
-    // Android
+    // ANDROID
     // ============================================================
+
     if (Platform.isAndroid) {
       final tempDirectory = await getTemporaryDirectory();
 
@@ -170,22 +170,146 @@ class CsvExportService {
           text: 'خروجی CSV دبیرخانه',
         );
       } finally {
-        // بعد از Share نیازی به نگه داشتن فایل موقت نداریم.
         try {
           if (await file.exists()) {
             await file.delete();
           }
-        } catch (_) {
-          // حذف فایل موقت نباید باعث شکست عملیات Share شود.
-        }
+        } catch (_) {}
       }
 
       return file.path;
     }
 
+    throw UnsupportedError('خروجی CSV در این پلتفرم پشتیبانی نمی‌شود.');
+  }
+
+  // ============================================================
+  // STREAM EXPORT
+  // ============================================================
+  //
+  // مخصوص زمانی که تعداد رکوردها زیاد است.
+  //
+  // مثلاً:
+  //
+  // 100,000 رکورد
+  //
+  // به جای اینکه:
+  //
+  // List<Map<String,dynamic>> = 100,000
+  //
+  // داشته باشیم، رکوردها به صورت دسته‌ای دریافت می‌شوند.
+  //
+  Future<String?> exportStream({
+    required Stream<List<Map<String, dynamic>>> recordsStream,
+    required List<CsvExportField> fields,
+    required String fileName,
+    void Function(int exportedCount)? onProgress,
+  }) async {
+    if (fields.isEmpty) {
+      return null;
+    }
+
     // ============================================================
-    // سایر پلتفرم‌ها
+    // WINDOWS
     // ============================================================
+
+    if (Platform.isWindows) {
+      final saveLocation = await getSaveLocation(
+        suggestedName: fileName,
+        acceptedTypeGroups: const [
+          XTypeGroup(label: 'CSV', extensions: ['csv']),
+        ],
+      );
+
+      if (saveLocation == null) {
+        return null;
+      }
+
+      final file = File(saveLocation.path);
+
+      final sink = file.openWrite();
+
+      try {
+        // BOM
+        sink.add(const [0xEF, 0xBB, 0xBF]);
+
+        // Header
+        sink.write('${buildHeader(fields: fields)}\r\n');
+
+        int exportedCount = 0;
+
+        await for (final records in recordsStream) {
+          for (final record in records) {
+            sink.write('${buildRow(record: record, fields: fields)}\r\n');
+
+            exportedCount++;
+
+            onProgress?.call(exportedCount);
+          }
+
+          // اجازه می‌دهیم جریان نوشتن فایل
+          // مرتب Flush شود.
+          await sink.flush();
+        }
+      } finally {
+        await sink.close();
+      }
+
+      return saveLocation.path;
+    }
+
+    // ============================================================
+    // ANDROID
+    // ============================================================
+
+    if (Platform.isAndroid) {
+      final tempDirectory = await getTemporaryDirectory();
+
+      final file = File('${tempDirectory.path}/$fileName');
+
+      final sink = file.openWrite();
+
+      try {
+        // BOM
+        sink.add(const [0xEF, 0xBB, 0xBF]);
+
+        // Header
+        sink.write('${buildHeader(fields: fields)}\r\n');
+
+        int exportedCount = 0;
+
+        await for (final records in recordsStream) {
+          for (final record in records) {
+            sink.write('${buildRow(record: record, fields: fields)}\r\n');
+
+            exportedCount++;
+
+            onProgress?.call(exportedCount);
+          }
+
+          await sink.flush();
+        }
+      } finally {
+        await sink.close();
+      }
+
+      try {
+        await Share.shareXFiles(
+          [XFile(file.path, mimeType: 'text/csv', name: fileName)],
+          subject: 'خروجی دبیرخانه',
+          text: 'خروجی CSV دبیرخانه',
+        );
+      } finally {
+        try {
+          if (await file.exists()) {
+            await file.delete();
+          }
+        } catch (_) {}
+      }
+
+      return file.path;
+    }
+
     throw UnsupportedError('خروجی CSV در این پلتفرم پشتیبانی نمی‌شود.');
   }
 }

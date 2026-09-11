@@ -913,4 +913,66 @@ class DatabaseHelper {
 
     return Map<String, dynamic>.from(result.first);
   }
+
+    // ============================================================
+  // STREAM / CHUNK PAGINATION FOR CSV EXPORT
+  // ============================================================
+  //
+  // رکوردها را به صورت دسته‌ای از دیتابیس می‌خواند.
+  //
+  // مزیت:
+  // اگر 100,000 رکورد داشته باشیم، همه آنها وارد RAM نمی‌شوند.
+  // مثلاً هر بار 500 رکورد خوانده می‌شود.
+  //
+  static Stream<List<Map<String, dynamic>>> streamPagedForExport({
+    int chunkSize = 500,
+    String? search,
+    required String? fromDate,
+    required String? toDate,
+    required String? onvan,
+    List<String>? categories,
+    String? comment,
+    String? shomareBadi,
+    int reminderFilter = 0,
+  }) async* {
+    int? beforeId;
+
+    while (true) {
+      final chunk = await getPaged(
+        limit: chunkSize,
+        beforeId: beforeId,
+        search: search,
+        fromDate: fromDate,
+        toDate: toDate,
+        onvan: onvan,
+        categories: categories,
+        comment: comment,
+        shomareBadi: shomareBadi,
+        reminderFilter: reminderFilter,
+      );
+
+      if (chunk.isEmpty) {
+        break;
+      }
+
+      yield chunk;
+
+      // آخرین رکورد این دسته
+      final lastRecord = chunk.last;
+
+      final lastId = lastRecord['Shomare_Radif'];
+
+      if (lastId == null) {
+        break;
+      }
+
+      beforeId = (lastId as num).toInt();
+
+      // اگر کمتر از chunkSize رکورد برگشته،
+      // یعنی به انتهای نتایج رسیده‌ایم.
+      if (chunk.length < chunkSize) {
+        break;
+      }
+    }
+  }
 }
