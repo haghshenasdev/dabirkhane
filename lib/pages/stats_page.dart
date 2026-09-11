@@ -47,8 +47,16 @@ class _StatsPageState extends State<StatsPage> {
   @override
   void initState() {
     super.initState();
-    loadYears();
+
+    Future.microtask(() async {
+      await loadYears();
+      await loadStats();
+    });
   }
+
+  // ============================================================
+  // بارگذاری سال‌های موجود
+  // ============================================================
 
   Future<void> loadYears() async {
     try {
@@ -59,35 +67,52 @@ class _StatsPageState extends State<StatsPage> {
         FROM daftare_andicator
         WHERE date IS NOT NULL
           AND TRIM(date) != ''
-        ''');
+          AND substr(date,1,4) GLOB '[0-9][0-9][0-9][0-9]'
+      ''');
 
-      years =
+      final loadedYears =
           result
               .map((e) => int.tryParse(e['year']?.toString() ?? '') ?? 0)
-              .where((y) => y > 0)
+              .where((year) => year > 0)
+              .toSet()
               .toList()
             ..sort();
 
-      if (!years.contains(selectedYear) && years.isNotEmpty) {
-        selectedYear = years.last;
-      }
+      if (!mounted) return;
 
-      await loadStats();
+      setState(() {
+        years = loadedYears;
+
+        // اگر سال انتخاب‌شده دیگر وجود نداشت،
+        // آخرین سال موجود انتخاب شود.
+        if (!years.contains(selectedYear) && years.isNotEmpty) {
+          selectedYear = years.last;
+        }
+      });
     } catch (e) {
       debugPrint('Stats loadYears error: $e');
-
-      if (mounted) {
-        setState(() {
-          loading = false;
-        });
-      }
     }
   }
 
+  // ============================================================
+  // بروزرسانی کامل صفحه
+  // ============================================================
+
+  Future<void> refreshStats() async {
+    await loadYears();
+    await loadStats();
+  }
+
+  // ============================================================
+  // بارگذاری آمار
+  // ============================================================
+
   Future<void> loadStats() async {
-    setState(() {
-      loading = true;
-    });
+    if (mounted) {
+      setState(() {
+        loading = true;
+      });
+    }
 
     try {
       final db = await DatabaseHelper.database;
@@ -99,7 +124,7 @@ class _StatsPageState extends State<StatsPage> {
       final total = await db.rawQuery('''
         SELECT COUNT(*) as count
         FROM daftare_andicator
-        ''');
+      ''');
 
       totalLetters = int.tryParse(total.first['count']?.toString() ?? '0') ?? 0;
 
@@ -346,7 +371,6 @@ class _StatsPageState extends State<StatsPage> {
           ? Center(child: CircularProgressIndicator(color: scheme.primary))
           : Stack(
               children: [
-                // هاله‌های رنگی پس‌زمینه
                 Positioned(
                   top: -120,
                   right: -100,
@@ -365,7 +389,7 @@ class _StatsPageState extends State<StatsPage> {
 
                 RefreshIndicator(
                   color: scheme.primary,
-                  onRefresh: loadStats,
+                  onRefresh: refreshStats,
                   child: Directionality(
                     textDirection: TextDirection.rtl,
                     child: LayoutBuilder(
@@ -387,19 +411,14 @@ class _StatsPageState extends State<StatsPage> {
                                 children: [
                                   _buildHeader(),
                                   const SizedBox(height: 20),
-
                                   _buildStatisticsCards(),
                                   const SizedBox(height: 18),
-
                                   _buildYearSelector(),
                                   const SizedBox(height: 18),
-
                                   _buildMonthlyChart(),
                                   const SizedBox(height: 18),
-
                                   _buildChartsGrid(),
                                   const SizedBox(height: 18),
-
                                   _buildOwnersChart(),
                                 ],
                               ),
@@ -414,6 +433,7 @@ class _StatsPageState extends State<StatsPage> {
             ),
     );
   }
+
   // ============================================================
   // Header
   // ============================================================
@@ -462,7 +482,7 @@ class _StatsPageState extends State<StatsPage> {
           ),
           IconButton(
             tooltip: 'بروزرسانی',
-            onPressed: loadStats,
+            onPressed: refreshStats,
             icon: Icon(Icons.refresh_rounded, color: primaryColor),
           ),
         ],
@@ -599,6 +619,7 @@ class _StatsPageState extends State<StatsPage> {
   // ============================================================
   // Year Selector
   // ============================================================
+
   Widget _buildYearSelector() {
     final scheme = Theme.of(context).colorScheme;
 
@@ -645,13 +666,12 @@ class _StatsPageState extends State<StatsPage> {
               ),
               child: DropdownButtonHideUnderline(
                 child: DropdownButton<int>(
-                  value: selectedYear,
+                  value: years.contains(selectedYear) ? selectedYear : null,
 
-                  // مهم:
-                  // ارتفاع منوی سال‌ها
+                  // ارتفاع منوی بازشده
                   menuMaxHeight: MediaQuery.of(context).size.height * .65,
 
-                  // عرض مناسب برای منو
+                  // عرض منوی بازشده
                   menuWidth: 150,
 
                   borderRadius: BorderRadius.circular(16),
@@ -674,7 +694,7 @@ class _StatsPageState extends State<StatsPage> {
 
                   padding: const EdgeInsets.symmetric(horizontal: 10),
 
-                  // سال‌ها جدیدتر اول
+                  // سال جدیدتر در بالای لیست
                   items: [...years].reversed
                       .map(
                         (year) => DropdownMenuItem<int>(
@@ -723,6 +743,7 @@ class _StatsPageState extends State<StatsPage> {
       ),
     );
   }
+
   // ============================================================
   // Monthly Chart
   // ============================================================
@@ -746,9 +767,7 @@ class _StatsPageState extends State<StatsPage> {
             subtitle: 'تعداد نامه‌های ثبت‌شده در ماه‌های سال $selectedYear',
             icon: Icons.show_chart_rounded,
           ),
-
           const SizedBox(height: 25),
-
           SizedBox(
             height: 300,
             child: LineChart(
@@ -756,7 +775,6 @@ class _StatsPageState extends State<StatsPage> {
                 minY: 0,
                 maxY: chartMax,
                 borderData: FlBorderData(show: false),
-
                 gridData: FlGridData(
                   show: true,
                   drawVerticalLine: false,
@@ -768,7 +786,6 @@ class _StatsPageState extends State<StatsPage> {
                     );
                   },
                 ),
-
                 titlesData: FlTitlesData(
                   topTitles: const AxisTitles(
                     sideTitles: SideTitles(showTitles: false),
@@ -823,7 +840,6 @@ class _StatsPageState extends State<StatsPage> {
                     ),
                   ),
                 ),
-
                 lineTouchData: LineTouchData(
                   enabled: true,
                   touchTooltipData: LineTouchTooltipData(
@@ -853,7 +869,6 @@ class _StatsPageState extends State<StatsPage> {
                     },
                   ),
                 ),
-
                 lineBarsData: [
                   LineChartBarData(
                     spots: List.generate(
@@ -963,9 +978,7 @@ class _StatsPageState extends State<StatsPage> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           _sectionHeader(title: title, subtitle: subtitle, icon: icon),
-
           const SizedBox(height: 20),
-
           if (data.isEmpty)
             _emptyChart()
           else
@@ -993,7 +1006,6 @@ class _StatsPageState extends State<StatsPage> {
                     ),
                   ),
                 ),
-
                 Transform.translate(
                   offset: const Offset(0, -145),
                   child: SizedBox(
@@ -1022,9 +1034,7 @@ class _StatsPageState extends State<StatsPage> {
                     ),
                   ),
                 ),
-
                 const SizedBox(height: 5),
-
                 _buildLegend(data, colors),
               ],
             ),
@@ -1113,9 +1123,7 @@ class _StatsPageState extends State<StatsPage> {
             subtitle: 'بیشترین ثبت‌کنندگان نامه در سال $selectedYear',
             icon: Icons.person_outline_rounded,
           ),
-
           const SizedBox(height: 24),
-
           SizedBox(
             height: ownerCounts.length * 62.0 + 20,
             child: BarChart(
@@ -1124,7 +1132,6 @@ class _StatsPageState extends State<StatsPage> {
                 minY: 0,
                 alignment: BarChartAlignment.spaceAround,
                 borderData: FlBorderData(show: false),
-
                 gridData: FlGridData(
                   show: true,
                   drawVerticalLine: false,
@@ -1135,7 +1142,6 @@ class _StatsPageState extends State<StatsPage> {
                     );
                   },
                 ),
-
                 titlesData: FlTitlesData(
                   topTitles: const AxisTitles(
                     sideTitles: SideTitles(showTitles: false),
@@ -1173,7 +1179,6 @@ class _StatsPageState extends State<StatsPage> {
                     ),
                   ),
                 ),
-
                 barTouchData: BarTouchData(
                   enabled: true,
                   touchTooltipData: BarTouchTooltipData(
@@ -1190,7 +1195,6 @@ class _StatsPageState extends State<StatsPage> {
                     },
                   ),
                 ),
-
                 barGroups: List.generate(ownerCounts.length, (index) {
                   final value = ownerCounts.values.elementAt(index);
 
@@ -1351,6 +1355,10 @@ class _GlassContainer extends StatelessWidget {
     );
   }
 }
+
+// ================================================================
+// Background Glow
+// ================================================================
 
 class _BackgroundGlow extends StatelessWidget {
   final Color color;
