@@ -1,14 +1,12 @@
 import 'package:dabirkhane/services/csv_export_service.dart';
 import 'package:flutter/material.dart';
 
+enum ExportFormat { csv, excel }
 
 class CsvExportDialog extends StatefulWidget {
   final int recordCount;
 
-  const CsvExportDialog({
-    super.key,
-    required this.recordCount,
-  });
+  const CsvExportDialog({super.key, required this.recordCount});
 
   @override
   State<CsvExportDialog> createState() => _CsvExportDialogState();
@@ -22,29 +20,34 @@ class _CsvExportDialogState extends State<CsvExportDialog> {
     super.initState();
 
     // انتخاب‌های پیش‌فرض
-    _selectedKeys = {
-      'Shomare_Radif',
-      'date',
-      'saheb_name',
-      'guy',
-      'onvan',
-    };
+    _selectedKeys = {'Shomare_Radif', 'date', 'saheb_name', 'guy', 'onvan'};
   }
+
+  // ============================================================
+  // SELECT ALL
+  // ============================================================
 
   void _selectAll() {
     setState(() {
       _selectedKeys = {
-        for (final field in CsvExportService.availableFields)
-          field.key,
+        for (final field in CsvExportService.availableFields) field.key,
       };
     });
   }
+
+  // ============================================================
+  // CLEAR ALL
+  // ============================================================
 
   void _clearAll() {
     setState(() {
       _selectedKeys.clear();
     });
   }
+
+  // ============================================================
+  // TOGGLE
+  // ============================================================
 
   void _toggle(String key) {
     setState(() {
@@ -56,13 +59,15 @@ class _CsvExportDialogState extends State<CsvExportDialog> {
     });
   }
 
-  void _submit() {
+  // ============================================================
+  // SUBMIT
+  // ============================================================
+
+  void _submit(ExportFormat format) {
     if (_selectedKeys.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text(
-            'حداقل یک فیلد را برای خروجی انتخاب کنید.',
-          ),
+          content: Text('حداقل یک فیلد را برای خروجی انتخاب کنید.'),
         ),
       );
 
@@ -70,45 +75,28 @@ class _CsvExportDialogState extends State<CsvExportDialog> {
     }
 
     final selectedFields = CsvExportService.availableFields
-        .where(
-          (field) => _selectedKeys.contains(field.key),
-        )
+        .where((field) => _selectedKeys.contains(field.key))
         .toList();
 
-    Navigator.of(context).pop(
-      selectedFields,
-    );
+    Navigator.of(context).pop({'format': format, 'fields': selectedFields});
   }
 
   @override
   Widget build(BuildContext context) {
     final width = MediaQuery.of(context).size.width;
 
-    final dialogWidth = width > 700
-        ? 620.0
-        : width * .92;
+    final dialogWidth = width > 700 ? 620.0 : width * .92;
 
     return Directionality(
       textDirection: TextDirection.rtl,
       child: AlertDialog(
-        titlePadding: const EdgeInsets.fromLTRB(
-          24,
-          22,
-          24,
-          10,
-        ),
-        contentPadding: const EdgeInsets.fromLTRB(
-          18,
-          8,
-          18,
-          8,
-        ),
-        actionsPadding: const EdgeInsets.fromLTRB(
-          18,
-          8,
-          18,
-          16,
-        ),
+        titlePadding: const EdgeInsets.fromLTRB(24, 22, 24, 10),
+        contentPadding: const EdgeInsets.fromLTRB(18, 8, 18, 8),
+        actionsPadding: const EdgeInsets.fromLTRB(18, 8, 18, 16),
+
+        // ======================================================
+        // TITLE
+        // ======================================================
         title: Row(
           children: [
             Container(
@@ -118,10 +106,7 @@ class _CsvExportDialogState extends State<CsvExportDialog> {
                 color: Colors.blue.withOpacity(.10),
                 borderRadius: BorderRadius.circular(14),
               ),
-              child: const Icon(
-                Icons.table_chart_outlined,
-                color: Colors.blue,
-              ),
+              child: const Icon(Icons.table_chart_outlined, color: Colors.blue),
             ),
             const SizedBox(width: 12),
             const Expanded(
@@ -129,15 +114,12 @@ class _CsvExportDialogState extends State<CsvExportDialog> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    'خروجی CSV',
-                    style: TextStyle(
-                      fontSize: 18,
-                      fontWeight: FontWeight.bold,
-                    ),
+                    'خروجی اطلاعات',
+                    style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
                   ),
                   SizedBox(height: 3),
                   Text(
-                    'فیلدهای مورد نیاز را انتخاب کنید',
+                    'فیلدهای مورد نیاز و نوع خروجی را انتخاب کنید',
                     style: TextStyle(
                       fontSize: 12,
                       color: Colors.grey,
@@ -149,11 +131,18 @@ class _CsvExportDialogState extends State<CsvExportDialog> {
             ),
           ],
         ),
+
+        // ======================================================
+        // CONTENT
+        // ======================================================
         content: SizedBox(
           width: dialogWidth,
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
+              // ------------------------------------------------
+              // RECORD COUNT
+              // ------------------------------------------------
               Container(
                 width: double.infinity,
                 padding: const EdgeInsets.symmetric(
@@ -182,55 +171,49 @@ class _CsvExportDialogState extends State<CsvExportDialog> {
                   ],
                 ),
               ),
+
               const SizedBox(height: 12),
+
+              // ------------------------------------------------
+              // SELECT / CLEAR
+              // ------------------------------------------------
               Row(
                 children: [
                   TextButton.icon(
                     onPressed: _selectAll,
-                    icon: const Icon(
-                      Icons.done_all,
-                      size: 18,
-                    ),
+                    icon: const Icon(Icons.done_all, size: 18),
                     label: const Text('انتخاب همه'),
                   ),
                   const SizedBox(width: 8),
                   TextButton.icon(
                     onPressed: _clearAll,
-                    icon: const Icon(
-                      Icons.remove_done,
-                      size: 18,
-                    ),
+                    icon: const Icon(Icons.remove_done, size: 18),
                     label: const Text('پاک کردن'),
                   ),
                   const Spacer(),
                   Text(
                     '${_selectedKeys.length} فیلد',
-                    style: TextStyle(
-                      color: Colors.grey.shade700,
-                      fontSize: 12,
-                    ),
+                    style: TextStyle(color: Colors.grey.shade700, fontSize: 12),
                   ),
                 ],
               ),
+
               const SizedBox(height: 4),
+
+              // ------------------------------------------------
+              // FIELDS
+              // ------------------------------------------------
               Flexible(
                 child: ConstrainedBox(
-                  constraints: const BoxConstraints(
-                    maxHeight: 420,
-                  ),
+                  constraints: const BoxConstraints(maxHeight: 420),
                   child: ListView.separated(
                     shrinkWrap: true,
-                    itemCount:
-                        CsvExportService.availableFields.length,
-                    separatorBuilder: (_, __) => const Divider(
-                      height: 1,
-                    ),
+                    itemCount: CsvExportService.availableFields.length,
+                    separatorBuilder: (_, __) => const Divider(height: 1),
                     itemBuilder: (_, index) {
-                      final field =
-                          CsvExportService.availableFields[index];
+                      final field = CsvExportService.availableFields[index];
 
-                      final selected =
-                          _selectedKeys.contains(field.key);
+                      final selected = _selectedKeys.contains(field.key);
 
                       return CheckboxListTile(
                         value: selected,
@@ -238,12 +221,10 @@ class _CsvExportDialogState extends State<CsvExportDialog> {
                           _toggle(field.key);
                         },
                         dense: true,
-                        contentPadding:
-                            const EdgeInsets.symmetric(
+                        contentPadding: const EdgeInsets.symmetric(
                           horizontal: 4,
                         ),
-                        controlAffinity:
-                            ListTileControlAffinity.leading,
+                        controlAffinity: ListTileControlAffinity.leading,
                         title: Text(
                           field.title,
                           textDirection: TextDirection.rtl,
@@ -265,6 +246,10 @@ class _CsvExportDialogState extends State<CsvExportDialog> {
             ],
           ),
         ),
+
+        // ======================================================
+        // ACTIONS
+        // ======================================================
         actions: [
           TextButton(
             onPressed: () {
@@ -272,16 +257,31 @@ class _CsvExportDialogState extends State<CsvExportDialog> {
             },
             child: const Text('انصراف'),
           ),
+
+          const Spacer(),
+
+          // ----------------------------------------------------
+          // CSV
+          // ----------------------------------------------------
+          OutlinedButton.icon(
+            onPressed: _selectedKeys.isEmpty
+                ? null
+                : () => _submit(ExportFormat.csv),
+            icon: const Icon(Icons.table_view_outlined, size: 18),
+            label: const Text('خروجی CSV'),
+          ),
+
           const SizedBox(width: 8),
+
+          // ----------------------------------------------------
+          // EXCEL
+          // ----------------------------------------------------
           FilledButton.icon(
             onPressed: _selectedKeys.isEmpty
                 ? null
-                : _submit,
-            icon: const Icon(
-              Icons.file_download_outlined,
-              size: 19,
-            ),
-            label: const Text('ایجاد خروجی'),
+                : () => _submit(ExportFormat.excel),
+            icon: const Icon(Icons.grid_on, size: 18),
+            label: const Text('خروجی Excel'),
           ),
         ],
       ),
