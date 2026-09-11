@@ -202,30 +202,9 @@ class ExcelExportService {
           width = 22;
       }
 
-      sheet.setColumnWidth(_columnLetter(columnIndex) as int, width);
+      sheet.setColumnWidth(columnIndex, width);
     }
   }
-
-  // ============================================================
-  // COLUMN LETTER
-  // ============================================================
-
-  String _columnLetter(int index) {
-    int number = index + 1;
-
-    String result = '';
-
-    while (number > 0) {
-      final remainder = (number - 1) % 26;
-
-      result = String.fromCharCode(65 + remainder) + result;
-
-      number = (number - 1) ~/ 26;
-    }
-
-    return result;
-  }
-
   // ============================================================
   // EXPORT
   // ============================================================

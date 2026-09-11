@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:dabirkhane/services/csv_export_service.dart';
+import 'package:dabirkhane/services/excel_export_service.dart';
 import 'package:dabirkhane/ui/dialogs/backup_restore_dialog.dart';
 import 'package:dabirkhane/ui/dialogs/csv_export_dialog.dart';
 import 'package:dabirkhane/utils/glass_toast.dart';
@@ -1388,17 +1389,9 @@ class _HomePageState extends State<HomePage> {
   // ============================================================
   // CSV
   // ============================================================
-
   Future<void> exportSelectedToCsv() async {
     // ------------------------------------------------------------
-    // نکته:
-    //
-    // در حالت انتخاب عادی، فقط رکوردهای انتخاب‌شده فعلی را داریم.
-    //
-    // در حالت selectAll، فعلاً رکوردهای لودشده را برای CSV استفاده
-    // می‌کنیم. برای اینکه CSV واقعاً تمام صفحات دیتابیس را نیز
-    // شامل شود، باید CsvExportService به صورت streaming/chunked
-    // با DatabaseHelper کار کند.
+    // انتخاب رکوردها
     // ------------------------------------------------------------
 
     List<Map<String, dynamic>> selectedRecords;
@@ -1426,12 +1419,11 @@ class _HomePageState extends State<HomePage> {
     }
 
     // ------------------------------------------------------------
-    // نمایش دیالوگ انتخاب فیلدها
+    // نمایش دیالوگ انتخاب فیلد و فرمت خروجی
     // ------------------------------------------------------------
 
-    final selectedFields = await showDialog<List<CsvExportField>>(
+    final result = await showDialog<ExportDialogResult>(
       context: context,
-
       builder: (_) {
         return CsvExportDialog(
           recordCount: selectAllMode
@@ -1441,9 +1433,12 @@ class _HomePageState extends State<HomePage> {
       },
     );
 
-    if (!mounted || selectedFields == null) {
+    if (!mounted || result == null) {
       return;
     }
+
+    final selectedFields = result.fields;
+    final format = result.format;
 
     if (selectedFields.isEmpty) {
       return;
@@ -1460,47 +1455,71 @@ class _HomePageState extends State<HomePage> {
         '${now.month.toString().padLeft(2, '0')}_'
         '${now.day.toString().padLeft(2, '0')}';
 
-    final fileName = 'خروجی دبیرخانه-$formattedDate.csv';
-
     // ------------------------------------------------------------
-    // ایجاد و ذخیره / اشتراک‌گذاری
+    // ایجاد خروجی
     // ------------------------------------------------------------
 
     try {
-      await CsvExportService.instance.export(
-        records: selectedRecords,
-        fields: selectedFields,
-        fileName: fileName,
-      );
+      if (format == ExportFormat.csv) {
+        final fileName = 'خروجی دبیرخانه-$formattedDate.csv';
 
-      if (!mounted) {
-        return;
-      }
+        await CsvExportService.instance.export(
+          records: selectedRecords,
+          fields: selectedFields,
+          fileName: fileName,
+        );
 
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            Platform.isAndroid
-                ? 'فایل CSV آماده و برای اشتراک‌گذاری ارسال شد.'
-                : 'فایل CSV با موفقیت ایجاد شد.',
+        if (!mounted) {
+          return;
+        }
+
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              Platform.isAndroid
+                  ? 'فایل CSV آماده و برای اشتراک‌گذاری ارسال شد.'
+                  : 'فایل CSV با موفقیت ایجاد شد.',
+            ),
           ),
-        ),
-      );
+        );
+      } else if (format == ExportFormat.excel) {
+        final fileName = 'خروجی دبیرخانه-$formattedDate.xlsx';
+
+        await ExcelExportService.instance.export(
+          records: selectedRecords,
+          fields: selectedFields,
+          fileName: fileName,
+        );
+
+        if (!mounted) {
+          return;
+        }
+
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              Platform.isAndroid
+                  ? 'فایل Excel آماده و برای اشتراک‌گذاری ارسال شد.'
+                  : 'فایل Excel با موفقیت ایجاد شد.',
+            ),
+          ),
+        );
+      }
 
       _clearSelection();
     } catch (e, stackTrace) {
-      debugPrint('CSV export error: $e');
-
+      debugPrint('Export error: $e');
       debugPrintStack(stackTrace: stackTrace);
 
       if (!mounted) {
         return;
       }
 
-      showMessage('خطا', 'ایجاد خروجی CSV با خطا مواجه شد.\n\n$e');
+      final formatName = format == ExportFormat.excel ? 'Excel' : 'CSV';
+
+      showMessage('خطا', 'ایجاد خروجی $formatName با خطا مواجه شد.\n\n$e');
     }
   }
-
   // ============================================================
   // دسته بندی
   // ============================================================

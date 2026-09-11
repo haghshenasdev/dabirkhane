@@ -3,6 +3,13 @@ import 'package:flutter/material.dart';
 
 enum ExportFormat { csv, excel }
 
+class ExportDialogResult {
+  final ExportFormat format;
+  final List<CsvExportField> fields;
+
+  const ExportDialogResult({required this.format, required this.fields});
+}
+
 class CsvExportDialog extends StatefulWidget {
   final int recordCount;
 
@@ -62,7 +69,6 @@ class _CsvExportDialogState extends State<CsvExportDialog> {
   // ============================================================
   // SUBMIT
   // ============================================================
-
   void _submit(ExportFormat format) {
     if (_selectedKeys.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -78,7 +84,9 @@ class _CsvExportDialogState extends State<CsvExportDialog> {
         .where((field) => _selectedKeys.contains(field.key))
         .toList();
 
-    Navigator.of(context).pop({'format': format, 'fields': selectedFields});
+    Navigator.of(
+      context,
+    ).pop(ExportDialogResult(format: format, fields: selectedFields));
   }
 
   @override
@@ -258,11 +266,6 @@ class _CsvExportDialogState extends State<CsvExportDialog> {
             child: const Text('انصراف'),
           ),
 
-          const Spacer(),
-
-          // ----------------------------------------------------
-          // CSV
-          // ----------------------------------------------------
           OutlinedButton.icon(
             onPressed: _selectedKeys.isEmpty
                 ? null
@@ -271,16 +274,11 @@ class _CsvExportDialogState extends State<CsvExportDialog> {
             label: const Text('خروجی CSV'),
           ),
 
-          const SizedBox(width: 8),
-
-          // ----------------------------------------------------
-          // EXCEL
-          // ----------------------------------------------------
           FilledButton.icon(
             onPressed: _selectedKeys.isEmpty
                 ? null
                 : () => _submit(ExportFormat.excel),
-            icon: const Icon(Icons.grid_on, size: 18),
+            icon: const Icon(Icons.grid_on),
             label: const Text('خروجی Excel'),
           ),
         ],
