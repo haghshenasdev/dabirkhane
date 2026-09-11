@@ -755,323 +755,357 @@ class _HomePageState extends State<HomePage> {
       );
     }
 
-    final desktop = MediaQuery.of(context).size.width > 900;
+    final media = MediaQuery.of(context);
+    final width = media.size.width;
+    final height = media.size.height;
 
-    return Column(
-      children: [
-        //-----------------------------------------
-        // تاریخ
-        //-----------------------------------------
-        desktop
-            ? Row(
-                children: [
-                  Expanded(
-                    child: TextField(
-                      controller: fromDateController,
-                      keyboardType: TextInputType.number,
-                      decoration: decoration("از تاریخ", Icons.calendar_month),
+    final bool desktop = width > 900;
+
+    // ارتفاع ثابت و محدود برای قسمت فیلتر
+    final double filterHeight = desktop
+        ? 250
+        : (height * 0.38).clamp(260.0, 400.0);
+
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.grey.shade50,
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: Colors.grey.shade200),
+      ),
+
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          // ==========================================================
+          // فقط یک Scrollable داریم
+          // ==========================================================
+          SizedBox(
+            height: filterHeight,
+
+            child: ListView(
+              padding: const EdgeInsets.fromLTRB(8, 8, 8, 16),
+
+              keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
+
+              children: [
+                // ======================================================
+                // تاریخ‌ها
+                // همیشه کنار هم
+                // ======================================================
+                Row(
+                  children: [
+                    Expanded(
+                      child: TextField(
+                        controller: fromDateController,
+                        keyboardType: TextInputType.number,
+                        textDirection: TextDirection.rtl,
+                        decoration: decoration(
+                          "از تاریخ",
+                          Icons.calendar_month,
+                        ),
+                      ),
                     ),
-                  ),
 
-                  const SizedBox(width: 12),
+                    const SizedBox(width: 10),
 
-                  Expanded(
-                    child: TextField(
-                      controller: toDateController,
-                      keyboardType: TextInputType.number,
-                      decoration: decoration("تا تاریخ", Icons.event),
+                    Expanded(
+                      child: TextField(
+                        controller: toDateController,
+                        keyboardType: TextInputType.number,
+                        textDirection: TextDirection.rtl,
+                        decoration: decoration("تا تاریخ", Icons.event),
+                      ),
                     ),
-                  ),
-                ],
-              )
-            : Column(
-                children: [
-                  TextField(
-                    controller: fromDateController,
-                    keyboardType: TextInputType.number,
-                    decoration: decoration("از تاریخ", Icons.calendar_month),
-                  ),
+                  ],
+                ),
 
-                  const SizedBox(height: 12),
+                const SizedBox(height: 12),
 
-                  TextField(
-                    controller: toDateController,
-                    keyboardType: TextInputType.number,
-                    decoration: decoration("تا تاریخ", Icons.event),
-                  ),
-                ],
-              ),
+                // ======================================================
+                // گیرنده
+                // ======================================================
+                TextField(
+                  controller: onvanController,
+                  textDirection: TextDirection.rtl,
+                  decoration: decoration("گیرنده نامه", Icons.person_outline),
+                ),
 
-        const SizedBox(height: 14),
+                const SizedBox(height: 12),
 
-        //-----------------------------------------
-        // گیرنده
-        //-----------------------------------------
-        TextField(
-          controller: onvanController,
-          decoration: decoration("گیرنده نامه", Icons.person_outline),
-        ),
-
-        const SizedBox(height: 14),
-
-        //-----------------------------------------
-        // توضیحات و شماره بعد
-        //-----------------------------------------
-        desktop
-            ? Row(
-                children: [
-                  Expanded(
-                    child: TextField(
-                      controller: commentFilterController,
-                      textDirection: TextDirection.rtl,
-                      decoration: decoration("توضیحات", Icons.notes_outlined),
+                // ======================================================
+                // توضیحات + شماره بعد
+                // ======================================================
+                Row(
+                  children: [
+                    Expanded(
+                      child: TextField(
+                        controller: commentFilterController,
+                        textDirection: TextDirection.rtl,
+                        decoration: decoration("توضیحات", Icons.notes_outlined),
+                      ),
                     ),
+
+                    const SizedBox(width: 10),
+
+                    Expanded(
+                      child: TextField(
+                        controller: shomareBadiFilterController,
+                        keyboardType: TextInputType.text,
+                        textDirection: TextDirection.rtl,
+                        decoration: decoration(
+                          "شماره بعد",
+                          Icons.format_list_numbered,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+
+                const SizedBox(height: 12),
+
+                // ======================================================
+                // وضعیت یادآور
+                // ======================================================
+                DropdownButtonFormField<int>(
+                  value: reminderFilter,
+                  isExpanded: true,
+
+                  decoration: decoration(
+                    "وضعیت یادآور",
+                    Icons.notifications_none_rounded,
                   ),
 
-                  const SizedBox(width: 12),
+                  items: const [
+                    DropdownMenuItem(value: 0, child: Text('همه نامه‌ها')),
+                    DropdownMenuItem(
+                      value: 1,
+                      child: Text('یادآورهای موعدرسیده'),
+                    ),
+                    DropdownMenuItem(
+                      value: 2,
+                      child: Text('دارای یادآور فعال'),
+                    ),
+                    DropdownMenuItem(value: 3, child: Text('یادآورهای آینده')),
+                  ],
 
-                  Expanded(
-                    child: TextField(
-                      controller: shomareBadiFilterController,
-                      keyboardType: TextInputType.text,
-                      textDirection: TextDirection.rtl,
-                      decoration: decoration(
-                        "شماره بعد",
-                        Icons.format_list_numbered,
+                  onChanged: (value) {
+                    if (value == null) return;
+
+                    _clearSelectionForFilterChange();
+
+                    setState(() {
+                      reminderFilter = value;
+                    });
+
+                    loadMore(reset: true);
+                  },
+                ),
+
+                const SizedBox(height: 12),
+
+                // ======================================================
+                // دسته بندی
+                // ======================================================
+                TextField(
+                  controller: categoryFilterController,
+                  textDirection: TextDirection.rtl,
+
+                  decoration: decoration("دسته بندی", Icons.category_outlined),
+
+                  onChanged: (value) {
+                    _debounceCategoryFilter?.cancel();
+
+                    _debounceCategoryFilter = Timer(
+                      const Duration(milliseconds: 300),
+                      () async {
+                        if (value.trim().isEmpty) {
+                          if (!mounted) return;
+
+                          setState(() {
+                            categoryFilterSuggestions.clear();
+                          });
+
+                          return;
+                        }
+
+                        final result = await DatabaseHelper.searchCategories(
+                          value.trim(),
+                        );
+
+                        if (!mounted) return;
+
+                        setState(() {
+                          categoryFilterSuggestions = result;
+                        });
+                      },
+                    );
+                  },
+
+                  onSubmitted: (value) {
+                    _addCategoryFilter(value.trim());
+                  },
+                ),
+
+                // ======================================================
+                // دسته‌بندی‌های انتخاب شده
+                // ======================================================
+                if (selectedCategoryFilters.isNotEmpty)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 12),
+
+                    child: Align(
+                      alignment: Alignment.centerRight,
+
+                      child: Wrap(
+                        spacing: 8,
+                        runSpacing: 8,
+
+                        children: selectedCategoryFilters.map((cat) {
+                          return Chip(
+                            label: Text(cat),
+
+                            backgroundColor: Colors.blue.shade50,
+
+                            deleteIcon: const Icon(Icons.close),
+
+                            onDeleted: () {
+                              _clearSelectionForFilterChange();
+
+                              setState(() {
+                                selectedCategoryFilters.remove(cat);
+                              });
+
+                              loadMore(reset: true);
+                            },
+                          );
+                        }).toList(),
                       ),
                     ),
                   ),
-                ],
-              )
-            : Column(
-                children: [
-                  TextField(
-                    controller: commentFilterController,
-                    textDirection: TextDirection.rtl,
-                    decoration: decoration("توضیحات", Icons.notes_outlined),
-                  ),
 
-                  const SizedBox(height: 12),
+                // ======================================================
+                // پیشنهادهای دسته‌بندی
+                //
+                // هیچ ScrollView داخلی نداریم.
+                // ======================================================
+                if (categoryFilterSuggestions.isNotEmpty)
+                  Container(
+                    width: double.infinity,
 
-                  TextField(
-                    controller: shomareBadiFilterController,
-                    keyboardType: TextInputType.text,
-                    textDirection: TextDirection.rtl,
-                    decoration: decoration(
-                      "شماره بعد",
-                      Icons.format_list_numbered,
+                    margin: const EdgeInsets.only(top: 10),
+
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(14),
+                      border: Border.all(color: Colors.grey.shade300),
+                    ),
+
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+
+                      children: [
+                        for (
+                          int i = 0;
+                          i < categoryFilterSuggestions.length;
+                          i++
+                        ) ...[
+                          ListTile(
+                            dense: true,
+
+                            leading: const Icon(
+                              Icons.label_outline,
+                              color: Colors.blue,
+                            ),
+
+                            title: Text(
+                              categoryFilterSuggestions[i],
+                              textDirection: TextDirection.rtl,
+                            ),
+
+                            onTap: () {
+                              _addCategoryFilter(categoryFilterSuggestions[i]);
+                            },
+                          ),
+
+                          if (i < categoryFilterSuggestions.length - 1)
+                            Divider(height: 1, color: Colors.grey.shade300),
+                        ],
+                      ],
                     ),
                   ),
-                ],
-              ),
-
-        const SizedBox(height: 14),
-
-        DropdownButtonFormField<int>(
-          value: reminderFilter,
-
-          decoration: decoration(
-            "وضعیت یادآور",
-            Icons.notifications_none_rounded,
+              ],
+            ),
           ),
 
-          items: const [
-            DropdownMenuItem(value: 0, child: Text('همه نامه‌ها')),
-            DropdownMenuItem(value: 1, child: Text('یادآورهای موعدرسیده')),
-            DropdownMenuItem(value: 2, child: Text('دارای یادآور فعال')),
-            DropdownMenuItem(value: 3, child: Text('یادآورهای آینده')),
-          ],
+          // ==========================================================
+          // جداکننده
+          // ==========================================================
+          Divider(height: 1, color: Colors.grey.shade300),
 
-          onChanged: (value) {
-            if (value == null) return;
-
-            _clearSelectionForFilterChange();
-
-            setState(() {
-              reminderFilter = value;
-            });
-
-            loadMore(reset: true);
-          },
-        ),
-
-        const SizedBox(height: 14),
-
-        //-----------------------------------------
-        // دسته بندی
-        //-----------------------------------------
-        TextField(
-          controller: categoryFilterController,
-
-          decoration: decoration("دسته بندی", Icons.category_outlined),
-
-          onChanged: (value) {
-            _debounceCategoryFilter?.cancel();
-
-            _debounceCategoryFilter = Timer(
-              const Duration(milliseconds: 300),
-              () async {
-                if (value.trim().isEmpty) {
-                  setState(() {
-                    categoryFilterSuggestions.clear();
-                  });
-
-                  return;
-                }
-
-                final result = await DatabaseHelper.searchCategories(
-                  value.trim(),
-                );
-
-                if (!mounted) return;
-
-                setState(() {
-                  categoryFilterSuggestions = result;
-                });
-              },
-            );
-          },
-
-          onSubmitted: (v) {
-            _addCategoryFilter(v.trim());
-          },
-        ),
-
-        //-----------------------------------------
-        // چیپ ها
-        //-----------------------------------------
-        if (selectedCategoryFilters.isNotEmpty)
+          // ==========================================================
+          // دکمه‌ها
+          // خارج از ListView
+          // ==========================================================
           Padding(
-            padding: const EdgeInsets.only(top: 12),
+            padding: const EdgeInsets.all(12),
 
-            child: Align(
-              alignment: Alignment.centerRight,
+            child: Row(
+              children: [
+                Expanded(
+                  child: FilledButton.icon(
+                    icon: const Icon(Icons.search),
+                    label: const Text("اعمال فیلتر"),
 
-              child: Wrap(
-                spacing: 8,
-                runSpacing: 8,
-
-                children: selectedCategoryFilters.map((cat) {
-                  return Chip(
-                    label: Text(cat),
-
-                    backgroundColor: Colors.blue.shade50,
-
-                    deleteIcon: const Icon(Icons.close),
-
-                    onDeleted: () {
+                    onPressed: () {
                       _clearSelectionForFilterChange();
 
-                      setState(() {
-                        selectedCategoryFilters.remove(cat);
-                      });
+                      _unfocusSearch();
 
                       loadMore(reset: true);
                     },
-                  );
-                }).toList(),
-              ),
+                  ),
+                ),
+
+                const SizedBox(width: 10),
+
+                Expanded(
+                  child: OutlinedButton.icon(
+                    icon: const Icon(Icons.clear),
+                    label: const Text("پاک کردن"),
+
+                    onPressed: () {
+                      _clearSelectionForFilterChange();
+
+                      fromDateController.clear();
+                      toDateController.clear();
+                      onvanController.clear();
+
+                      categoryFilterController.clear();
+
+                      selectedCategoryFilters.clear();
+
+                      categoryFilterSuggestions.clear();
+
+                      commentFilterController.clear();
+                      shomareBadiFilterController.clear();
+
+                      reminderFilter = 0;
+
+                      query = "";
+
+                      _controller.clear();
+
+                      _unfocusSearch();
+
+                      loadMore(reset: true);
+                    },
+                  ),
+                ),
+              ],
             ),
           ),
-
-        //-----------------------------------------
-        // پیشنهادها
-        //-----------------------------------------
-        if (categoryFilterSuggestions.isNotEmpty)
-          Container(
-            margin: const EdgeInsets.only(top: 10),
-
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(14),
-              border: Border.all(color: Colors.grey.shade300),
-            ),
-
-            child: ListView.separated(
-              shrinkWrap: true,
-
-              physics: const NeverScrollableScrollPhysics(),
-
-              itemCount: categoryFilterSuggestions.length,
-
-              separatorBuilder: (_, __) =>
-                  Divider(height: 1, color: Colors.grey.shade300),
-
-              itemBuilder: (_, i) {
-                final item = categoryFilterSuggestions[i];
-
-                return ListTile(
-                  dense: true,
-
-                  leading: const Icon(Icons.label_outline, color: Colors.blue),
-
-                  title: Text(item, textDirection: TextDirection.rtl),
-
-                  onTap: () {
-                    _addCategoryFilter(item);
-                  },
-                );
-              },
-            ),
-          ),
-
-        const SizedBox(height: 20),
-
-        //-----------------------------------------
-        // دکمه ها
-        //-----------------------------------------
-        Wrap(
-          spacing: 12,
-          runSpacing: 12,
-
-          alignment: WrapAlignment.end,
-
-          children: [
-            FilledButton.icon(
-              icon: const Icon(Icons.search),
-
-              label: const Text("اعمال فیلتر"),
-
-              onPressed: () {
-                _clearSelectionForFilterChange();
-
-                loadMore(reset: true);
-              },
-            ),
-
-            OutlinedButton.icon(
-              icon: const Icon(Icons.clear),
-
-              label: const Text("پاک کردن"),
-
-              onPressed: () {
-                _clearSelectionForFilterChange();
-
-                fromDateController.clear();
-                toDateController.clear();
-                onvanController.clear();
-
-                categoryFilterController.clear();
-
-                selectedCategoryFilters.clear();
-
-                categoryFilterSuggestions.clear();
-
-                commentFilterController.clear();
-                shomareBadiFilterController.clear();
-
-                reminderFilter = 0;
-
-                query = "";
-
-                _controller.clear();
-
-                loadMore(reset: true);
-              },
-            ),
-          ],
-        ),
-      ],
+        ],
+      ),
     );
   }
 
