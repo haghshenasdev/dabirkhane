@@ -545,61 +545,81 @@ class _BackupRestoreDialogState extends State<BackupRestoreDialog>
   // ============================================================
   // Backup Tab
   // ============================================================
-
   Widget _buildBackupTab(ColorScheme colorScheme) {
-    return SingleChildScrollView(
-      padding: const EdgeInsets.fromLTRB(18, 18, 18, 24),
-      child: Column(
-        children: [
-          _buildSectionIntro(
-            colorScheme,
-            icon: Icons.cloud_upload_outlined,
-            title: 'نوع پشتیبان را انتخاب کنید',
-            description:
-                'برای پشتیبان‌گیری می‌توانید فقط دیتابیس، '
-                'فایل‌های ماه قبل یا هر دو را انتخاب کنید.',
+    return Column(
+      children: [
+        Expanded(
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.fromLTRB(18, 18, 18, 12),
+            child: Column(
+              children: [
+                _buildSectionIntro(
+                  colorScheme,
+                  icon: Icons.cloud_upload_outlined,
+                  title: 'نوع پشتیبان را انتخاب کنید',
+                  description:
+                      'برای پشتیبان‌گیری می‌توانید فقط دیتابیس، '
+                      'فایل‌های ماه قبل یا هر دو را انتخاب کنید.',
+                ),
+
+                const SizedBox(height: 14),
+
+                _buildBackupOption(
+                  colorScheme,
+                  type: BackupType.database,
+                  icon: Icons.storage_rounded,
+                  title: 'فقط دیتابیس',
+                  description:
+                      'تمام اطلاعات ثبت‌شده، دسته‌بندی‌ها، '
+                      'یادآورها و تاریخچه تغییرات',
+                ),
+
+                const SizedBox(height: 10),
+
+                _buildBackupOption(
+                  colorScheme,
+                  type: BackupType.previousMonthFiles,
+                  icon: Icons.folder_zip_rounded,
+                  title: 'فقط فایل‌های ماه قبل',
+                  description: 'فایل‌های نامه‌های ماه قبل به صورت ZIP',
+                ),
+
+                const SizedBox(height: 10),
+
+                _buildBackupOption(
+                  colorScheme,
+                  type: BackupType.full,
+                  icon: Icons.inventory_2_rounded,
+                  title: 'دیتابیس + فایل‌های ماه قبل',
+                  description:
+                      'پشتیبان کامل شامل دیتابیس و فایل‌های ماه قبل در یک ZIP',
+                ),
+
+                const SizedBox(height: 18),
+
+                _buildProgress(colorScheme),
+
+                // کمی فاصله از دکمه ثابت پایین
+                const SizedBox(height: 8),
+              ],
+            ),
           ),
+        ),
 
-          const SizedBox(height: 14),
-
-          _buildBackupOption(
-            colorScheme,
-            type: BackupType.database,
-            icon: Icons.storage_rounded,
-            title: 'فقط دیتابیس',
-            description:
-                'تمام اطلاعات ثبت‌شده، دسته‌بندی‌ها، '
-                'یادآورها و تاریخچه تغییرات',
+        // ========================================================
+        // دکمه ثابت پایین
+        // ========================================================
+        Container(
+          padding: const EdgeInsets.fromLTRB(18, 10, 18, 18),
+          decoration: BoxDecoration(
+            color: Colors.transparent,
+            border: Border(
+              top: BorderSide(
+                color: colorScheme.outlineVariant.withOpacity(.30),
+              ),
+            ),
           ),
-
-          const SizedBox(height: 10),
-
-          _buildBackupOption(
-            colorScheme,
-            type: BackupType.previousMonthFiles,
-            icon: Icons.folder_zip_rounded,
-            title: 'فقط فایل‌های ماه قبل',
-            description: 'فایل‌های نامه‌های ماه قبل به صورت ZIP',
-          ),
-
-          const SizedBox(height: 10),
-
-          _buildBackupOption(
-            colorScheme,
-            type: BackupType.full,
-            icon: Icons.inventory_2_rounded,
-            title: 'دیتابیس + فایل‌های ماه قبل',
-            description:
-                'پشتیبان کامل شامل دیتابیس و فایل‌های ماه قبل در یک ZIP',
-          ),
-
-          const SizedBox(height: 18),
-
-          _buildProgress(colorScheme),
-
-          const SizedBox(height: 8),
-
-          SizedBox(
+          child: SizedBox(
             width: double.infinity,
             height: 48,
             child: FilledButton.icon(
@@ -618,8 +638,8 @@ class _BackupRestoreDialogState extends State<BackupRestoreDialog>
               ),
             ),
           ),
-        ],
-      ),
+        ),
+      ],
     );
   }
 
@@ -716,34 +736,54 @@ class _BackupRestoreDialogState extends State<BackupRestoreDialog>
   // ============================================================
 
   Widget _buildRestoreTab(ColorScheme colorScheme) {
-    return SingleChildScrollView(
-      padding: const EdgeInsets.fromLTRB(18, 18, 18, 24),
-      child: Column(
-        children: [
-          _buildSectionIntro(
-            colorScheme,
-            icon: Icons.cloud_download_outlined,
-            title: 'بازیابی خودکار',
-            description:
-                'فایل پشتیبان را انتخاب کنید؛ نوع آن به صورت '
-                'خودکار تشخیص داده می‌شود.',
+    return Column(
+      children: [
+        Expanded(
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.fromLTRB(18, 18, 18, 12),
+            child: Column(
+              children: [
+                _buildSectionIntro(
+                  colorScheme,
+                  icon: Icons.cloud_download_outlined,
+                  title: 'بازیابی خودکار',
+                  description:
+                      'فایل پشتیبان را انتخاب کنید؛ نوع آن به صورت '
+                      'خودکار تشخیص داده می‌شود.',
+                ),
+
+                const SizedBox(height: 16),
+
+                _buildRestorePicker(colorScheme),
+
+                const SizedBox(height: 14),
+
+                if (_restoreInfo != null) _buildRestoreInfo(colorScheme),
+
+                const SizedBox(height: 18),
+
+                _buildProgress(colorScheme),
+
+                const SizedBox(height: 8),
+              ],
+            ),
           ),
+        ),
 
-          const SizedBox(height: 16),
-
-          _buildRestorePicker(colorScheme),
-
-          const SizedBox(height: 14),
-
-          if (_restoreInfo != null) _buildRestoreInfo(colorScheme),
-
-          const SizedBox(height: 18),
-
-          _buildProgress(colorScheme),
-
-          const SizedBox(height: 8),
-
-          SizedBox(
+        // ========================================================
+        // دکمه ثابت پایین
+        // ========================================================
+        Container(
+          padding: const EdgeInsets.fromLTRB(18, 10, 18, 18),
+          decoration: BoxDecoration(
+            color: Colors.transparent,
+            border: Border(
+              top: BorderSide(
+                color: colorScheme.outlineVariant.withOpacity(.30),
+              ),
+            ),
+          ),
+          child: SizedBox(
             width: double.infinity,
             height: 48,
             child: FilledButton.icon(
@@ -760,8 +800,8 @@ class _BackupRestoreDialogState extends State<BackupRestoreDialog>
               label: Text(_working ? 'در حال بازیابی...' : 'شروع بازیابی'),
             ),
           ),
-        ],
-      ),
+        ),
+      ],
     );
   }
 
