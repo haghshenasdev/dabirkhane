@@ -23,6 +23,21 @@ void main() async {
   await ScanService.initialize();
 
   // ------------------------------------------------------------
+  // Notification Service
+  // ------------------------------------------------------------
+
+  await NotificationService.instance.initialize();
+
+  // ------------------------------------------------------------
+  // حذف Notificationهای قدیمی
+  //
+  // این کار باعث می‌شود Notificationهای قدیمی که
+  // به ازای هر Reminder ساخته شده‌اند باقی نمانند.
+  // ------------------------------------------------------------
+
+  await NotificationService.instance.cancelAll();
+
+  // ------------------------------------------------------------
   // Monthly Backup Reminder
   // ------------------------------------------------------------
 
@@ -31,19 +46,39 @@ void main() async {
 
   if (backupReminderEnabled) {
     await NotificationService.instance.scheduleMonthlyBackupReminder();
-  } else {
-    await NotificationService.instance.cancelMonthlyBackupReminder();
   }
 
-  await NotificationService.instance.initialize();
+  // ------------------------------------------------------------
+  // Daily Letter Reminders
+  // ------------------------------------------------------------
+
+  await NotificationService.instance.rebuildAllDailyReminderNotifications();
 
   runApp(
     ChangeNotifierProvider(create: (_) => themeProvider, child: const MyApp()),
   );
+
+  // ------------------------------------------------------------
+  // اگر برنامه با کلیک روی Notification باز شده باشد
+  // ------------------------------------------------------------
+
+  WidgetsBinding.instance.addPostFrameCallback((_) {
+    final date = NotificationService.instance.takePendingDailyReminderDate();
+
+    if (date != null) {
+      MyApp.navigatorKey.currentState?.pushAndRemoveUntil(
+        MaterialPageRoute(builder: (_) => HomePage(initialReminderDate: date)),
+        (route) => false,
+      );
+    }
+  });
 }
 
 class MyApp extends StatelessWidget {
   const MyApp({super.key});
+
+  static final GlobalKey<NavigatorState> navigatorKey =
+      GlobalKey<NavigatorState>();
 
   @override
   Widget build(BuildContext context) {
@@ -52,6 +87,7 @@ class MyApp extends StatelessWidget {
     return MaterialApp(
       debugShowCheckedModeBanner: false,
       title: 'دبیرخانه',
+      navigatorKey: navigatorKey,
       // theme: ThemeData(fontFamily: 'sans'),
       theme: theme.lightTheme,
       darkTheme: theme.darkTheme,

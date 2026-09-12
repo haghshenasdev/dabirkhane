@@ -1,7 +1,12 @@
 import 'dart:io';
 
+import 'package:dabirkhane/db/database_helper.dart';
+import 'package:dabirkhane/main.dart';
+import 'package:dabirkhane/ui/home_page.dart';
+import 'package:flutter/material.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:flutter_timezone/flutter_timezone.dart';
+import 'package:shamsi_date/shamsi_date.dart';
 import 'package:timezone/data/latest.dart' as tz;
 import 'package:timezone/timezone.dart' as tz;
 
@@ -26,18 +31,78 @@ class NotificationService {
 
   static const int _monthlyBackupReminderBaseId = 700000;
 
-  // ------------------------------------------------------------
+  // ============================================================
+  // Daily Reminder
+  // ============================================================
+
+  static const String _dailyReminderPrefix = 'daily_reminder|';
+
+  /// ID ثابت برای هر روز.
+  ///
+  /// با این کار مثلاً تمام یادآورهای 1405/06/21
+  /// فقط یک Notification دارند.
+  int _dailyNotificationId(DateTime date) {
+    final jalali = Jalali.fromDateTime(date);
+
+    return 100000 + (jalali.year * 10000) + (jalali.month * 100) + jalali.day;
+  }
+
+  String _jalaliDateString(DateTime date) {
+    final jalali = Jalali.fromDateTime(date);
+
+    return '${jalali.year}/'
+        '${jalali.month.toString().padLeft(2, '0')}/'
+        '${jalali.day.toString().padLeft(2, '0')}';
+  }
+
+  DateTime? _parseDailyReminderPayload(String payload) {
+    if (!payload.startsWith(_dailyReminderPrefix)) {
+      return null;
+    }
+
+    final dateText = payload.substring(_dailyReminderPrefix.length);
+
+    final parts = dateText.split('/');
+
+    if (parts.length != 3) {
+      return null;
+    }
+
+    final year = int.tryParse(parts[0]);
+    final month = int.tryParse(parts[1]);
+    final day = int.tryParse(parts[2]);
+
+    if (year == null || month == null || day == null) {
+      return null;
+    }
+
+    try {
+      return Jalali(year, month, day).toDateTime();
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// تاریخ روزی که کاربر از طریق Notification روی آن کلیک کرده.
+  ///
+  /// اگر برنامه هنگام دریافت کلیک هنوز بالا نیامده باشد،
+  /// این مقدار موقتاً ذخیره می‌شود.
+  String? _pendingDailyReminderDate;
+
+  String? takePendingDailyReminderDate() {
+    final value = _pendingDailyReminderDate;
+    _pendingDailyReminderDate = null;
+    return value;
+  }
+
+  // ============================================================
   // Initialize
-  // ------------------------------------------------------------
+  // ============================================================
 
   Future<void> initialize() async {
     if (_initialized) {
       return;
     }
-
-    // ----------------------------------------------------------
-    // Timezone
-    // ----------------------------------------------------------
 
     tz.initializeTimeZones();
 
@@ -53,20 +118,7 @@ class NotificationService {
       }
     }
 
-    // ----------------------------------------------------------
-    // Android
-    //
-    // icon.png باید در این مسیر باشد:
-    //
-    // android/app/src/main/res/drawable/icon.png
-    //
-    // ----------------------------------------------------------
-
     const androidSettings = AndroidInitializationSettings('icon');
-
-    // ----------------------------------------------------------
-    // Windows
-    // ----------------------------------------------------------
 
     const windowsSettings = WindowsInitializationSettings(
       appName: 'دبیرخانه',
@@ -74,10 +126,6 @@ class NotificationService {
       guid: '8d9a4f1b-8e5c-4a5a-b5f1-2d7f9f6a1234',
       iconPath: 'assets/images/logo.png',
     );
-
-    // ----------------------------------------------------------
-    // InitializationSettings
-    // ----------------------------------------------------------
 
     const initializationSettings = InitializationSettings(
       android: androidSettings,
@@ -89,10 +137,6 @@ class NotificationService {
       onDidReceiveNotificationResponse: _onNotificationResponse,
     );
 
-    // ----------------------------------------------------------
-    // Android 13+
-    // ----------------------------------------------------------
-
     if (Platform.isAndroid) {
       final androidImplementation = _plugin
           .resolvePlatformSpecificImplementation<
@@ -103,11 +147,30 @@ class NotificationService {
     }
 
     _initialized = true;
+
+    // اگر برنامه با کلیک روی Notification باز شده باشد.
+    try {
+      final launchDetails = await _plugin.getNotificationAppLaunchDetails();
+
+      if (launchDetails?.didNotificationLaunchApp == true) {
+        final payload = launchDetails?.notificationResponse?.payload;
+
+        if (payload != null && payload.isNotEmpty) {
+          final date = _parseDailyReminderPayload(payload);
+
+          if (date != null) {
+            _pendingDailyReminderDate = _jalaliDateString(date);
+          }
+        }
+      }
+    } catch (e) {
+      print('Notification launch details error: $e');
+    }
   }
 
-  // ------------------------------------------------------------
+  // ============================================================
   // Notification click
-  // ------------------------------------------------------------
+  // ============================================================
 
   void _onNotificationResponse(NotificationResponse response) {
     final payload = response.payload;
@@ -116,32 +179,33 @@ class NotificationService {
       return;
     }
 
-    print('Reminder notification clicked. Record ID: $payload');
+    final date = _parseDailyReminderPayload(payload);
+
+    if (date == null) {
+      print('Unknown notification payload: $payload');
+      return;
+    }
+
+    final jalaliDate = _jalaliDateString(date);
+
+    print('Daily reminder clicked: $jalaliDate');
+
+    _pendingDailyReminderDate = jalaliDate;
   }
 
-  // ------------------------------------------------------------
+  // ============================================================
   // Notification details
-  // ------------------------------------------------------------
+  // ============================================================
 
   NotificationDetails _notificationDetails() {
-    // ----------------------------------------------------------
-    // Android
-    // ----------------------------------------------------------
-
     const androidDetails = AndroidNotificationDetails(
       _channelId,
       _channelName,
       channelDescription: _channelDescription,
       importance: Importance.high,
       priority: Priority.high,
-
-      // icon.png
       icon: 'icon',
     );
-
-    // ----------------------------------------------------------
-    // Windows
-    // ----------------------------------------------------------
 
     const windowsDetails = WindowsNotificationDetails();
 
@@ -151,57 +215,144 @@ class NotificationService {
     );
   }
 
-  // ------------------------------------------------------------
-  // Schedule reminder
-  // ------------------------------------------------------------
+  // ============================================================
+  // Daily reminder
+  // ============================================================
 
+  /// برای یک روز مشخص، فقط یک Notification ایجاد می‌کند.
+  ///
+  /// اگر 5 نامه در این روز Reminder داشته باشند،
+  /// فقط یک Notification ساخته می‌شود.
+  Future<void> scheduleDailyReminder(DateTime date) async {
+    await initialize();
+
+    final day = DateTime(date.year, date.month, date.day);
+
+    final notificationId = _dailyNotificationId(day);
+
+    // ابتدا Notification قبلی همان روز را حذف می‌کنیم.
+    await _plugin.cancel(id: notificationId);
+
+    final allPendingReminders = await DatabaseHelper.getPendingReminders();
+
+    final remindersForDay = allPendingReminders.where((reminder) {
+      return reminder.dueDate.year == day.year &&
+          reminder.dueDate.month == day.month &&
+          reminder.dueDate.day == day.day;
+    }).toList();
+
+    // اگر برای این روز Reminder نداریم،
+    // Notification هم نباید وجود داشته باشد.
+    if (remindersForDay.isEmpty) {
+      return;
+    }
+
+    final now = tz.TZDateTime.now(tz.local);
+
+    var scheduledDate = tz.TZDateTime(
+      tz.local,
+      day.year,
+      day.month,
+      day.day,
+      9,
+      0,
+    );
+
+    // اگر ساعت 9 امروز گذشته باشد، دیگر برای امروز
+    // Notification زمان‌بندی نمی‌کنیم.
+    if (!scheduledDate.isAfter(now)) {
+      return;
+    }
+
+    final count = remindersForDay.length;
+
+    final body = count == 1
+        ? 'موعد پیگیری ۱ نامه امروز فرا رسیده است.'
+        : 'موعد پیگیری $count نامه امروز فرا رسیده است.';
+
+    final jalaliDate = _jalaliDateString(day);
+
+    await _plugin.zonedSchedule(
+      id: notificationId,
+      title: '🔔 یادآوری پیگیری نامه‌ها',
+      body: body,
+      scheduledDate: scheduledDate,
+      notificationDetails: _notificationDetails(),
+      androidScheduleMode: AndroidScheduleMode.exactAllowWhileIdle,
+      payload: '$_dailyReminderPrefix$jalaliDate',
+    );
+  }
+
+  /// Notification یک روز را مجدداً محاسبه می‌کند.
+  ///
+  /// بعد از اضافه، حذف، انجام شدن یا تغییر موعد Reminder
+  /// باید این متد اجرا شود.
+  Future<void> rebuildDailyReminderForDate(DateTime date) async {
+    await scheduleDailyReminder(date);
+  }
+
+  /// تمام Notificationهای روزانه را از روی دیتابیس می‌سازد.
+  ///
+  /// این متد در شروع برنامه اجرا می‌شود.
+  Future<void> rebuildAllDailyReminderNotifications() async {
+    await initialize();
+
+    final allPendingReminders = await DatabaseHelper.getPendingReminders();
+
+    final uniqueDays = <String, DateTime>{};
+
+    for (final reminder in allPendingReminders) {
+      final date = DateTime(
+        reminder.dueDate.year,
+        reminder.dueDate.month,
+        reminder.dueDate.day,
+      );
+
+      final key = '${date.year}-${date.month}-${date.day}';
+
+      uniqueDays[key] = date;
+    }
+
+    for (final date in uniqueDays.values) {
+      await scheduleDailyReminder(date);
+    }
+  }
+
+  /// Notification مربوط به یک روز را حذف می‌کند.
+  Future<void> cancelDailyReminder(DateTime date) async {
+    await initialize();
+
+    await _plugin.cancel(id: _dailyNotificationId(date));
+  }
+
+  // ============================================================
+  // Legacy individual reminder methods
+  // ============================================================
+
+  /// این متد دیگر برای Reminderهای نامه استفاده نمی‌شود.
+  ///
+  /// نگه داشته شده تا کدهای قدیمی پروژه دچار خطای Compile نشوند.
   Future<void> scheduleReminder({
     required int reminderId,
     required int recordId,
     required DateTime dueDate,
     required String text,
   }) async {
-    await initialize();
-
-    final scheduledDate = tz.TZDateTime.from(dueDate, tz.local);
-
-    final now = tz.TZDateTime.now(tz.local);
-
-    // تاریخ گذشته است.
-    if (!scheduledDate.isAfter(now)) {
-      return;
-    }
-
-    await _plugin.zonedSchedule(
-      id: reminderId,
-      title: 'یادآور نامه',
-      body: text.trim().isEmpty
-          ? 'زمان پیگیری این نامه فرا رسیده است.'
-          : text.trim(),
-      scheduledDate: scheduledDate,
-      notificationDetails: _notificationDetails(),
-
-      // Android
-      androidScheduleMode: AndroidScheduleMode.exactAllowWhileIdle,
-
-      // شماره نامه
-      payload: recordId.toString(),
-    );
+    await scheduleDailyReminder(dueDate);
   }
-
-  // ------------------------------------------------------------
-  // Cancel reminder
-  // ------------------------------------------------------------
 
   Future<void> cancelReminder(int reminderId) async {
     await initialize();
 
-    await _plugin.cancel(id: reminderId);
+    // عمداً چیزی لغو نمی‌شود.
+    //
+    // Notificationها اکنون بر اساس «روز» مدیریت می‌شوند
+    // نه بر اساس reminderId.
   }
 
-  // ------------------------------------------------------------
-  // Cancel all reminders
-  // ------------------------------------------------------------
+  // ============================================================
+  // Cancel all
+  // ============================================================
 
   Future<void> cancelAll() async {
     await initialize();
@@ -209,9 +360,9 @@ class NotificationService {
     await _plugin.cancelAll();
   }
 
-  // ------------------------------------------------------------
+  // ============================================================
   // Pending notifications
-  // ------------------------------------------------------------
+  // ============================================================
 
   Future<List<PendingNotificationRequest>> getPendingNotifications() async {
     await initialize();
@@ -219,9 +370,9 @@ class NotificationService {
     return _plugin.pendingNotificationRequests();
   }
 
-  // ------------------------------------------------------------
+  // ============================================================
   // Test notification
-  // ------------------------------------------------------------
+  // ============================================================
 
   Future<void> showTestNotification() async {
     await initialize();
@@ -234,9 +385,9 @@ class NotificationService {
     );
   }
 
-  // ------------------------------------------------------------
-  // Debug initialize + test notification
-  // ------------------------------------------------------------
+  // ============================================================
+  // Debug
+  // ============================================================
 
   Future<String> debugInitialize() async {
     final logs = <String>[];
@@ -248,147 +399,11 @@ class NotificationService {
     try {
       log('شروع initialize');
 
-      // --------------------------------------------------------
-      // Already initialized
-      // --------------------------------------------------------
+      await initialize();
 
-      if (_initialized) {
-        log('⚠️ سرویس قبلاً initialize شده است.');
-
-        try {
-          log('مرحله تست: ارسال Notification تستی...');
-
-          await _plugin.show(
-            id: 999999,
-            title: 'دبیرخانه',
-            body: 'این یک اعلان آزمایشی است.',
-            notificationDetails: _notificationDetails(),
-          );
-
-          log('✅ Notification تستی با موفقیت ارسال شد.');
-        } catch (e, st) {
-          log('❌ خطا در ارسال Notification تستی:\n$e');
-
-          log('StackTrace:\n$st');
-        }
-
-        return logs.join('\n\n');
-      }
-
-      // --------------------------------------------------------
-      // Timezone
-      // --------------------------------------------------------
-
-      log('مرحله 1: initializeTimeZones');
-
-      tz.initializeTimeZones();
-
-      log('✅ timezone database آماده شد.');
+      log('✅ Notification Service آماده است.');
 
       try {
-        log('مرحله 2: دریافت timezone دستگاه...');
-
-        final timezoneInfo = await FlutterTimezone.getLocalTimezone();
-
-        log('✅ timezone دستگاه:\n${timezoneInfo.identifier}');
-
-        tz.setLocalLocation(tz.getLocation(timezoneInfo.identifier));
-
-        log('✅ timezone تنظیم شد.');
-      } catch (e, st) {
-        log('❌ خطا در FlutterTimezone:\n$e');
-
-        log('StackTrace:\n$st');
-
-        try {
-          tz.setLocalLocation(tz.getLocation('Asia/Tehran'));
-
-          log('⚠️ timezone به Asia/Tehran تغییر کرد.');
-        } catch (e2) {
-          log('❌ خطا در timezone جایگزین:\n$e2');
-        }
-      }
-
-      // --------------------------------------------------------
-      // Android settings
-      // --------------------------------------------------------
-
-      log('مرحله 3: ساخت AndroidInitializationSettings');
-
-      const androidSettings = AndroidInitializationSettings('icon');
-
-      log('✅ Android settings ساخته شد.');
-
-      // --------------------------------------------------------
-      // Windows settings
-      // --------------------------------------------------------
-
-      const windowsSettings = WindowsInitializationSettings(
-        appName: 'دبیرخانه',
-        appUserModelId: 'com.haghshenasdev.dabirkhane',
-        guid: '8d9a4f1b-8e5c-4a5a-b5f1-2d7f9f6a1234',
-        iconPath: 'assets/images/logo.png',
-      );
-
-      const initializationSettings = InitializationSettings(
-        android: androidSettings,
-        windows: windowsSettings,
-      );
-
-      // --------------------------------------------------------
-      // Initialize plugin
-      // --------------------------------------------------------
-
-      log('مرحله 4: اجرای plugin.initialize');
-
-      await _plugin.initialize(
-        settings: initializationSettings,
-        onDidReceiveNotificationResponse: _onNotificationResponse,
-      );
-
-      log('✅ plugin.initialize با موفقیت انجام شد.');
-
-      // --------------------------------------------------------
-      // Android permission
-      // --------------------------------------------------------
-
-      if (Platform.isAndroid) {
-        log('مرحله 5: بررسی Android notification permission');
-
-        final androidImplementation = _plugin
-            .resolvePlatformSpecificImplementation<
-              AndroidFlutterLocalNotificationsPlugin
-            >();
-
-        if (androidImplementation == null) {
-          log('⚠️ Android implementation پیدا نشد.');
-        } else {
-          log('✅ Android implementation پیدا شد.');
-
-          log('درخواست Notification Permission...');
-
-          final result = await androidImplementation
-              .requestNotificationsPermission();
-
-          log('نتیجه permission:\n$result');
-        }
-      }
-
-      // --------------------------------------------------------
-      // Mark initialized
-      // --------------------------------------------------------
-
-      _initialized = true;
-
-      log('🎉 initialize با موفقیت کامل شد.');
-
-      // --------------------------------------------------------
-      // Test notification
-      // --------------------------------------------------------
-
-      try {
-        log('مرحله 6: ارسال Notification تستی...');
-
         await _plugin.show(
           id: 999999,
           title: 'دبیرخانه',
@@ -399,18 +414,13 @@ class NotificationService {
         log('✅ Notification تستی با موفقیت ارسال شد.');
       } catch (e, st) {
         log('❌ خطا در ارسال Notification تستی:\n$e');
-
         log('StackTrace:\n$st');
       }
 
-      log('🏁 عملیات Debug به پایان رسید.');
-
       return logs.join('\n\n');
     } catch (e, st) {
-      log('❌❌ خطای اصلی ❌❌');
-
+      log('❌ خطای اصلی');
       log('Error:\n$e');
-
       log('StackTrace:\n$st');
 
       return logs.join('\n\n');
@@ -439,14 +449,9 @@ class NotificationService {
     );
   }
 
-  /// تاریخ یادآور پشتیبان‌گیری برای یک ماه
-  ///
-  /// روز اول ماه ساعت 10:00
-  /// اگر روز اول ماه جمعه باشد، شنبه ساعت 10:00
   tz.TZDateTime _getBackupReminderDate(int year, int month) {
     var date = tz.TZDateTime(tz.local, year, month, 1, 10, 0);
 
-    // جمعه = 5
     if (date.weekday == DateTime.friday) {
       date = date.add(const Duration(days: 1));
     }
@@ -454,11 +459,9 @@ class NotificationService {
     return date;
   }
 
-  /// زمان‌بندی 12 ماه آینده
   Future<void> scheduleMonthlyBackupReminder() async {
     await initialize();
 
-    // ابتدا فقط Reminderهای مخصوص Backup را حذف می‌کنیم.
     for (int i = 0; i < 12; i++) {
       await _plugin.cancel(id: _monthlyBackupReminderBaseId + i);
     }
@@ -473,9 +476,8 @@ class NotificationService {
       final year = now.year + (totalMonths ~/ 12);
       final month = (totalMonths % 12) + 1;
 
-      var scheduledDate = _getBackupReminderDate(year, month);
+      final scheduledDate = _getBackupReminderDate(year, month);
 
-      // اگر تاریخ این ماه گذشته باشد، آن را رد می‌کنیم.
       if (!scheduledDate.isAfter(now)) {
         continue;
       }
@@ -496,12 +498,30 @@ class NotificationService {
     }
   }
 
-  /// لغو تمام Reminderهای مربوط به پشتیبان‌گیری ماهانه
   Future<void> cancelMonthlyBackupReminder() async {
     await initialize();
 
     for (int i = 0; i < 12; i++) {
       await _plugin.cancel(id: _monthlyBackupReminderBaseId + i);
     }
+  }
+
+  void openPendingReminderDate() {
+    final date = takePendingDailyReminderDate();
+
+    if (date == null) {
+      return;
+    }
+
+    final navigator = MyApp.navigatorKey.currentState;
+
+    if (navigator == null) {
+      return;
+    }
+
+    navigator.pushAndRemoveUntil(
+      MaterialPageRoute(builder: (_) => HomePage(initialReminderDate: date)),
+      (route) => false,
+    );
   }
 }

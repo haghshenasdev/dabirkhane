@@ -15,6 +15,10 @@ import '../db/database_helper.dart';
 import 'record_form.dart';
 
 class HomePage extends StatefulWidget {
+  final String? initialReminderDate;
+
+  const HomePage({super.key, this.initialReminderDate});
+
   @override
   State<HomePage> createState() => _HomePageState();
 }
@@ -378,6 +382,12 @@ class _HomePageState extends State<HomePage> {
   @override
   void initState() {
     super.initState();
+
+    if (widget.initialReminderDate != null &&
+        widget.initialReminderDate!.trim().isNotEmpty) {
+      fromDateController.text = widget.initialReminderDate!;
+      toDateController.text = widget.initialReminderDate!;
+    }
 
     loadMore();
     _loadReminderStatus();

@@ -134,12 +134,7 @@ class _ReminderDialogState extends State<ReminderDialog> {
 
       final reminderId = await DatabaseHelper.insertReminder(reminder);
 
-      await NotificationService.instance.scheduleReminder(
-        reminderId: reminderId,
-        recordId: widget.recordId,
-        dueDate: dueDate,
-        text: text,
-      );
+      await NotificationService.instance.rebuildDailyReminderForDate(dueDate);
 
       if (!mounted) return;
 
@@ -187,9 +182,11 @@ class _ReminderDialogState extends State<ReminderDialog> {
     });
 
     try {
-      await NotificationService.instance.cancelReminder(reminder.id!);
-
       await DatabaseHelper.completeReminder(reminder.id!);
+
+      await NotificationService.instance.rebuildDailyReminderForDate(
+        reminder.dueDate,
+      );
 
       await _loadReminders();
 
@@ -243,7 +240,7 @@ class _ReminderDialogState extends State<ReminderDialog> {
 
       final newDueDate = _normalizeToNine(rawDate);
 
-      await NotificationService.instance.cancelReminder(reminder.id!);
+      final oldDueDate = reminder.dueDate;
 
       final updatedReminder = reminder.copyWith(
         dueDate: newDueDate,
@@ -253,13 +250,15 @@ class _ReminderDialogState extends State<ReminderDialog> {
 
       await DatabaseHelper.updateReminder(updatedReminder);
 
-      await NotificationService.instance.scheduleReminder(
-        reminderId: reminder.id!,
-        recordId: reminder.recordId,
-        dueDate: newDueDate,
-        text: reminder.text,
+      // روز قبلی ممکن است تعداد Reminderهایش کم شده باشد.
+      await NotificationService.instance.rebuildDailyReminderForDate(
+        oldDueDate,
       );
 
+      // روز جدید ممکن است تعداد Reminderهایش زیاد شده باشد.
+      await NotificationService.instance.rebuildDailyReminderForDate(
+        newDueDate,
+      );
       await _loadReminders();
 
       if (!mounted) return;
@@ -428,9 +427,11 @@ class _ReminderDialogState extends State<ReminderDialog> {
     if (confirmed != true) return;
 
     try {
-      await NotificationService.instance.cancelReminder(reminder.id!);
+      final dueDate = reminder.dueDate;
 
       await DatabaseHelper.deleteReminder(reminder.id!);
+
+      await NotificationService.instance.rebuildDailyReminderForDate(dueDate);
 
       if (!mounted) return;
 
