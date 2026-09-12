@@ -510,7 +510,7 @@ class _ReminderDialogState extends State<ReminderDialog> {
                           ? 'انجام شده • ${_formatJalali(reminder.dueDate)}'
                           : due
                           ? 'موعد پیگیری رسیده • ${_formatJalali(reminder.dueDate)}'
-                          : 'سررسید: ${_formatJalali(reminder.dueDate)} ساعت ۰۹:۰۰',
+                          : 'سررسید: ${_formatJalali(reminder.dueDate)}',
                       textDirection: TextDirection.rtl,
                       style: TextStyle(
                         fontSize: 12,
@@ -708,7 +708,7 @@ class _ReminderDialogState extends State<ReminderDialog> {
                     const SizedBox(height: 8),
 
                     Text(
-                      'تاریخ سررسید: ${_formatJalali(previewDate)} ساعت ۰۹:۰۰',
+                      'تاریخ سررسید: ${_formatJalali(previewDate)}',
                       textDirection: TextDirection.rtl,
                       style: TextStyle(
                         color: colorScheme.primary,

@@ -328,6 +328,7 @@ class SettingsPage extends StatelessWidget {
           const FormSuggestionsSettings(),
 
           const Divider(),
+          const ReminderNotificationTimeTile(),
 
           ListTile(
             leading: const Icon(Icons.notifications_active_outlined),
@@ -744,6 +745,116 @@ class _MonthlyBackupReminderTileState extends State<MonthlyBackupReminderTile> {
       ),
       value: _enabled,
       onChanged: _loading ? null : _changeValue,
+    );
+  }
+}
+
+class ReminderNotificationTimeTile extends StatefulWidget {
+  const ReminderNotificationTimeTile({super.key});
+
+  @override
+  State<ReminderNotificationTimeTile> createState() =>
+      _ReminderNotificationTimeTileState();
+}
+
+class _ReminderNotificationTimeTileState
+    extends State<ReminderNotificationTimeTile> {
+  TimeOfDay _time = const TimeOfDay(hour: 9, minute: 0);
+  bool _loading = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  Future<void> _load() async {
+    final time = await NotificationService.instance
+        .getReminderNotificationTime();
+
+    if (!mounted) return;
+
+    setState(() {
+      _time = time;
+      _loading = false;
+    });
+  }
+
+  Future<void> _selectTime() async {
+    final selected = await showTimePicker(
+      context: context,
+      initialTime: _time,
+      helpText: 'زمان نمایش اعلان‌های یادآور',
+      cancelText: 'انصراف',
+      confirmText: 'تأیید',
+    );
+
+    if (selected == null) return;
+
+    setState(() {
+      _loading = true;
+    });
+
+    try {
+      await NotificationService.instance.setReminderNotificationTime(selected);
+
+      if (!mounted) return;
+
+      setState(() {
+        _time = selected;
+        _loading = false;
+      });
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'زمان اعلان‌ها روی ${selected.format(context)} تنظیم شد.',
+            textDirection: TextDirection.rtl,
+          ),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+
+      setState(() {
+        _loading = false;
+      });
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'خطا در تغییر زمان اعلان:\n$e',
+            textDirection: TextDirection.rtl,
+          ),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return ListTile(
+      leading: const Icon(Icons.schedule_rounded),
+      title: const Text('زمان اعلان یادآور'),
+      subtitle: Text(
+        _loading
+            ? 'در حال بارگذاری...'
+            : 'هر روز ساعت ${_time.format(context)}',
+        textDirection: TextDirection.rtl,
+      ),
+      trailing: _loading
+          ? const SizedBox(
+              width: 20,
+              height: 20,
+              child: CircularProgressIndicator(strokeWidth: 2),
+            )
+          : Text(
+              _time.format(context),
+              style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+            ),
+      onTap: _loading ? null : _selectTime,
     );
   }
 }

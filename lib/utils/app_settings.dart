@@ -9,6 +9,8 @@ class AppSettings {
   static const _camScannerPath2Key = 'camscanner_path_2';
   static const _readWithoutGallerySaveKey = 'read_without_gallery_save';
   static const _autoSaveRecordFormKey = 'auto_save_record_form';
+  static const String _reminderNotificationTimeKey =
+      'reminder_notification_time';
 
   static const String _scannerTypeKey = 'scanner_type';
 
@@ -61,6 +63,17 @@ class AppSettings {
     await prefs.setString(_monthlyBackupReminderLastShownKey, monthKey);
   }
 
+  static Future<String> getReminderNotificationTime() async {
+    final prefs = await SharedPreferences.getInstance();
+
+    return prefs.getString(_reminderNotificationTimeKey) ?? '09:00';
+  }
+
+  static Future<void> setReminderNotificationTime(String value) async {
+    final prefs = await SharedPreferences.getInstance();
+
+    await prefs.setString(_reminderNotificationTimeKey, value);
+  }
   // -----------------------------
   // Last Backup
   // -----------------------------

@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:dabirkhane/db/database_helper.dart';
 import 'package:dabirkhane/main.dart';
 import 'package:dabirkhane/ui/home_page.dart';
+import 'package:dabirkhane/utils/app_settings.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:flutter_timezone/flutter_timezone.dart';
@@ -53,6 +54,63 @@ class NotificationService {
     return '${jalali.year}/'
         '${jalali.month.toString().padLeft(2, '0')}/'
         '${jalali.day.toString().padLeft(2, '0')}';
+  }
+
+  // ============================================================
+  // Reminder Notification Time
+  // ============================================================
+
+  /// ساعت پیش‌فرض اعلان‌های یادآور
+  static const int _defaultReminderHour = 9;
+  static const int _defaultReminderMinute = 0;
+
+  /// ساعت فعلی اعلان‌های یادآور را از تنظیمات می‌خواند.
+  Future<TimeOfDay> getReminderNotificationTime() async {
+    final value = await AppSettings.getReminderNotificationTime();
+
+    if (value == null || value.isEmpty) {
+      return const TimeOfDay(
+        hour: _defaultReminderHour,
+        minute: _defaultReminderMinute,
+      );
+    }
+
+    final parts = value.split(':');
+
+    if (parts.length != 2) {
+      return const TimeOfDay(
+        hour: _defaultReminderHour,
+        minute: _defaultReminderMinute,
+      );
+    }
+
+    final hour = int.tryParse(parts[0]);
+    final minute = int.tryParse(parts[1]);
+
+    if (hour == null ||
+        minute == null ||
+        hour < 0 ||
+        hour > 23 ||
+        minute < 0 ||
+        minute > 59) {
+      return const TimeOfDay(
+        hour: _defaultReminderHour,
+        minute: _defaultReminderMinute,
+      );
+    }
+
+    return TimeOfDay(hour: hour, minute: minute);
+  }
+
+  /// ساعت اعلان‌های یادآور را تغییر می‌دهد
+  /// و تمام اعلان‌های آینده را دوباره زمان‌بندی می‌کند.
+  Future<void> setReminderNotificationTime(TimeOfDay time) async {
+    await AppSettings.setReminderNotificationTime(
+      '${time.hour.toString().padLeft(2, '0')}:'
+      '${time.minute.toString().padLeft(2, '0')}',
+    );
+
+    await rescheduleAllDailyReminderNotifications();
   }
 
   DateTime? _parseDailyReminderPayload(String payload) {
@@ -249,17 +307,17 @@ class NotificationService {
 
     final now = tz.TZDateTime.now(tz.local);
 
+    final reminderTime = await getReminderNotificationTime();
+
     var scheduledDate = tz.TZDateTime(
       tz.local,
       day.year,
       day.month,
       day.day,
-      9,
-      0,
+      reminderTime.hour,
+      reminderTime.minute,
     );
 
-    // اگر ساعت 9 امروز گذشته باشد، دیگر برای امروز
-    // Notification زمان‌بندی نمی‌کنیم.
     if (!scheduledDate.isAfter(now)) {
       return;
     }
@@ -309,13 +367,28 @@ class NotificationService {
       );
 
       final key = '${date.year}-${date.month}-${date.day}';
-
       uniqueDays[key] = date;
     }
 
     for (final date in uniqueDays.values) {
       await scheduleDailyReminder(date);
     }
+  }
+
+  /// تمام اعلان‌های روزانه را از نو زمان‌بندی می‌کند.
+  /// این متد بعد از تغییر ساعت اعلان استفاده می‌شود.
+  Future<void> rescheduleAllDailyReminderNotifications() async {
+    await initialize();
+
+    final pendingNotifications = await _plugin.pendingNotificationRequests();
+
+    for (final notification in pendingNotifications) {
+      if (notification.id >= 100000 && notification.id < 700000) {
+        await _plugin.cancel(id: notification.id);
+      }
+    }
+
+    await rebuildAllDailyReminderNotifications();
   }
 
   /// Notification مربوط به یک روز را حذف می‌کند.
