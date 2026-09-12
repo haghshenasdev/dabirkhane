@@ -1209,8 +1209,6 @@ class _RecordFormState extends State<RecordForm>
     }
 
     try {
-      await ScanService.deleteOldScans(int.parse(id));
-
       await ScanService.startScan(id, c['date']?.text.trim());
     } catch (e) {
       debugPrint('Open Scanner Error: $e');

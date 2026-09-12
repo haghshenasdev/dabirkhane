@@ -241,7 +241,6 @@ class ScanService {
     // ----------------------------------------------------------
     // بررسی وجود فایل
     // ----------------------------------------------------------
-
     if (!await sourceFile.exists()) {
       throw Exception('فایل اسکن شده پیدا نشد:\n$sourcePath');
     }
@@ -249,7 +248,6 @@ class ScanService {
     // ----------------------------------------------------------
     // بررسی حجم
     // ----------------------------------------------------------
-
     final sourceSize = await sourceFile.length();
 
     if (sourceSize <= 0) {
@@ -257,9 +255,8 @@ class ScanService {
     }
 
     // ----------------------------------------------------------
-    // پوشه نامه‌ها
+    // تعیین پوشه اصلی نامه‌ها
     // ----------------------------------------------------------
-
     final lettersDir = await AppSettings.getLettersDirectory();
 
     if (!await lettersDir.exists()) {
@@ -267,9 +264,26 @@ class ScanService {
     }
 
     // ----------------------------------------------------------
-    // تعیین پسوند
+    // تعیین پوشه سال / ماه بر اساس تاریخ خود نامه
     // ----------------------------------------------------------
+    final targetDirectory = await LetterFileOrganizer.getDirectoryForDate(
+      _recordDate ?? '',
+    );
 
+    if (targetDirectory == null) {
+      throw Exception(
+        'پوشه تاریخ نامه قابل تعیین نیست.\n'
+        'تاریخ نامه: ${_recordDate ?? ''}',
+      );
+    }
+
+    if (!await targetDirectory.exists()) {
+      await targetDirectory.create(recursive: true);
+    }
+
+    // ----------------------------------------------------------
+    // تعیین پسوند فایل
+    // ----------------------------------------------------------
     var extension = path.extension(sourceFile.path).toLowerCase();
 
     if (extension.isEmpty) {
@@ -281,53 +295,53 @@ class ScanService {
     }
 
     // ----------------------------------------------------------
-    // نام فایل
+    // پیدا کردن اولین نام آزاد
     //
-    // مثل CamScanner:
+    // مثال:
     //
     // 12345.jpg
     // 12345_1.jpg
     // 12345_2.jpg
     // 12345_3.jpg
     //
-    // اگر فایل اصلی وجود داشته باشد، فایل قبلی حذف نمی‌شود.
-    // اولین شماره آزاد انتخاب می‌شود.
+    // هیچ فایل قبلی overwrite نمی‌شود.
     // ----------------------------------------------------------
+    String targetName = '$recordId$extension';
 
-    var targetName = '$recordId$extension';
-
-    var targetFile = File(path.join(lettersDir.path, targetName));
+    File targetFile = File(path.join(targetDirectory.path, targetName));
 
     int counter = 1;
 
     while (await targetFile.exists()) {
       targetName = '${recordId}_$counter$extension';
 
-      targetFile = File(path.join(lettersDir.path, targetName));
+      targetFile = File(path.join(targetDirectory.path, targetName));
 
       counter++;
     }
 
     // ----------------------------------------------------------
-    // کپی
+    // کپی فایل
     // ----------------------------------------------------------
-
     await targetFile.writeAsBytes(await sourceFile.readAsBytes(), flush: true);
 
     // ----------------------------------------------------------
-    // بررسی کپی
+    // بررسی صحت کپی
     // ----------------------------------------------------------
-
     final targetSize = await targetFile.length();
 
     if (targetSize != sourceSize) {
+      // اگر کپی ناقص بود، فایل ناقص را حذف کن
+      try {
+        await targetFile.delete();
+      } catch (_) {}
+
       throw Exception('کپی فایل ناقص انجام شد.');
     }
 
     // ----------------------------------------------------------
-    // حذف فایل موقت
+    // حذف فایل موقت FastScanner
     // ----------------------------------------------------------
-
     try {
       await sourceFile.delete();
     } catch (_) {}
@@ -335,7 +349,6 @@ class ScanService {
     // ----------------------------------------------------------
     // پایان
     // ----------------------------------------------------------
-
     _recordId = null;
     _recordDate = null;
     _scanStartTime = null;
@@ -386,6 +399,7 @@ class ScanService {
 
       File targetFile = File(path.join(targetDirectory.path, targetName));
 
+      // اگر فایل از قبل وجود داشت، شماره آزاد بعدی را پیدا کن
       int index = counter;
 
       while (await targetFile.exists()) {
@@ -393,18 +407,16 @@ class ScanService {
 
         targetName = '${_recordId}_$index$extension';
 
-        targetFile = File(path.join(lettersDir.path, targetName));
+        targetFile = File(path.join(targetDirectory.path, targetName));
       }
 
+      // کپی بدون جایگزین کردن فایل قبلی
       await file.copy(targetFile.path);
 
       counter++;
     }
 
-    // ----------------------------------------------------------
     // پایان CamScanner
-    // ----------------------------------------------------------
-
     _recordId = null;
     _recordDate = null;
     _scanStartTime = null;
@@ -549,33 +561,6 @@ class ScanService {
     _recordDate = null;
     _scanStartTime = null;
     _waitingForFastScanner = false;
-  }
-
-  // ============================================================
-  // حذف اسکن قبلی نامه
-  // ============================================================
-
-  static Future<void> deleteOldScans(int recordId) async {
-    final lettersDir = await AppSettings.getLettersDirectory();
-
-    if (!await lettersDir.exists()) {
-      return;
-    }
-
-    await for (final entity in lettersDir.list(
-      recursive: true,
-      followLinks: false,
-    )) {
-      if (entity is! File) {
-        continue;
-      }
-
-      final name = path.basenameWithoutExtension(entity.path);
-
-      if (name == recordId.toString() || name.startsWith('${recordId}_')) {
-        await entity.delete();
-      }
-    }
   }
 
   // ============================================================
