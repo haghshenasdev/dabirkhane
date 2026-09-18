@@ -162,7 +162,7 @@ class SchemaService {
         maxLines: maxLines,
       );
 
-  static Future<void> addField(FieldDefinition field) async {
+  static Future<void> addField(FieldDefinition field, FieldDefinition result) async {
     _validateKey(field.key);
     final schema = await load();
     if (schema == null) throw StateError('ساختار دبیرخانه هنوز ایجاد نشده است.');
