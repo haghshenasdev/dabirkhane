@@ -21,6 +21,8 @@ class CsvExportDialog extends StatefulWidget {
 
 class _CsvExportDialogState extends State<CsvExportDialog> {
   late Set<String> _selectedKeys;
+  List<CsvExportField> _fields = CsvExportService.availableFields;
+  bool _loadingFields = true;
 
   @override
   void initState() {
@@ -28,6 +30,24 @@ class _CsvExportDialogState extends State<CsvExportDialog> {
 
     // انتخاب‌های پیش‌فرض
     _selectedKeys = {'Shomare_Radif', 'date', 'saheb_name', 'guy', 'onvan'};
+    _loadFields();
+  }
+
+  Future<void> _loadFields() async {
+    try {
+      final fields = await CsvExportService.loadAvailableFields();
+      if (!mounted) return;
+      setState(() {
+        _fields = fields;
+        _selectedKeys = _selectedKeys.where((key) => fields.any((f) => f.key == key)).toSet();
+        if (_selectedKeys.isEmpty && fields.isNotEmpty) {
+          _selectedKeys.add(fields.first.key);
+        }
+        _loadingFields = false;
+      });
+    } catch (_) {
+      if (mounted) setState(() => _loadingFields = false);
+    }
   }
 
   // ============================================================
@@ -37,7 +57,7 @@ class _CsvExportDialogState extends State<CsvExportDialog> {
   void _selectAll() {
     setState(() {
       _selectedKeys = {
-        for (final field in CsvExportService.availableFields) field.key,
+        for (final field in _fields) field.key,
       };
     });
   }
@@ -80,7 +100,7 @@ class _CsvExportDialogState extends State<CsvExportDialog> {
       return;
     }
 
-    final selectedFields = CsvExportService.availableFields
+    final selectedFields = _fields
         .where((field) => _selectedKeys.contains(field.key))
         .toList();
 
@@ -94,6 +114,13 @@ class _CsvExportDialogState extends State<CsvExportDialog> {
     final width = MediaQuery.of(context).size.width;
 
     final dialogWidth = width > 700 ? 620.0 : width * .92;
+
+    if (_loadingFields) {
+      return const Directionality(
+        textDirection: TextDirection.rtl,
+        child: AlertDialog(content: SizedBox(height: 90, child: Center(child: CircularProgressIndicator()))),
+      );
+    }
 
     return Directionality(
       textDirection: TextDirection.rtl,
@@ -216,10 +243,10 @@ class _CsvExportDialogState extends State<CsvExportDialog> {
                   constraints: const BoxConstraints(maxHeight: 420),
                   child: ListView.separated(
                     shrinkWrap: true,
-                    itemCount: CsvExportService.availableFields.length,
+                    itemCount: _fields.length,
                     separatorBuilder: (_, __) => const Divider(height: 1),
                     itemBuilder: (_, index) {
-                      final field = CsvExportService.availableFields[index];
+                      final field = _fields[index];
 
                       final selected = _selectedKeys.contains(field.key);
 

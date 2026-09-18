@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'dart:convert';
 
 import 'package:dabirkhane/model/reminder.dart';
 import 'package:path/path.dart';
@@ -21,12 +22,14 @@ class DatabaseHelper {
 
   static Future<List<String>> getDistinctFieldValues(String field) async {
     final db = await database;
+    await _ensureFieldExists(field);
+    final safeField = _quoteIdentifier(field);
 
     final results = await db.rawQuery('''
-      SELECT DISTINCT $field
+      SELECT DISTINCT $safeField
       FROM daftare_andicator
-      WHERE $field IS NOT NULL
-        AND $field != ""
+      WHERE $safeField IS NOT NULL
+        AND $safeField != ""
       ''');
 
     return results.map((e) => e[field].toString()).toList();
@@ -37,14 +40,16 @@ class DatabaseHelper {
     String query,
   ) async {
     final db = await database;
+    await _ensureFieldExists(field);
+    final safeField = _quoteIdentifier(field);
 
     final result = await db.rawQuery(
       '''
-      SELECT DISTINCT $field
+      SELECT DISTINCT $safeField
       FROM daftare_andicator
-      WHERE $field IS NOT NULL
-        AND $field != ''
-        AND $field LIKE ?
+      WHERE $safeField IS NOT NULL
+        AND $safeField != ''
+        AND CAST($safeField AS TEXT) LIKE ?
       ORDER BY Shomare_Radif DESC
       LIMIT 5
       ''',
@@ -58,28 +63,8 @@ class DatabaseHelper {
   }
 
   static Future<List<String>> searchSahebName(String query) async {
-    final db = await database;
-
-    if (query.trim().isEmpty) {
-      return [];
-    }
-
-    final res = await db.rawQuery(
-      '''
-      SELECT DISTINCT saheb_name
-      FROM daftare_andicator
-      WHERE saheb_name LIKE ?
-      ORDER BY Shomare_Radif DESC
-      LIMIT 5
-      ''',
-      ['%$query%'],
-    );
-
-    return res
-        .map((e) => e['saheb_name']?.toString())
-        .where((e) => e != null && e!.isNotEmpty)
-        .cast<String>()
-        .toList();
+    if (query.trim().isEmpty) return [];
+    return searchDistinctField('saheb_name', query);
   }
 
   static Future<Map<String, dynamic>?> getLastRecordBySahebName(
@@ -105,29 +90,48 @@ class DatabaseHelper {
     return null;
   }
 
+  static String _quoteIdentifier(String value) => '"${value.replaceAll('"', '""')}"';
+
+  static Future<void> _ensureFieldExists(String field) async {
+    final columns = await _columns();
+    if (!columns.contains(field)) {
+      throw ArgumentError('فیلد $field در ساختار دبیرخانه وجود ندارد.');
+    }
+  }
+
+  static Future<Set<String>> _columns() async {
+    final db = await database;
+    final rows = await db.rawQuery('PRAGMA table_info(daftare_andicator)');
+    return rows.map((e) => e['name']?.toString() ?? '').toSet();
+  }
+
+  static Future<List<String>> _searchableFields() async {
+    final db = await database;
+    final rows = await db.query('record_schema', where: 'id = 1', limit: 1);
+    if (rows.isEmpty) return ['Shomare_Radif'];
+    try {
+      final fieldsDecoded = jsonDecode(rows.first['fields_json'].toString()) as Map<String, dynamic>;
+      final fields = (fieldsDecoded['fields'] as List?) ?? const [];
+      final searchable = fields.whereType<Map>().where((e) => e['searchable'] == true && e['visible'] != false).map((e) => e['key'].toString()).toSet();
+      final searchDecoded = jsonDecode(rows.first['search_json'].toString()) as Map<String, dynamic>;
+      final configured = (searchDecoded['defaultFields'] as List?)?.map((e) => e.toString()).where(searchable.contains).toList() ?? const <String>[];
+      return configured.isNotEmpty ? configured : searchable.toList();
+    } catch (_) {
+      return ['Shomare_Radif'];
+    }
+  }
+
   static Future<Database> initDb() async {
     final dbPath = await _dbPath();
 
     return openDatabase(
       dbPath,
-      version: 3,
+      version: 5,
       onCreate: (db, version) async {
         await db.execute('''
           CREATE TABLE IF NOT EXISTS daftare_andicator (
             Shomare_Radif INTEGER PRIMARY KEY AUTOINCREMENT,
-            goshashte TEXT,
-            date TEXT,
-            saheb_name TEXT,
-            guy TEXT,
-            from_pywa TEXT,
-            sh_name_reside TEXT,
-            t_name_reside TEXT,
-            onvan TEXT,
-            comment TEXT,
-            shomare_badi TEXT,
-            wordmost2 TEXT,
-            t_name_ersali TEXT,
-            adres_name TEXT
+            date TEXT NOT NULL DEFAULT ''
           );
         ''');
 
@@ -195,6 +199,20 @@ class DatabaseHelper {
   CREATE INDEX IF NOT EXISTS idx_record_history_created_at
   ON record_history(created_at);
 ''');
+
+        await db.execute('''
+          CREATE TABLE IF NOT EXISTS record_schema (
+            id INTEGER PRIMARY KEY CHECK (id = 1),
+            schema_version INTEGER NOT NULL DEFAULT 1,
+            fields_json TEXT NOT NULL,
+            layout_json TEXT NOT NULL,
+            search_json TEXT NOT NULL,
+            stats_json TEXT NOT NULL,
+          card_json TEXT NOT NULL DEFAULT '{}',
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL
+          );
+        ''');
       },
 
       onUpgrade: (db, oldVersion, newVersion) async {
@@ -245,8 +263,67 @@ class DatabaseHelper {
     ON record_history(created_at);
   ''');
         }
+
+        if (oldVersion < 4) {
+          await _createDynamicSchemaForLegacyDatabase(db);
+        }
       },
     );
+  }
+
+  static Future<void> _createDynamicSchemaForLegacyDatabase(DatabaseExecutor db) async {
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS record_schema (
+        id INTEGER PRIMARY KEY CHECK (id = 1),
+        schema_version INTEGER NOT NULL DEFAULT 1,
+        fields_json TEXT NOT NULL,
+        layout_json TEXT NOT NULL,
+        search_json TEXT NOT NULL,
+        stats_json TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );
+    ''');
+
+    final exists = await db.query('record_schema', where: 'id = 1', limit: 1);
+    if (exists.isNotEmpty) return;
+
+    const fields = [
+      {'key':'Shomare_Radif','label':'شماره نامه','type':'number','required':true,'visible':true,'searchable':true,'sortable':true,'system':true,'deletable':false,'section':'اطلاعات اصلی','order':0},
+      {'key':'date','label':'تاریخ','type':'date','required':true,'visible':true,'searchable':true,'sortable':true,'section':'اطلاعات اصلی','order':1},
+      {'key':'saheb_name','label':'صاحب نامه','type':'text','visible':true,'searchable':true,'sortable':true,'suggestions':true,'section':'اطلاعات اصلی','order':2},
+      {'key':'guy','label':'موضوع','type':'text','visible':true,'searchable':true,'suggestions':true,'section':'اطلاعات اصلی','order':3},
+      {'key':'sh_name_reside','label':'شماره تماس','type':'phone','visible':true,'searchable':true,'section':'اطلاعات اصلی','order':4},
+      {'key':'onvan','label':'گیرنده نامه','type':'text','visible':true,'searchable':true,'suggestions':true,'section':'اطلاعات اصلی','order':5},
+      {'key':'comment','label':'توضیحات','type':'multiline','visible':true,'searchable':true,'maxLines':4,'section':'اطلاعات اصلی','order':6},
+      {'key':'shomare_badi','label':'شماره بعدی','type':'text','visible':true,'searchable':true,'section':'اطلاعات اصلی','order':7},
+      {'key':'goshashte','label':'شماره قبلی','type':'text','visible':true,'searchable':true,'section':'سایر اطلاعات','order':8},
+      {'key':'from_pywa','label':'پیوست نامه','type':'text','visible':true,'searchable':true,'section':'سایر اطلاعات','order':9},
+      {'key':'t_name_reside','label':'تاریخ نامه','type':'date','visible':true,'searchable':true,'section':'سایر اطلاعات','order':10},
+      {'key':'wordmost2','label':'پیوست مکاتبه','type':'text','visible':true,'searchable':true,'section':'سایر اطلاعات','order':11},
+      {'key':'t_name_ersali','label':'تاریخ مکاتبه','type':'date','visible':true,'searchable':true,'section':'سایر اطلاعات','order':12},
+      {'key':'adres_name','label':'آدرس','type':'multiline','visible':true,'searchable':true,'maxLines':4,'section':'سایر اطلاعات','order':13},
+    ];
+    final layout = {
+      'sections': [
+        {'id':'main','title':'اطلاعات اصلی','order':0,'columns':2,'fields':['Shomare_Radif','date','saheb_name','guy','sh_name_reside','onvan','comment','shomare_badi']},
+        {'id':'other','title':'سایر اطلاعات','order':1,'columns':1,'collapsible':true,'fields':['goshashte','from_pywa','t_name_reside','wordmost2','t_name_ersali','adres_name']},
+      ],
+    };
+    final search = {'defaultFields':['guy','saheb_name','Shomare_Radif','sh_name_reside']};
+    final stats = {'enabled':true,'dateField':'date','groupFields':['onvan','guy','saheb_name']};
+    final now = DateTime.now().toIso8601String();
+
+    await db.insert('record_schema', {
+      'id':1,
+      'schema_version':1,
+      'fields_json':jsonEncode({'schemaVersion':1,'fields':fields}),
+      'layout_json':jsonEncode(layout),
+      'search_json':jsonEncode(search),
+      'stats_json':jsonEncode(stats),
+      'created_at':now,
+      'updated_at':now,
+    });
   }
 
   static Future<String> getDbPath() async {
@@ -293,6 +370,7 @@ class DatabaseHelper {
     String? shomareBadi,
     // وضعیت یادآور
     int reminderFilter = 0,
+    Map<String, String>? dynamicFilters,
   }) async {
     final db = await database;
 
@@ -311,21 +389,19 @@ class DatabaseHelper {
     // جستجوی عمومی
     // ------------------------------------------------------------
     if (search != null && search.trim().isNotEmpty) {
-      conditions.add('''
-        (
-          guy LIKE ?
-          OR saheb_name LIKE ?
-          OR Shomare_Radif LIKE ?
-          OR sh_name_reside LIKE ?
-        )
-      ''');
-
-      args.addAll([
-        '%${search.trim()}%',
-        '%${search.trim()}%',
-        '%${search.trim()}%',
-        '%${search.trim()}%',
-      ]);
+      final searchable = await _searchableFields();
+      final existing = await _columns();
+      final q = search.trim().replaceAll('\u200c', '').replaceAll('\u200d', '');
+      final expressions = <String>[];
+      for (final field in searchable) {
+        if (!existing.contains(field)) continue;
+        final safe = _quoteIdentifier(field);
+        expressions.add("REPLACE(REPLACE(CAST(COALESCE($safe, '') AS TEXT), char(8204), ''), char(8205), '') LIKE ?");
+        args.add('%$q%');
+      }
+      if (expressions.isNotEmpty) {
+        conditions.add('(${expressions.join(' OR ')})');
+      }
     }
 
     // ------------------------------------------------------------
@@ -383,19 +459,19 @@ class DatabaseHelper {
     // ------------------------------------------------------------
     // فیلتر عنوان / گیرنده
     // ------------------------------------------------------------
-    if (onvan != null && onvan.trim().isNotEmpty) {
+    if (onvan != null && onvan.trim().isNotEmpty && (await _columns()).contains('onvan')) {
       conditions.add('onvan LIKE ?');
       args.add('%${onvan.trim()}%');
     }
 
     // 📝 فیلتر توضیحات
-    if (comment != null && comment.isNotEmpty) {
+    if (comment != null && comment.isNotEmpty && (await _columns()).contains('comment')) {
       conditions.add('comment LIKE ?');
       args.add('%$comment%');
     }
 
     // 🔢 فیلتر شماره بعد
-    if (shomareBadi != null && shomareBadi.isNotEmpty) {
+    if (shomareBadi != null && shomareBadi.isNotEmpty && (await _columns()).contains('shomare_badi')) {
       conditions.add('shomare_badi LIKE ?');
       args.add('%$shomareBadi%');
     }
@@ -403,7 +479,7 @@ class DatabaseHelper {
     // ------------------------------------------------------------
     // فیلتر تاریخ شروع
     // ------------------------------------------------------------
-    if (fromDate != null && fromDate.trim().isNotEmpty) {
+    if (fromDate != null && fromDate.trim().isNotEmpty && (await _columns()).contains('date')) {
       conditions.add('date >= ?');
       args.add(fromDate.trim());
     }
@@ -411,9 +487,23 @@ class DatabaseHelper {
     // ------------------------------------------------------------
     // فیلتر تاریخ پایان
     // ------------------------------------------------------------
-    if (toDate != null && toDate.trim().isNotEmpty) {
+    if (toDate != null && toDate.trim().isNotEmpty && (await _columns()).contains('date')) {
       conditions.add('date <= ?');
       args.add(toDate.trim());
+    }
+
+    // ------------------------------------------------------------
+    // فیلترهای داینامیک Schema
+    // ------------------------------------------------------------
+    if (dynamicFilters != null && dynamicFilters.isNotEmpty) {
+      final existing = await _columns();
+      for (final entry in dynamicFilters.entries) {
+        final value = entry.value.trim();
+        if (value.isEmpty || !existing.contains(entry.key)) continue;
+        final safe = _quoteIdentifier(entry.key);
+        conditions.add("CAST(COALESCE($safe, '') AS TEXT) LIKE ?");
+        args.add('%$value%');
+      }
     }
 
     // ------------------------------------------------------------
@@ -867,6 +957,17 @@ class DatabaseHelper {
       'new_value': newValue,
       'created_at': DateTime.now().toIso8601String(),
     });
+  }
+
+  static Future<void> _ensureV5(DatabaseExecutor db) async {
+    final sc = await db.rawQuery('PRAGMA table_info(record_schema)');
+    if (!sc.any((r) => r['name'] == 'card_json')) {
+      await db.execute("ALTER TABLE record_schema ADD COLUMN card_json TEXT NOT NULL DEFAULT '{}'");
+    }
+    final rc = await db.rawQuery('PRAGMA table_info(daftare_andicator)');
+    if (!rc.any((r) => r['name'] == 'date')) {
+      await db.execute("ALTER TABLE daftare_andicator ADD COLUMN date TEXT NOT NULL DEFAULT ''");
+    }
   }
 
   static Future<void> closeDb() async {

@@ -5,6 +5,7 @@ import 'dart:io';
 import 'package:file_selector/file_selector.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
+import 'package:dabirkhane/services/schema_service.dart';
 
 class CsvExportField {
   final String key;
@@ -35,6 +36,16 @@ class CsvExportService {
     CsvExportField(key: 'adres_name', title: 'آدرس'),
     CsvExportField(key: 'goshashte', title: 'گذشته'),
   ];
+
+  /// فیلدهای خروجی بر اساس Schema ذخیره‌شده در دیتابیس.
+  /// اگر Schema وجود نداشته باشد، لیست قدیمی به عنوان fallback استفاده می‌شود.
+  static Future<List<CsvExportField>> loadAvailableFields() async {
+    final schema = await SchemaService.load();
+    if (schema == null) return availableFields;
+    final fields = schema.fields.where((f) => f.visible && f.key != 'category' && f.type.name != 'file').toList();
+    fields.sort((a, b) => a.order.compareTo(b.order));
+    return fields.map((f) => CsvExportField(key: f.key, title: f.label)).toList();
+  }
 
   // ============================================================
   // CSV ESCAPE

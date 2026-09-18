@@ -5,6 +5,8 @@ import 'package:flutter/material.dart';
 import 'package:shamsi_date/shamsi_date.dart';
 
 import '../db/database_helper.dart';
+import '../model/field_definition.dart';
+import '../services/schema_service.dart';
 
 class StatsPage extends StatefulWidget {
   const StatsPage({super.key});
@@ -26,6 +28,14 @@ class _StatsPageState extends State<StatsPage> {
   Map<String, int> subjectCounts = {};
   Map<String, int> ownerCounts = {};
   Map<String, int> categoryCounts = {};
+  String receiverTitle = 'گروه اول';
+  String receiverSubtitle = 'بر اساس فیلد انتخاب‌شده';
+  String subjectTitle = 'گروه دوم';
+  String subjectSubtitle = 'بر اساس فیلد انتخاب‌شده';
+  String ownerTitle = 'گروه سوم';
+  String ownerSubtitle = 'بر اساس فیلد انتخاب‌شده';
+  String? _dateField;
+  bool _statsEnabled = true;
 
   bool loading = true;
 
@@ -108,219 +118,122 @@ class _StatsPageState extends State<StatsPage> {
   // ============================================================
 
   Future<void> loadStats() async {
-    if (mounted) {
-      setState(() {
-        loading = true;
-      });
-    }
+    if (mounted) setState(() => loading = true);
 
     try {
       final db = await DatabaseHelper.database;
+      final schema = await SchemaService.load();
+      _statsEnabled = schema?.statsEnabled ?? true;
+      final existingRows = await db.rawQuery('PRAGMA table_info(daftare_andicator)');
+      final existing = existingRows.map((e) => e['name']?.toString()).whereType<String>().toSet();
+      final dateField = schema?.dateField != null && existing.contains(schema!.dateField!) ? schema.dateField : null;
+      _dateField = dateField;
 
-      // ============================================================
-      // کل نامه‌ها
-      // ============================================================
-
-      final total = await db.rawQuery('''
-        SELECT COUNT(*) as count
-        FROM daftare_andicator
-      ''');
-
+      final total = await db.rawQuery('SELECT COUNT(*) AS count FROM daftare_andicator');
       totalLetters = int.tryParse(total.first['count']?.toString() ?? '0') ?? 0;
 
-      // ============================================================
-      // ماه جاری
-      // ============================================================
-
       final now = Jalali.now();
+      if (dateField != null) {
+        final safeDate = _quote(dateField);
+        final currentMonth = '${now.year}/${now.month.toString().padLeft(2, '0')}';
+        final monthRes = await db.rawQuery('SELECT COUNT(*) AS count FROM daftare_andicator WHERE $safeDate LIKE ?', ['$currentMonth%']);
+        thisMonthLetters = int.tryParse(monthRes.first['count']?.toString() ?? '0') ?? 0;
 
-      final currentMonth =
-          '${now.year}/${now.month.toString().padLeft(2, '0')}';
+        final yearsResult = await db.rawQuery("""
+          SELECT DISTINCT substr($safeDate,1,4) AS year
+          FROM daftare_andicator
+          WHERE $safeDate IS NOT NULL AND TRIM(CAST($safeDate AS TEXT)) != ''
+            AND substr($safeDate,1,4) GLOB '[0-9][0-9][0-9][0-9]'
+        """);
+        years = yearsResult.map((e) => int.tryParse(e['year']?.toString() ?? '') ?? 0).where((e) => e > 0).toSet().toList()..sort();
+        if (years.isEmpty) years = [now.year];
+        if (!years.contains(selectedYear)) selectedYear = years.last;
 
-      final monthRes = await db.rawQuery(
-        '''
-        SELECT COUNT(*) as count
-        FROM daftare_andicator
-        WHERE date LIKE ?
-        ''',
-        ['$currentMonth%'],
-      );
-
-      thisMonthLetters =
-          int.tryParse(monthRes.first['count']?.toString() ?? '0') ?? 0;
-
-      // ============================================================
-      // آمار ماهانه
-      // ============================================================
-
-      final monthData = await db.rawQuery(
-        '''
-        SELECT
-          substr(date,6,2) as month,
-          COUNT(*) as count
-        FROM daftare_andicator
-        WHERE substr(date,1,4) = ?
-        GROUP BY month
-        ORDER BY month
-        ''',
-        [selectedYear.toString()],
-      );
-
-      monthlyCounts = {for (int i = 1; i <= 12; i++) i: 0};
-
-      for (final row in monthData) {
-        final month = int.tryParse(row['month']?.toString() ?? '') ?? 0;
-
-        final count = int.tryParse(row['count']?.toString() ?? '0') ?? 0;
-
-        if (month >= 1 && month <= 12) {
-          monthlyCounts[month] = count;
+        final monthData = await db.rawQuery("""
+          SELECT substr($safeDate,6,2) AS month, COUNT(*) AS count
+          FROM daftare_andicator
+          WHERE substr($safeDate,1,4) = ?
+          GROUP BY month ORDER BY month
+        """, [selectedYear.toString()]);
+        monthlyCounts = {for (int i = 1; i <= 12; i++) i: 0};
+        for (final row in monthData) {
+          final month = int.tryParse(row['month']?.toString() ?? '') ?? 0;
+          if (month >= 1 && month <= 12) monthlyCounts[month] = int.tryParse(row['count']?.toString() ?? '0') ?? 0;
         }
+      } else {
+        years = [now.year];
+        selectedYear = now.year;
+        thisMonthLetters = 0;
+        monthlyCounts = {for (int i = 1; i <= 12; i++) i: 0};
       }
 
-      // ============================================================
-      // بیشترین گیرنده‌ها
-      // ============================================================
+      final groups = schema?.statsGroupFields.where(existing.contains).take(3).toList() ?? const <String>[];
+      receiverCounts = groups.isNotEmpty ? await _loadGroupCounts(groups[0], dateField) : {};
+      subjectCounts = groups.length > 1 ? await _loadGroupCounts(groups[1], dateField) : {};
+      ownerCounts = groups.length > 2 ? await _loadGroupCounts(groups[2], dateField) : {};
 
-      final receiverData = await db.rawQuery(
-        '''
-        SELECT
-          TRIM(onvan) as onvan_clean,
-          COUNT(*) as count
-        FROM daftare_andicator
-        WHERE substr(date,1,4) = ?
-        GROUP BY onvan_clean
-        HAVING count > 2
-        ORDER BY count DESC
-        LIMIT 6
-        ''',
-        [selectedYear.toString()],
-      );
+      final labelFor = (String? key, String fallback) => key == null ? fallback : (schema?.field(key)?.label ?? key);
+      receiverTitle = groups.isNotEmpty ? 'بیشترین ${labelFor(groups[0], 'گروه اول')}' : 'گروه اول';
+      receiverSubtitle = groups.isNotEmpty ? 'بر اساس ${labelFor(groups[0], '')}' : 'در تنظیمات آمار فیلدی انتخاب نشده است';
+      subjectTitle = groups.length > 1 ? 'بیشترین ${labelFor(groups[1], 'گروه دوم')}' : 'گروه دوم';
+      subjectSubtitle = groups.length > 1 ? 'بر اساس ${labelFor(groups[1], '')}' : 'در تنظیمات آمار فیلدی انتخاب نشده است';
+      ownerTitle = groups.length > 2 ? 'بیشترین ${labelFor(groups[2], 'گروه سوم')}' : 'گروه سوم';
+      ownerSubtitle = groups.length > 2 ? 'بر اساس ${labelFor(groups[2], '')}' : 'در تنظیمات آمار فیلدی انتخاب نشده است';
 
-      receiverCounts.clear();
-
-      for (final row in receiverData) {
-        final value = row['onvan_clean']?.toString().trim() ?? '';
-
-        final count = int.tryParse(row['count']?.toString() ?? '0') ?? 0;
-
-        if (value.isNotEmpty) {
-          receiverCounts[value] = count;
-        }
-      }
-
-      // ============================================================
-      // بیشترین موضوع‌ها
-      // ============================================================
-
-      final subjectData = await db.rawQuery(
-        '''
-        SELECT
-          TRIM(guy) as guy_clean,
-          COUNT(*) as count
-        FROM daftare_andicator
-        WHERE substr(date,1,4) = ?
-        GROUP BY guy_clean
-        HAVING count > 1
-        ORDER BY count DESC
-        LIMIT 6
-        ''',
-        [selectedYear.toString()],
-      );
-
-      subjectCounts.clear();
-
-      for (final row in subjectData) {
-        final value = row['guy_clean']?.toString().trim() ?? '';
-
-        final count = int.tryParse(row['count']?.toString() ?? '0') ?? 0;
-
-        if (value.isNotEmpty) {
-          subjectCounts[value] = count;
-        }
-      }
-
-      // ============================================================
-      // بیشترین صاحب‌ها
-      // ============================================================
-
-      final ownerData = await db.rawQuery(
-        '''
-        SELECT
-          TRIM(saheb_name) as saheb_clean,
-          COUNT(*) as count
-        FROM daftare_andicator
-        WHERE substr(date,1,4) = ?
-        GROUP BY saheb_clean
-        HAVING count > 1
-        ORDER BY count DESC
-        LIMIT 6
-        ''',
-        [selectedYear.toString()],
-      );
-
-      ownerCounts.clear();
-
-      for (final row in ownerData) {
-        final value = row['saheb_clean']?.toString().trim() ?? '';
-
-        final count = int.tryParse(row['count']?.toString() ?? '0') ?? 0;
-
-        if (value.isNotEmpty) {
-          ownerCounts[value] = count;
-        }
-      }
-
-      // ============================================================
-      // دسته‌بندی‌ها
-      // ============================================================
-
-      final categoryData = await db.rawQuery(
-        '''
-        SELECT
-          TRIM(c.name) as cat_name,
-          COUNT(*) as count
-        FROM record_categories rc
-        JOIN categories c
-          ON c.id = rc.category_id
-        JOIN daftare_andicator d
-          ON d.Shomare_Radif = rc.record_id
-        WHERE substr(d.date,1,4) = ?
-        GROUP BY cat_name
-        HAVING count > 0
-        ORDER BY count DESC
-        LIMIT 6
-        ''',
-        [selectedYear.toString()],
-      );
-
-      categoryCounts.clear();
-
+      final categoryData = dateField != null
+          ? await db.rawQuery("""
+              SELECT TRIM(c.name) AS cat_name, COUNT(*) AS count
+              FROM record_categories rc
+              JOIN categories c ON c.id = rc.category_id
+              JOIN daftare_andicator d ON d.Shomare_Radif = rc.record_id
+              WHERE substr(d.${_quote(dateField)},1,4) = ?
+              GROUP BY cat_name HAVING count > 0 ORDER BY count DESC LIMIT 6
+            """, [selectedYear.toString()])
+          : await db.rawQuery("""
+              SELECT TRIM(c.name) AS cat_name, COUNT(*) AS count
+              FROM record_categories rc
+              JOIN categories c ON c.id = rc.category_id
+              GROUP BY cat_name HAVING count > 0 ORDER BY count DESC LIMIT 6
+            """);
+      categoryCounts = {};
       for (final row in categoryData) {
         final value = row['cat_name']?.toString().trim() ?? '';
-
-        final count = int.tryParse(row['count']?.toString() ?? '0') ?? 0;
-
-        if (value.isNotEmpty) {
-          categoryCounts[value] = count;
-        }
+        if (value.isNotEmpty) categoryCounts[value] = int.tryParse(row['count']?.toString() ?? '0') ?? 0;
       }
 
-      if (mounted) {
-        setState(() {
-          loading = false;
-        });
-      }
+      if (mounted) setState(() => loading = false);
     } catch (e) {
       debugPrint('Stats loadStats error: $e');
-
-      if (mounted) {
-        setState(() {
-          loading = false;
-        });
-      }
+      if (mounted) setState(() => loading = false);
     }
   }
+
+  Future<Map<String, int>> _loadGroupCounts(String field, String? dateField) async {
+    final db = await DatabaseHelper.database;
+    final safeField = _quote(field);
+    String where = '';
+    final args = <Object?>[];
+    if (dateField != null) {
+      where = 'WHERE substr(${_quote(dateField)},1,4) = ?';
+      args.add(selectedYear.toString());
+    }
+    final rows = await db.rawQuery("""
+      SELECT TRIM(CAST(COALESCE($safeField, '') AS TEXT)) AS value, COUNT(*) AS count
+      FROM daftare_andicator
+      $where
+      GROUP BY value
+      HAVING value != ''
+      ORDER BY count DESC
+      LIMIT 6
+    """, args);
+    return {
+      for (final row in rows)
+        if ((row['value']?.toString().trim() ?? '').isNotEmpty)
+          row['value'].toString().trim(): int.tryParse(row['count']?.toString() ?? '0') ?? 0,
+    };
+  }
+
+  String _quote(String value) => '"${value.replaceAll('"', '""')}"';
 
   Color get primaryColor {
     return Theme.of(context).colorScheme.primary;
@@ -369,7 +282,15 @@ class _StatsPageState extends State<StatsPage> {
       ),
       body: loading
           ? Center(child: CircularProgressIndicator(color: scheme.primary))
-          : Stack(
+          : !_statsEnabled
+              ? Center(
+                  child: Text(
+                    'داشبورد آماری در تنظیمات غیرفعال شده است.',
+                    textDirection: TextDirection.rtl,
+                    style: TextStyle(color: scheme.onSurface.withOpacity(.65)),
+                  ),
+                )
+              : Stack(
               children: [
                 Positioned(
                   top: -120,
@@ -932,8 +853,8 @@ class _StatsPageState extends State<StatsPage> {
             SizedBox(
               width: width,
               child: _buildDonutCard(
-                title: 'بیشترین گیرنده‌ها',
-                subtitle: 'بر اساس عنوان نامه',
+                title: receiverTitle,
+                subtitle: receiverSubtitle,
                 icon: Icons.groups_outlined,
                 data: receiverCounts,
               ),
@@ -941,8 +862,8 @@ class _StatsPageState extends State<StatsPage> {
             SizedBox(
               width: width,
               child: _buildDonutCard(
-                title: 'بیشترین موضوع‌ها',
-                subtitle: 'بر اساس موضوع / طرف نامه',
+                title: subjectTitle,
+                subtitle: subjectSubtitle,
                 icon: Icons.topic_outlined,
                 data: subjectCounts,
               ),
@@ -1100,8 +1021,8 @@ class _StatsPageState extends State<StatsPage> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             _sectionHeader(
-              title: 'بیشترین صاحبان',
-              subtitle: 'بیشترین ثبت‌کنندگان نامه در سال $selectedYear',
+              title: ownerTitle,
+              subtitle: '$ownerSubtitle در سال $selectedYear',
               icon: Icons.person_outline_rounded,
             ),
             const SizedBox(height: 20),
@@ -1119,8 +1040,8 @@ class _StatsPageState extends State<StatsPage> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           _sectionHeader(
-            title: 'بیشترین صاحبان',
-            subtitle: 'بیشترین ثبت‌کنندگان نامه در سال $selectedYear',
+            title: ownerTitle,
+            subtitle: '$ownerSubtitle در سال $selectedYear',
             icon: Icons.person_outline_rounded,
           ),
           const SizedBox(height: 24),

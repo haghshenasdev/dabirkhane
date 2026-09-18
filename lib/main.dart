@@ -1,6 +1,9 @@
 import 'package:dabirkhane/providers/scan_service.dart';
 import 'package:dabirkhane/services/notification_service.dart';
 import 'package:dabirkhane/utils/app_settings.dart';
+import 'db/database_helper.dart';
+import 'services/schema_service.dart';
+import 'pages/schema_config_page.dart';
 
 import 'providers/theme_provider.dart';
 import 'package:flutter/material.dart';
@@ -21,6 +24,19 @@ void main() async {
   await themeProvider.load();
 
   await ScanService.initialize();
+
+  // ------------------------------------------------------------
+  // Dynamic database schema
+  // ------------------------------------------------------------
+  // The schema itself lives inside SQLite so backup/restore moves
+  // the form structure together with the records.
+  await DatabaseHelper.database;
+  var schema = await SchemaService.load();
+  if (schema == null) {
+    await SchemaService.initializeForNewInstall();
+    schema = await SchemaService.load();
+  }
+  final isConfigured = schema?.fields.any((field) => !field.system && field.visible) ?? false;
 
   // ------------------------------------------------------------
   // Notification Service
@@ -55,7 +71,7 @@ void main() async {
   await NotificationService.instance.rebuildAllDailyReminderNotifications();
 
   runApp(
-    ChangeNotifierProvider(create: (_) => themeProvider, child: const MyApp()),
+    ChangeNotifierProvider(create: (_) => themeProvider, child: MyApp(isConfigured: isConfigured)),
   );
 
   // ------------------------------------------------------------
@@ -75,7 +91,9 @@ void main() async {
 }
 
 class MyApp extends StatelessWidget {
-  const MyApp({super.key});
+  final bool isConfigured;
+
+  const MyApp({super.key, required this.isConfigured});
 
   static final GlobalKey<NavigatorState> navigatorKey =
       GlobalKey<NavigatorState>();
@@ -92,7 +110,9 @@ class MyApp extends StatelessWidget {
       theme: theme.lightTheme,
       darkTheme: theme.darkTheme,
       themeMode: theme.themeMode,
-      home: HomePage(),
+      home: isConfigured
+          ? const HomePage()
+          : const SchemaConfigPage(firstRun: true),
     );
   }
 }

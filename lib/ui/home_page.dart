@@ -13,6 +13,8 @@ import 'package:flutter/material.dart';
 import 'package:shamsi_date/shamsi_date.dart';
 import '../db/database_helper.dart';
 import 'record_form.dart';
+import '../model/field_definition.dart';
+import '../services/schema_service.dart';
 
 class HomePage extends StatefulWidget {
   final String? initialReminderDate;
@@ -64,6 +66,9 @@ class _HomePageState extends State<HomePage> {
   Set<int> _excludedSelectedIds = {};
 
   bool showAdvancedFilter = false;
+  RecordSchema? _schema;
+  final Map<String, TextEditingController> _dynamicFilterControllers = {};
+  CardSchema get _card => _schema?.card ?? const CardSchema();
 
   final TextEditingController fromDateController = TextEditingController();
   final TextEditingController toDateController = TextEditingController();
@@ -93,6 +98,7 @@ class _HomePageState extends State<HomePage> {
     fromDateController.dispose();
     toDateController.dispose();
     onvanController.dispose();
+    for(final c in _dynamicFilterControllers.values)c.dispose();
     _controller.dispose();
     _searchFocusNode.dispose();
     categoryFilterController.dispose();
@@ -379,6 +385,17 @@ class _HomePageState extends State<HomePage> {
     setState(() {});
   }
 
+  Future<void> _loadSchema() async {
+    final s = await SchemaService.load();
+    if (!mounted || s == null) return;
+    for (final f in s.fields.where((f) => f.visible && f.filterable && !f.system)) {
+      _dynamicFilterControllers.putIfAbsent(f.key, () => TextEditingController());
+    }
+    setState(() => _schema = s);
+  }
+  Map<String,String> get _dynamicFilters => {for(final e in _dynamicFilterControllers.entries) if(e.value.text.trim().isNotEmpty)e.key:e.value.text.trim()};
+  IconData _fieldIcon(FieldType? t)=>t==FieldType.date?Icons.calendar_today_outlined:t==FieldType.number?Icons.numbers_outlined:t==FieldType.phone?Icons.phone_outlined:t==FieldType.multiline?Icons.notes_outlined:Icons.text_fields_outlined;
+
   @override
   void initState() {
     super.initState();
@@ -389,6 +406,7 @@ class _HomePageState extends State<HomePage> {
       toDateController.text = widget.initialReminderDate!;
     }
 
+    _loadSchema();
     loadMore();
     _loadReminderStatus();
 
@@ -512,10 +530,14 @@ class _HomePageState extends State<HomePage> {
                   onPressed: () async {
                     _unfocusSearch();
 
-                    await Navigator.push(
+                    final changed = await Navigator.push<bool>(
                       context,
-                      MaterialPageRoute(builder: (_) => SettingsPage()),
+                      MaterialPageRoute(builder: (_) => const SettingsPage()),
                     );
+
+                    if (changed == true && mounted) {
+                      await loadMore(reset: true);
+                    }
 
                     _unfocusSearch();
                   },
@@ -831,47 +853,7 @@ class _HomePageState extends State<HomePage> {
 
                 const SizedBox(height: 12),
 
-                // ======================================================
-                // گیرنده
-                // ======================================================
-                TextField(
-                  controller: onvanController,
-                  textDirection: TextDirection.rtl,
-                  decoration: decoration("گیرنده نامه", Icons.person_outline),
-                ),
-
-                const SizedBox(height: 12),
-
-                // ======================================================
-                // توضیحات + شماره بعد
-                // ======================================================
-                Row(
-                  children: [
-                    Expanded(
-                      child: TextField(
-                        controller: commentFilterController,
-                        textDirection: TextDirection.rtl,
-                        decoration: decoration("توضیحات", Icons.notes_outlined),
-                      ),
-                    ),
-
-                    const SizedBox(width: 10),
-
-                    Expanded(
-                      child: TextField(
-                        controller: shomareBadiFilterController,
-                        keyboardType: TextInputType.text,
-                        textDirection: TextDirection.rtl,
-                        decoration: decoration(
-                          "شماره بعد",
-                          Icons.format_list_numbered,
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-
-                const SizedBox(height: 12),
+                ...(_schema?.fields.where((f)=>f.visible&&f.filterable&&!f.system).map((f)=>Padding(padding:const EdgeInsets.only(bottom:12),child:TextField(controller:_dynamicFilterControllers.putIfAbsent(f.key,()=>TextEditingController()),textDirection:TextDirection.rtl,decoration:decoration(f.label,_fieldIcon(f.type)),onChanged:(_){_clearSelectionForFilterChange();loadMore(reset:true);},)))??const <Widget>[]),
 
                 // ======================================================
                 // وضعیت یادآور
@@ -1119,289 +1101,11 @@ class _HomePageState extends State<HomePage> {
     );
   }
 
-  Widget buildRecordCard(Map<String, dynamic> r, int i) {
-    final recordId = _getRecordId(r);
-
-    final isSelected = _isRecordSelected(recordId);
-
-    final hasDueReminder =
-        recordId != null && dueReminderRecordIds.contains(recordId);
-
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 6),
-
-      child: Material(
-        color: Colors.transparent,
-
-        child: InkWell(
-          borderRadius: BorderRadius.circular(22),
-
-          onTap: () async {
-            if (selectionMode) {
-              if (recordId == null) return;
-
-              _toggleRecordSelection(recordId);
-            } else {
-              _unfocusSearch();
-
-              final result = await Navigator.push<Map<String, dynamic>>(
-                context,
-                MaterialPageRoute(builder: (_) => RecordForm(record: r)),
-              );
-
-              _unfocusSearch();
-
-              if (result != null) {
-                final int? id = result['id'] as int?;
-
-                final bool scanned = result['scanned'] == true;
-
-                if (result['reminderChanged'] == true) {
-                  await _refreshAfterRecordSaved();
-                }
-
-                if (id != null) {
-                  await _refreshAfterRecordSaved();
-
-                  if (!mounted) return;
-
-                  if (scanned) {
-                    GlassToast.show(
-                      context,
-                      'فایل اسکن شده و تغییرات نامه با موفقیت ذخیره شد.',
-                    );
-                  } else {
-                    GlassToast.show(
-                      context,
-                      'تغییرات نامه با موفقیت ذخیره شد.',
-                    );
-                  }
-                }
-              }
-            }
-          },
-
-          onLongPress: () {
-            if (recordId == null) return;
-
-            _enterSelectionMode(recordId);
-          },
-
-          child: AnimatedContainer(
-            duration: const Duration(milliseconds: 180),
-
-            padding: const EdgeInsets.all(18),
-
-            decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(22),
-
-              color: isSelected
-                  ? Colors.blue.withOpacity(.10)
-                  : Colors.white.withOpacity(.72),
-
-              border: Border.all(
-                color: isSelected ? Colors.blue : Colors.white,
-
-                width: isSelected ? 2 : 1.2,
-              ),
-
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black.withOpacity(.06),
-                  blurRadius: 18,
-                  offset: const Offset(0, 8),
-                ),
-              ],
-            ),
-
-            child: Stack(
-              children: [
-                Column(
-                  crossAxisAlignment: CrossAxisAlignment.end,
-
-                  children: [
-                    //----------------------------------------------------
-                    // عنوان
-                    //----------------------------------------------------
-                    Row(
-                      textDirection: TextDirection.rtl,
-
-                      children: [
-                        Expanded(
-                          child: Text(
-                            r["guy"] ?? "—",
-                            textAlign: TextAlign.right,
-
-                            style: const TextStyle(
-                              fontSize: 18,
-                              fontWeight: FontWeight.bold,
-                            ),
-
-                            maxLines: 2,
-
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                        ),
-
-                        const SizedBox(width: 10),
-
-                        Container(
-                          width: 42,
-                          height: 42,
-
-                          decoration: BoxDecoration(
-                            color: Colors.blue.shade50,
-                            borderRadius: BorderRadius.circular(14),
-                          ),
-
-                          child: const Icon(
-                            Icons.mail_outline,
-                            color: Colors.blue,
-                          ),
-                        ),
-                      ],
-                    ),
-
-                    const SizedBox(height: 18),
-
-                    //----------------------------------------------------
-                    // صاحب نامه
-                    //----------------------------------------------------
-                    Row(
-                      textDirection: TextDirection.rtl,
-
-                      crossAxisAlignment: CrossAxisAlignment.center,
-
-                      children: [
-                        const Icon(
-                          Icons.person_outline,
-                          size: 18,
-                          color: Colors.blueGrey,
-                        ),
-
-                        const SizedBox(width: 8),
-
-                        Expanded(
-                          child: Text(
-                            r["saheb_name"] ?? "—",
-
-                            textAlign: TextAlign.right,
-
-                            textDirection: TextDirection.rtl,
-
-                            style: const TextStyle(fontSize: 15),
-
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                        ),
-
-                        if (hasDueReminder) ...[
-                          const SizedBox(width: 12),
-
-                          Container(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 9,
-                              vertical: 5,
-                            ),
-
-                            decoration: BoxDecoration(
-                              color: Colors.orange.shade100,
-
-                              borderRadius: BorderRadius.circular(16),
-
-                              border: Border.all(color: Colors.orange.shade300),
-                            ),
-
-                            child: Row(
-                              mainAxisSize: MainAxisSize.min,
-
-                              textDirection: TextDirection.rtl,
-
-                              children: [
-                                Icon(
-                                  Icons.notifications_active_rounded,
-                                  size: 14,
-                                  color: Colors.orange.shade800,
-                                ),
-
-                                const SizedBox(width: 4),
-
-                                Text(
-                                  'موعدرسیده',
-
-                                  style: TextStyle(
-                                    fontSize: 10,
-                                    fontWeight: FontWeight.bold,
-                                    color: Colors.orange.shade900,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                        ],
-                      ],
-                    ),
-
-                    const SizedBox(height: 14),
-
-                    Divider(color: Colors.grey.shade300, height: 1),
-
-                    const SizedBox(height: 14),
-
-                    //----------------------------------------------------
-                    // پایین کارت
-                    //----------------------------------------------------
-                    LayoutBuilder(
-                      builder: (_, c) {
-                        return Row(
-                          textDirection: TextDirection.rtl,
-
-                          children: [
-                            _recordChip(Icons.calendar_today, r["date"] ?? "—"),
-
-                            const Spacer(),
-
-                            _recordChip(
-                              Icons.confirmation_number_outlined,
-                              "ردیف ${r["Shomare_Radif"]}",
-                            ),
-                          ],
-                        );
-                      },
-                    ),
-                  ],
-                ),
-
-                //----------------------------------------------------
-                // انتخاب
-                //----------------------------------------------------
-                if (selectionMode)
-                  Positioned(
-                    left: 0,
-                    top: 0,
-
-                    child: AnimatedSwitcher(
-                      duration: const Duration(milliseconds: 150),
-
-                      child: Icon(
-                        isSelected
-                            ? Icons.check_circle
-                            : Icons.radio_button_unchecked,
-
-                        key: ValueKey(isSelected),
-
-                        color: isSelected ? Colors.blue : Colors.grey,
-
-                        size: 28,
-                      ),
-                    ),
-                  ),
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
+  Widget buildRecordCard(Map<String,dynamic> r,int i){
+    final id=_getRecordId(r), selected=_isRecordSelected(id), due=id!=null&&dueReminderRecordIds.contains(id);
+    final title=_card.titleField??'guy'; final body=_card.bodyFields.isNotEmpty?_card.bodyFields:['saheb_name']; final foot=_card.footerFields.isNotEmpty?_card.footerFields:['date'];
+    String val(String k)=>(r[k]==null||r[k].toString().isEmpty)?'—':r[k].toString();
+    return Padding(padding:const EdgeInsets.symmetric(horizontal:6,vertical:6),child:Material(color:Colors.transparent,child:InkWell(borderRadius:BorderRadius.circular(22),onTap:()async{if(selectionMode){if(id!=null)_toggleRecordSelection(id);}else{final result=await Navigator.push<Map<String,dynamic>>(context,MaterialPageRoute(builder:(_)=>RecordForm(record:r)));if(result!=null)await _refreshAfterRecordSaved();}},onLongPress:()=>id!=null?_enterSelectionMode(id):null,child:AnimatedContainer(duration:const Duration(milliseconds:180),padding:const EdgeInsets.all(18),decoration:BoxDecoration(borderRadius:BorderRadius.circular(22),color:selected?Colors.blue.withOpacity(.10):Colors.white.withOpacity(.72),border:Border.all(color:selected?Colors.blue:Colors.white,width:selected?2:1.2),boxShadow:[BoxShadow(color:Colors.black.withOpacity(.06),blurRadius:18,offset:const Offset(0,8))]),child:Stack(children:[Column(crossAxisAlignment:CrossAxisAlignment.end,children:[Row(textDirection:TextDirection.rtl,children:[Expanded(child:Text(val(title),textAlign:TextAlign.right,maxLines:2,overflow:TextOverflow.ellipsis,style:const TextStyle(fontSize:18,fontWeight:FontWeight.bold))),const SizedBox(width:10),const Icon(Icons.mail_outline,color:Colors.blue)]),const SizedBox(height:16),...body.where((k)=>k!=title&&k!='Shomare_Radif').map((k){final f=_schema?.field(k);return Padding(padding:const EdgeInsets.only(bottom:8),child:Row(textDirection:TextDirection.rtl,children:[Icon(_fieldIcon(f?.type),size:17),const SizedBox(width:7),Text('${f?.label??k}: ',style:const TextStyle(fontWeight:FontWeight.w600,fontSize:12)),Expanded(child:Text(val(k),textAlign:TextAlign.right,maxLines:2,overflow:TextOverflow.ellipsis))]));}),if(due)Text('یادآور موعدرسیده',style:TextStyle(color:Colors.orange.shade800,fontWeight:FontWeight.bold)),const Divider(height:20),Wrap(spacing:8,runSpacing:8,children:[...foot.where((k)=>k!='Shomare_Radif').map((k)=>_recordChip(_fieldIcon(_schema?.field(k)?.type),'${_schema?.field(k)?.label??k}: ${val(k)}')),_recordChip(Icons.confirmation_number_outlined,'ردیف ${r['Shomare_Radif']??'—'}')])]),if(selectionMode)Positioned(left:0,top:0,child:Icon(selected?Icons.check_circle:Icons.radio_button_unchecked,color:selected?Colors.blue:Colors.grey,size:28))])))));
   }
 
   Widget _recordChip(IconData icon, String text) {
@@ -1656,6 +1360,7 @@ class _HomePageState extends State<HomePage> {
         onvan: onvanController.text.trim(),
         comment: commentFilterController.text.trim(),
         shomareBadi: shomareBadiFilterController.text.trim(),
+        dynamicFilters: _dynamicFilters,
         categories: List<String>.from(selectedCategoryFilters),
       );
 

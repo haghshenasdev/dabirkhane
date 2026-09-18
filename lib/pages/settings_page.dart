@@ -14,6 +14,7 @@ import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../ui/wid/ThemeColorTile.dart';
+import 'schema_config_page.dart';
 
 class SettingsPage extends StatelessWidget {
   const SettingsPage({super.key});
@@ -320,6 +321,21 @@ class SettingsPage extends StatelessWidget {
           _sectionTitle('فرم نامه'),
 
           const AutoSaveRecordFormTile(),
+
+          ListTile(
+            leading: const Icon(Icons.dashboard_customize_outlined),
+            title: const Text('ساختار و فیلدهای دبیرخانه'),
+            subtitle: const Text('مدیریت فیلدها، چینش فرم، جستجو و آمار'),
+            trailing: const Icon(Icons.chevron_left),
+            onTap: () async {
+              final changed = await Navigator.of(context).push<bool>(
+                MaterialPageRoute(builder: (_) => const SchemaConfigPage()),
+              );
+              if (changed == true && context.mounted) {
+                Navigator.of(context).pop(true);
+              }
+            },
+          ),
 
           const Divider(),
 

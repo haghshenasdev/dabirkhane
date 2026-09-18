@@ -20,6 +20,8 @@ import 'package:dabirkhane/services/notification_service.dart';
 import '../db/database_helper.dart';
 import '../utils/JalaliDateFormatter.dart';
 import '../utils/app_settings.dart';
+import '../model/field_definition.dart';
+import '../services/schema_service.dart';
 
 class RecordForm extends StatefulWidget {
   final Map<String, dynamic>? record;
@@ -114,27 +116,23 @@ class _RecordFormState extends State<RecordForm>
   // Fields
   // ============================================================
 
-  final mainFields = [
-    'Shomare_Radif',
-    'date',
-    'saheb_name',
-    'guy',
-    'sh_name_reside',
-    'onvan',
-    'comment',
-    'shomare_badi',
+  List<String> mainFields = [
+    'Shomare_Radif', 'date', 'saheb_name', 'guy',
+    'sh_name_reside', 'onvan', 'comment', 'shomare_badi',
   ];
 
-  final otherFields = [
-    't_name_ersali',
-    't_name_reside',
-    'wordmost2',
-    'from_pywa',
-    'adres_name',
-    'goshashte',
+  List<String> otherFields = [
+    't_name_ersali', 't_name_reside', 'wordmost2', 'from_pywa',
+    'adres_name', 'goshashte',
   ];
 
-  final Map<String, String> fieldLabels = {
+  RecordSchema? _schema;
+  bool _schemaLoading = true;
+
+  final Map<String, List<String>> _dynamicSuggestions = {};
+  final Map<String, Timer> _dynamicSuggestionTimers = {};
+
+  Map<String, String> fieldLabels = {
     'Shomare_Radif': 'شماره نامه',
     'goshashte': 'شماره قبلی',
     'date': 'تاریخ',
@@ -165,6 +163,7 @@ class _RecordFormState extends State<RecordForm>
 
     _scanSubscription = ScanService.results.listen(_onScanResult);
 
+    _loadSchema();
     _loadSuggestionSettings();
     _loadAutoSaveSetting();
     _loadScanSettings();
@@ -187,6 +186,62 @@ class _RecordFormState extends State<RecordForm>
     }
 
     _initWindowCloseProtection();
+  }
+
+  Future<void> _loadSchema() async {
+    try {
+      final schema = await SchemaService.load();
+      if (schema == null || !mounted) return;
+
+      final configuredMain = <String>[];
+      final configuredOther = <String>[];
+      final labels = <String, String>{};
+
+      for (final field in schema.fields) {
+        labels[field.key] = field.label;
+      }
+
+      for (final section in schema.sections..sort((a, b) => a.order.compareTo(b.order))) {
+        final visible = section.fields.where((key) {
+          final field = schema.field(key);
+          return field != null && field.visible;
+        });
+        if (configuredMain.isEmpty) {
+          configuredMain.addAll(visible);
+        } else {
+          configuredOther.addAll(visible);
+        }
+      }
+
+      final allConfigured = [...configuredMain, ...configuredOther];
+      final missing = schema.fields
+          .where((f) => f.visible && !f.system && !allConfigured.contains(f.key))
+          .map((f) => f.key);
+      configuredOther.addAll(missing);
+
+      if (!configuredMain.contains('Shomare_Radif') && schema.field('Shomare_Radif')?.visible != false) {
+        configuredMain.insert(0, 'Shomare_Radif');
+      }
+
+      for (final key in [...configuredMain, ...configuredOther]) {
+        if (!c.containsKey(key)) {
+          c[key] = TextEditingController(text: widget.record?[key]?.toString() ?? '');
+          focusNodes[key] = FocusNode();
+        }
+      }
+
+      if (!mounted) return;
+      setState(() {
+        _schema = schema;
+        mainFields = configuredMain;
+        otherFields = configuredOther;
+        fieldLabels = labels;
+        _schemaLoading = false;
+      });
+    } catch (e) {
+      debugPrint('Schema load error: $e');
+      if (mounted) setState(() => _schemaLoading = false);
+    }
   }
 
   Future<void> _initWindowCloseProtection() async {
@@ -510,8 +565,10 @@ class _RecordFormState extends State<RecordForm>
   Future<void> _setInitialValues() async {
     final now = Jalali.now();
 
-    c['date']!.text =
-        '${now.year}/${now.month.toString().padLeft(2, '0')}/${now.day.toString().padLeft(2, '0')}';
+    if (c.containsKey('date')) {
+      c['date']!.text =
+          '${now.year}/${now.month.toString().padLeft(2, '0')}/${now.day.toString().padLeft(2, '0')}';
+    }
 
     await _setDefaultShomareRadif();
 
@@ -1507,8 +1564,10 @@ class _RecordFormState extends State<RecordForm>
               final last = await DatabaseHelper.getLastRecordBySahebName(item);
 
               if (last != null) {
-                c['sh_name_reside']!.text =
-                    last['sh_name_reside']?.toString() ?? '';
+                if (c.containsKey('sh_name_reside')) {
+                  c['sh_name_reside']!.text =
+                      last['sh_name_reside']?.toString() ?? '';
+                }
 
                 lastRecord = last;
 
@@ -1926,99 +1985,177 @@ class _RecordFormState extends State<RecordForm>
   // ============================================================
 
   Widget buildTextField(String field) {
-    if (field == 'saheb_name') {
+    final definition = _schema?.field(field);
+
+    if (field == 'saheb_name' && definition?.suggestions != false) {
       return buildSahebNameField();
     }
-
-    if (field == 'guy') {
+    if (field == 'guy' && definition?.suggestions != false) {
       return buildGuyField();
     }
-
-    if (field == 'onvan') {
+    if (field == 'onvan' && definition?.suggestions != false) {
       return buildOnvanField();
     }
 
-    // ==========================================================
-    // Date
-    // ==========================================================
-
-    if (field == 'date') {
-      return _glassField(
-        child: TextFormField(
-          controller: c[field],
-          keyboardType: TextInputType.number,
-          inputFormatters: [
-            FilteringTextInputFormatter.digitsOnly,
-            JalaliDateFormatter(),
-          ],
-          decoration: _glassInputDecoration(
-            label: 'تاریخ',
-            hint: '1405/01/15',
-            prefixIcon: const Icon(Icons.calendar_today_outlined),
-          ),
-          textDirection: TextDirection.rtl,
-          validator: (value) {
-            if (value == null || value.length != 10) {
-              return 'تاریخ معتبر وارد کنید';
-            }
-
-            return null;
-          },
-        ),
-      );
+    if (definition?.type == FieldType.select) {
+      return _buildSelectField(definition!);
+    }
+    if (definition?.type == FieldType.multiselect) {
+      return _buildMultiSelectField(definition!);
+    }
+    if (definition?.type == FieldType.boolean) {
+      return _buildBooleanField(definition!);
+    }
+    if (definition?.type == FieldType.date || field == 'date') {
+      return _buildDynamicDateField(field, definition);
+    }
+    if (definition?.suggestions == true) {
+      return _buildDynamicAutocompleteField(definition!);
     }
 
-    // ==========================================================
-    // Comment
-    // ==========================================================
-
-    if (field == 'comment') {
-      return _glassField(
-        child: TextFormField(
-          controller: c[field],
-          decoration: _glassInputDecoration(
-            label: fieldLabels[field] ?? field,
-            prefixIcon: const Icon(Icons.notes_outlined),
-            alignLabelWithHint: true,
-          ),
-          textDirection: TextDirection.rtl,
-          minLines: 1,
-          maxLines: 4,
-          keyboardType: TextInputType.multiline,
-          textInputAction: TextInputAction.newline,
-        ),
-      );
-    }
-
-    // ==========================================================
-    // Other fields
-    // ==========================================================
+    final isMultiline = definition?.type == FieldType.multiline || field == 'comment' || field == 'adres_name';
+    final maxLines = definition?.maxLines ?? (isMultiline ? 4 : 3);
+    final keyboardType = definition?.type == FieldType.number
+        ? TextInputType.number
+        : definition?.type == FieldType.phone
+            ? TextInputType.phone
+            : definition?.type == FieldType.email
+                ? TextInputType.emailAddress
+                : definition?.type == FieldType.url
+                    ? TextInputType.url
+                    : isMultiline
+                        ? TextInputType.multiline
+                        : TextInputType.text;
 
     return _glassField(
       child: TextFormField(
         controller: c[field],
         focusNode: focusNodes[field],
         minLines: 1,
-        maxLines: 3,
-        keyboardType: TextInputType.multiline,
-        decoration: _glassInputDecoration(label: fieldLabels[field] ?? field),
+        maxLines: maxLines,
+        keyboardType: keyboardType,
+        decoration: _glassInputDecoration(
+          label: definition?.label ?? fieldLabels[field] ?? field,
+          prefixIcon: field == 'comment' ? const Icon(Icons.notes_outlined) : null,
+          alignLabelWithHint: isMultiline,
+        ),
         textDirection: TextDirection.rtl,
-        onFieldSubmitted: (_) {
-          final currentIndex = mainFields.contains(field)
-              ? mainFields.indexOf(field)
-              : otherFields.indexOf(field);
-
-          final fields = mainFields.contains(field) ? mainFields : otherFields;
-
-          if (currentIndex >= 0 && currentIndex < fields.length - 1) {
-            FocusScope.of(
-              context,
-            ).requestFocus(focusNodes[fields[currentIndex + 1]]);
-          } else {
-            FocusScope.of(context).unfocus();
-          }
-        },
+        validator: definition?.required == true
+            ? (value) => (value == null || value.trim().isEmpty) ? 'این فیلد الزامی است' : null
+            : null,
+        onFieldSubmitted: (_) => _focusNextField(field),
       ),
+    );
+  }
+
+  void _focusNextField(String field) {
+    final all = [...mainFields, ...otherFields];
+    final index = all.indexOf(field);
+    if (index >= 0 && index < all.length - 1) {
+      FocusScope.of(context).requestFocus(focusNodes[all[index + 1]]);
+    } else {
+      FocusScope.of(context).unfocus();
+    }
+  }
+
+  Widget _buildDynamicDateField(String field, FieldDefinition? definition) {
+    return _glassField(
+      child: TextFormField(
+        controller: c[field],
+        focusNode: focusNodes[field],
+        keyboardType: TextInputType.number,
+        inputFormatters: [FilteringTextInputFormatter.digitsOnly, JalaliDateFormatter()],
+        decoration: _glassInputDecoration(
+          label: definition?.label ?? fieldLabels[field] ?? field,
+          hint: '1405/01/15',
+          prefixIcon: const Icon(Icons.calendar_today_outlined),
+        ),
+        textDirection: TextDirection.rtl,
+        validator: (value) {
+          if (definition?.required == true && (value == null || value.trim().isEmpty)) return 'این فیلد الزامی است';
+          if (value != null && value.trim().isNotEmpty && value.length != 10) return 'تاریخ معتبر وارد کنید';
+          return null;
+        },
+        onFieldSubmitted: (_) => _focusNextField(field),
+      ),
+    );
+  }
+
+  Widget _buildSelectField(FieldDefinition definition) {
+    return _glassField(
+      child: DropdownButtonFormField<String>(
+        value: definition.options.contains(c[definition.key]?.text) ? c[definition.key]?.text : null,
+        decoration: _glassInputDecoration(label: definition.label),
+        items: definition.options.map((item) => DropdownMenuItem(value: item, child: Text(item, textDirection: TextDirection.rtl))).toList(),
+        onChanged: (value) => c[definition.key]?.text = value ?? '',
+        validator: definition.required ? (value) => value == null || value.isEmpty ? 'این فیلد الزامی است' : null : null,
+      ),
+    );
+  }
+
+  Widget _buildMultiSelectField(FieldDefinition definition) {
+    final selected = (c[definition.key]?.text ?? '').split('|').where((e) => e.isNotEmpty).toSet();
+    return _glassField(
+      child: InkWell(
+        onTap: () async {
+          final temp = {...selected};
+          final result = await showDialog<Set<String>>(
+            context: context,
+            builder: (dialogContext) => StatefulBuilder(
+              builder: (context, setState) => AlertDialog(
+                title: Text(definition.label, textDirection: TextDirection.rtl),
+                content: SingleChildScrollView(child: Column(children: definition.options.map((item) => CheckboxListTile(
+                  value: temp.contains(item), title: Text(item, textDirection: TextDirection.rtl),
+                  onChanged: (v) => setState(() => v == true ? temp.add(item) : temp.remove(item)),
+                )).toList())),
+                actions: [TextButton(onPressed: () => Navigator.pop(dialogContext), child: const Text('انصراف')), FilledButton(onPressed: () => Navigator.pop(dialogContext, temp), child: const Text('تأیید'))],
+              ),
+            ),
+          );
+          if (result != null) setState(() => c[definition.key]!.text = result.join('|'));
+        },
+        child: InputDecorator(
+          decoration: _glassInputDecoration(label: definition.label),
+          child: Text(selected.isEmpty ? 'انتخاب کنید' : selected.join('، '), textDirection: TextDirection.rtl),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildBooleanField(FieldDefinition definition) {
+    final value = c[definition.key]?.text == '1';
+    return _glassField(
+      child: SwitchListTile.adaptive(
+        title: Text(definition.label, textDirection: TextDirection.rtl),
+        value: value,
+        onChanged: (v) => setState(() => c[definition.key]!.text = v ? '1' : '0'),
+        contentPadding: const EdgeInsets.symmetric(horizontal: 12),
+      ),
+    );
+  }
+
+  Widget _buildDynamicAutocompleteField(FieldDefinition definition) {
+    final suggestions = _dynamicSuggestions[definition.key] ?? const <String>[];
+    return buildSimpleAutoCompleteField(
+      field: definition.key,
+      label: definition.label,
+      suggestions: suggestions,
+      onChanged: (value) {
+        _dynamicSuggestionTimers[definition.key]?.cancel();
+        if (!definition.suggestions || value.trim().isEmpty) {
+          if (mounted) setState(() => _dynamicSuggestions[definition.key] = []);
+          return;
+        }
+        _dynamicSuggestionTimers[definition.key] = Timer(const Duration(milliseconds: 350), () async {
+          try {
+            final result = await DatabaseHelper.searchDistinctField(definition.key, value.trim());
+            if (mounted) setState(() => _dynamicSuggestions[definition.key] = result);
+          } catch (_) {}
+        });
+      },
+      onSelected: (item) => setState(() { c[definition.key]!.text = item; _dynamicSuggestions[definition.key] = []; }),
+      focusNode: focusNodes[definition.key]!,
+      nextFocus: null,
     );
   }
 
@@ -2616,6 +2753,17 @@ class _RecordFormState extends State<RecordForm>
   // ============================================================
 
   Widget _buildFormTab() {
+    if (_schemaLoading) {
+      return const Center(child: CircularProgressIndicator());
+    }
+
+    final schema = _schema;
+    if (schema == null) {
+      return const Center(child: Text('ساختار فرم یافت نشد', textDirection: TextDirection.rtl));
+    }
+
+    final sections = [...schema.sections]..sort((a, b) => a.order.compareTo(b.order));
+
     return Container(
       color: const Color(0xffEEF3F8),
       child: Form(
@@ -2624,36 +2772,9 @@ class _RecordFormState extends State<RecordForm>
           padding: const EdgeInsets.fromLTRB(12, 14, 12, 24),
           children: [
             _buildTodayReminderBanner(),
-            // ==========================================================
-            // شماره نامه + تاریخ
-            // ==========================================================
-            Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Expanded(child: buildTextField('Shomare_Radif')),
-
-                const SizedBox(width: 8),
-
-                Expanded(child: buildTextField('date')),
-              ],
-            ),
-
-            // ==========================================================
-            // سایر فیلدهای اصلی
-            // ==========================================================
-            buildTextField('saheb_name'),
-            buildTextField('guy'),
-            buildTextField('sh_name_reside'),
-            buildTextField('onvan'),
-            buildTextField('comment'),
-            buildTextField('shomare_badi'),
-
+            ...sections.map(_buildDynamicSection),
+            buildCategoryField(),
             const SizedBox(height: 2),
-
-            _buildOtherInformation(),
-
-            const SizedBox(height: 4),
-
             _buildFormButtons(),
           ],
         ),
@@ -2661,70 +2782,63 @@ class _RecordFormState extends State<RecordForm>
     );
   }
 
-  // ============================================================
-  // Other information
-  // ============================================================
+  Widget _buildDynamicSection(FormSectionDefinition section) {
+    final fields = section.fields.where((key) {
+      final definition = _schema?.field(key);
+      return definition != null && definition.visible;
+    }).toList();
 
-  Widget _buildOtherInformation() {
+    if (fields.isEmpty) return const SizedBox.shrink();
+
+    final children = <Widget>[];
+    for (var i = 0; i < fields.length; i++) {
+      if (section.columns > 1 && i + 1 < fields.length) {
+        children.add(Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Expanded(child: buildTextField(fields[i])),
+            const SizedBox(width: 8),
+            Expanded(child: buildTextField(fields[++i])),
+          ],
+        ));
+      } else {
+        children.add(buildTextField(fields[i]));
+      }
+    }
+
+    final content = Column(children: children);
+
+    if (!section.collapsible) {
+      return Container(
+        margin: const EdgeInsets.only(bottom: 12),
+        padding: const EdgeInsets.all(2),
+        child: content,
+      );
+    }
+
     final colorScheme = Theme.of(context).colorScheme;
-
     return Container(
       margin: const EdgeInsets.only(top: 4, bottom: 16),
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(22),
         color: Colors.white.withOpacity(.52),
         border: Border.all(color: Colors.white.withOpacity(.82)),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(.035),
-            blurRadius: 18,
-            offset: const Offset(0, 7),
-          ),
-        ],
+        boxShadow: [BoxShadow(color: Colors.black.withOpacity(.035), blurRadius: 18, offset: const Offset(0, 7))],
       ),
       child: ClipRRect(
         borderRadius: BorderRadius.circular(22),
         child: Theme(
           data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
           child: ExpansionTile(
-            tilePadding: const EdgeInsets.symmetric(
-              horizontal: 18,
-              vertical: 2,
-            ),
+            tilePadding: const EdgeInsets.symmetric(horizontal: 18, vertical: 2),
             childrenPadding: const EdgeInsets.fromLTRB(14, 0, 14, 14),
             leading: Container(
-              width: 38,
-              height: 38,
-              decoration: BoxDecoration(
-                borderRadius: BorderRadius.circular(12),
-                color: colorScheme.primary.withOpacity(.09),
-              ),
-              child: Icon(
-                Icons.tune_rounded,
-                color: colorScheme.primary,
-                size: 20,
-              ),
+              width: 38, height: 38,
+              decoration: BoxDecoration(borderRadius: BorderRadius.circular(12), color: colorScheme.primary.withOpacity(.09)),
+              child: Icon(Icons.tune_rounded, color: colorScheme.primary, size: 20),
             ),
-            title: const Text(
-              'سایر اطلاعات',
-              textDirection: TextDirection.rtl,
-              style: TextStyle(fontWeight: FontWeight.w700, fontSize: 14),
-            ),
-            subtitle: Text(
-              'اطلاعات تکمیلی نامه',
-              textDirection: TextDirection.rtl,
-              style: TextStyle(
-                fontSize: 11,
-                color: colorScheme.onSurface.withOpacity(.48),
-              ),
-            ),
-            children: [
-              buildCategoryField(),
-
-              const SizedBox(height: 12),
-
-              ...otherFields.map(buildTextField),
-            ],
+            title: Text(section.title, textDirection: TextDirection.rtl, style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 14)),
+            children: [content],
           ),
         ),
       ),
@@ -3715,6 +3829,9 @@ class _RecordFormState extends State<RecordForm>
     _debounceGuy?.cancel();
     _debounceOnvan?.cancel();
     _debounceCategory?.cancel();
+    for (final timer in _dynamicSuggestionTimers.values) {
+      timer.cancel();
+    }
 
     for (final controller in c.values) {
       controller.dispose();
