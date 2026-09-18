@@ -724,6 +724,7 @@ class _ReminderDialogState extends State<ReminderDialog> {
                   // ======================================================
                   TextField(
                     controller: _textController,
+                    minLines: 1,
                     maxLines: 3,
                     textDirection: TextDirection.rtl,
                     textAlign: TextAlign.right,
