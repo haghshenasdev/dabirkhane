@@ -40,6 +40,7 @@ class FieldDefinition {
   final int maxLines;
   final String? icon;
   final List<String> options;
+
   /// Number of grid columns occupied by this field inside its form section.
   final int gridSpan;
 
@@ -104,24 +105,24 @@ class FieldDefinition {
   }
 
   Map<String, dynamic> toJson() => {
-        'key': key,
-        'label': label,
-        'type': type.name,
-        'required': required,
-        'visible': visible,
-        'searchable': searchable,
-        'sortable': sortable,
-        'suggestions': suggestions,
-        'filterable': filterable,
-        'system': system,
-        'deletable': deletable,
-        'section': section,
-        'order': order,
-        'maxLines': maxLines,
-        'icon': icon,
-        'options': options,
-        'gridSpan': gridSpan,
-      };
+    'key': key,
+    'label': label,
+    'type': type.name,
+    'required': required,
+    'visible': visible,
+    'searchable': searchable,
+    'sortable': sortable,
+    'suggestions': suggestions,
+    'filterable': filterable,
+    'system': system,
+    'deletable': deletable,
+    'section': section,
+    'order': order,
+    'maxLines': maxLines,
+    'icon': icon,
+    'options': options,
+    'gridSpan': gridSpan,
+  };
 
   factory FieldDefinition.fromJson(Map<String, dynamic> json) {
     return FieldDefinition(
@@ -140,8 +141,13 @@ class FieldDefinition {
       order: int.tryParse(json['order']?.toString() ?? '') ?? 0,
       maxLines: int.tryParse(json['maxLines']?.toString() ?? '') ?? 3,
       icon: json['icon']?.toString(),
-      options: (json['options'] as List?)?.map((e) => e.toString()).toList() ?? const [],
-      gridSpan: ((int.tryParse(json['gridSpan']?.toString() ?? '') ?? 1).clamp(1, 3)).toInt(),
+      options:
+          (json['options'] as List?)?.map((e) => e.toString()).toList() ??
+          const [],
+      gridSpan: ((int.tryParse(json['gridSpan']?.toString() ?? '') ?? 1).clamp(
+        1,
+        3,
+      )).toInt(),
     );
   }
 }
@@ -182,22 +188,27 @@ class FormSectionDefinition {
   }
 
   Map<String, dynamic> toJson() => {
-        'id': id,
-        'title': title,
-        'order': order,
-        'columns': columns,
-        'collapsible': collapsible,
-        'fields': fields,
-      };
+    'id': id,
+    'title': title,
+    'order': order,
+    'columns': columns,
+    'collapsible': collapsible,
+    'fields': fields,
+  };
 
   factory FormSectionDefinition.fromJson(Map<String, dynamic> json) {
     return FormSectionDefinition(
       id: json['id']?.toString() ?? 'section',
       title: json['title']?.toString() ?? 'اطلاعات',
       order: int.tryParse(json['order']?.toString() ?? '') ?? 0,
-      columns: ((int.tryParse(json['columns']?.toString() ?? '') ?? 1).clamp(1, 3)).toInt(),
+      columns: ((int.tryParse(json['columns']?.toString() ?? '') ?? 1).clamp(
+        1,
+        3,
+      )).toInt(),
       collapsible: json['collapsible'] == true,
-      fields: (json['fields'] as List?)?.map((e) => e.toString()).toList() ?? const [],
+      fields:
+          (json['fields'] as List?)?.map((e) => e.toString()).toList() ??
+          const [],
     );
   }
 }
@@ -206,9 +217,35 @@ class CardSchema {
   final String? titleField;
   final List<String> bodyFields;
   final List<String> footerFields;
-  const CardSchema({this.titleField, this.bodyFields = const [], this.footerFields = const []});
-  Map<String,dynamic> toJson()=>{'titleField':titleField,'bodyFields':bodyFields,'footerFields':footerFields};
-  factory CardSchema.fromJson(Map<String,dynamic> j)=>CardSchema(titleField:j['titleField']?.toString(),bodyFields:(j['bodyFields'] as List?)?.map((e)=>e.toString()).toList()??const [],footerFields:(j['footerFields'] as List?)?.map((e)=>e.toString()).toList()??const []);
+
+  /// Material icon code used as the main icon of record cards.
+  /// The value is stored as a stable symbolic name (for example `mail`).
+  final String? icon;
+
+  const CardSchema({
+    this.titleField,
+    this.bodyFields = const [],
+    this.footerFields = const [],
+    this.icon,
+  });
+
+  Map<String, dynamic> toJson() => {
+    'titleField': titleField,
+    'bodyFields': bodyFields,
+    'footerFields': footerFields,
+    'icon': icon,
+  };
+
+  factory CardSchema.fromJson(Map<String, dynamic> j) => CardSchema(
+    titleField: j['titleField']?.toString(),
+    bodyFields:
+        (j['bodyFields'] as List?)?.map((e) => e.toString()).toList() ??
+        const [],
+    footerFields:
+        (j['footerFields'] as List?)?.map((e) => e.toString()).toList() ??
+        const [],
+    icon: j['icon']?.toString(),
+  );
 }
 
 class RecordSchema {
@@ -251,27 +288,27 @@ class RecordSchema {
       fields.where((f) => f.searchable && f.visible).toList();
 
   Map<String, dynamic> fieldsJson() => {
-        'schemaVersion': schemaVersion,
-        'fields': fields.map((e) => e.toJson()).toList(),
-      };
+    'schemaVersion': schemaVersion,
+    'fields': fields.map((e) => e.toJson()).toList(),
+  };
 
   Map<String, dynamic> layoutJson() => {
-        'sections': sections.map((e) => e.toJson()).toList(),
-      };
+    'sections': sections.map((e) => e.toJson()).toList(),
+  };
 
   Map<String, dynamic> searchJson() => {
-        'defaultFields': defaultSearchFields,
-        'filterFields': filterFields,
-        'filterColumns': filterColumns,
-      };
+    'defaultFields': defaultSearchFields,
+    'filterFields': filterFields,
+    'filterColumns': filterColumns,
+  };
 
   Map<String, dynamic> cardJson() => card.toJson();
 
   Map<String, dynamic> statsJson() => {
-        'enabled': statsEnabled,
-        'dateField': dateField,
-        'groupFields': statsGroupFields,
-      };
+    'enabled': statsEnabled,
+    'dateField': dateField,
+    'groupFields': statsGroupFields,
+  };
 
   String get fieldsJsonString => jsonEncode(fieldsJson());
   String get layoutJsonString => jsonEncode(layoutJson());
@@ -286,39 +323,66 @@ class RecordSchema {
     final statsRaw = _decode(row['stats_json']);
     final cardRaw = _decode(row['card_json']);
 
-    final fields = (fieldsRaw['fields'] as List?)
+    final fields =
+        (fieldsRaw['fields'] as List?)
             ?.whereType<Map>()
             .map((e) => FieldDefinition.fromJson(Map<String, dynamic>.from(e)))
             .toList() ??
         const <FieldDefinition>[];
 
-    final sections = (layoutRaw['sections'] as List?)
+    final sections =
+        (layoutRaw['sections'] as List?)
             ?.whereType<Map>()
-            .map((e) => FormSectionDefinition.fromJson(Map<String, dynamic>.from(e)))
+            .map(
+              (e) =>
+                  FormSectionDefinition.fromJson(Map<String, dynamic>.from(e)),
+            )
             .toList() ??
         const <FormSectionDefinition>[];
 
-    final configuredFilterFields = (searchRaw['filterFields'] as List?)
+    final configuredFilterFields =
+        (searchRaw['filterFields'] as List?)
             ?.map((e) => e.toString())
-            .where((key) => fields.any((f) => f.key == key && f.visible && f.filterable && !f.system))
+            .where(
+              (key) => fields.any(
+                (f) => f.key == key && f.visible && f.filterable && !f.system,
+              ),
+            )
             .toList() ??
         <String>[];
-    final fallbackFilterFields = fields
-        .where((f) => f.visible && f.filterable && !f.system)
-        .map((f) => f.key)
-        .toList()
-      ..sort((a, b) => (fields.firstWhere((f) => f.key == a).order)
-          .compareTo(fields.firstWhere((f) => f.key == b).order));
+    final fallbackFilterFields =
+        fields
+            .where((f) => f.visible && f.filterable && !f.system)
+            .map((f) => f.key)
+            .toList()
+          ..sort(
+            (a, b) => (fields.firstWhere((f) => f.key == a).order).compareTo(
+              fields.firstWhere((f) => f.key == b).order,
+            ),
+          );
 
     return RecordSchema(
       schemaVersion: int.tryParse(row['schema_version']?.toString() ?? '') ?? 1,
       fields: fields,
       sections: sections,
-      defaultSearchFields: (searchRaw['defaultFields'] as List?)?.map((e) => e.toString()).toList() ?? const [],
-      filterFields: configuredFilterFields.isNotEmpty ? configuredFilterFields : fallbackFilterFields,
-      filterColumns: ((int.tryParse(searchRaw['filterColumns']?.toString() ?? '') ?? 2).clamp(1, 2)).toInt(),
+      defaultSearchFields:
+          (searchRaw['defaultFields'] as List?)
+              ?.map((e) => e.toString())
+              .toList() ??
+          const [],
+      filterFields: configuredFilterFields.isNotEmpty
+          ? configuredFilterFields
+          : fallbackFilterFields,
+      filterColumns:
+          ((int.tryParse(searchRaw['filterColumns']?.toString() ?? '') ?? 2)
+                  .clamp(1, 2))
+              .toInt(),
       dateField: statsRaw['dateField']?.toString(),
-      statsGroupFields: (statsRaw['groupFields'] as List?)?.map((e) => e.toString()).toList() ?? const [],
+      statsGroupFields:
+          (statsRaw['groupFields'] as List?)
+              ?.map((e) => e.toString())
+              .toList() ??
+          const [],
       statsEnabled: statsRaw['enabled'] != false,
       card: CardSchema.fromJson(cardRaw),
     );
@@ -328,7 +392,9 @@ class RecordSchema {
     if (value == null) return <String, dynamic>{};
     try {
       final decoded = jsonDecode(value.toString());
-      return decoded is Map ? Map<String, dynamic>.from(decoded) : <String, dynamic>{};
+      return decoded is Map
+          ? Map<String, dynamic>.from(decoded)
+          : <String, dynamic>{};
     } catch (_) {
       return <String, dynamic>{};
     }

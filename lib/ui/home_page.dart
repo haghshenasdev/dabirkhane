@@ -904,48 +904,78 @@ class _HomePageState extends State<HomePage> {
                 // تاریخ‌ها
                 // همیشه کنار هم
                 // ======================================================
-                Row(
-                  children: [
-                    Expanded(
-                      child: TextField(
-                        controller: fromDateController,
-                        keyboardType: TextInputType.number,
-                        textDirection: TextDirection.rtl,
-                        decoration: decoration(
-                          "از تاریخ",
-                          Icons.calendar_month,
-                        ),
-                      ),
-                    ),
+                LayoutBuilder(
+                  builder: (context, constraints) {
+                    final twoColumns = constraints.maxWidth >= 620;
 
-                    const SizedBox(width: 10),
-
-                    Expanded(
-                      child: TextField(
-                        controller: toDateController,
-                        keyboardType: TextInputType.number,
-                        textDirection: TextDirection.rtl,
-                        decoration: decoration("تا تاریخ", Icons.event),
+                    final fromDate = TextField(
+                      controller: fromDateController,
+                      keyboardType: TextInputType.number,
+                      textDirection: TextDirection.rtl,
+                      decoration: decoration(
+                        'از تاریخ',
+                        Icons.calendar_month,
                       ),
-                    ),
-                  ],
+                    );
+
+                    final toDate = TextField(
+                      controller: toDateController,
+                      keyboardType: TextInputType.number,
+                      textDirection: TextDirection.rtl,
+                      decoration: decoration(
+                        'تا تاریخ',
+                        Icons.event,
+                      ),
+                    );
+
+                    if (twoColumns) {
+                      return Row(
+                        children: [
+                          Expanded(child: fromDate),
+                          const SizedBox(width: 10),
+                          Expanded(child: toDate),
+                        ],
+                      );
+                    }
+
+                    return Column(
+                      children: [
+                        fromDate,
+                        const SizedBox(height: 10),
+                        toDate,
+                      ],
+                    );
+                  },
                 ),
 
                 const SizedBox(height: 12),
 
                 if (_schema != null)
-                  GridView.count(
-                    crossAxisCount: _schema!.filterColumns.clamp(1, 2).toInt(),
-                    shrinkWrap: true,
-                    physics: const NeverScrollableScrollPhysics(),
-                    crossAxisSpacing: 10,
-                    mainAxisSpacing: 10,
-                    childAspectRatio: 3.5,
-                    children: _schema!.filterFields
-                        .map(_schema!.field)
-                        .whereType<FieldDefinition>()
-                        .where((f) => f.visible && f.filterable && !f.system)
-                        .map((f) => TextField(
+                  LayoutBuilder(
+                    builder: (context, constraints) {
+                      final useTwoColumns =
+                          _schema!.filterColumns >= 2 &&
+                          constraints.maxWidth >= 620;
+                      final gap = 10.0;
+                      final width = useTwoColumns
+                          ? (constraints.maxWidth - gap) / 2
+                          : constraints.maxWidth;
+
+                      final dynamicFields = _schema!.filterFields
+                          .map(_schema!.field)
+                          .whereType<FieldDefinition>()
+                          .where((f) =>
+                              f.visible && f.filterable && !f.system)
+                          .toList();
+
+                      return Wrap(
+                        spacing: gap,
+                        runSpacing: gap,
+                        children: dynamicFields.map((f) {
+                          return SizedBox(
+                            width: width,
+                            height: 56,
+                            child: TextField(
                               controller: _dynamicFilterControllers[f.key],
                               textDirection: TextDirection.rtl,
                               decoration: decoration(f.label, _fieldIcon(f)),
@@ -953,94 +983,108 @@ class _HomePageState extends State<HomePage> {
                                 _clearSelectionForFilterChange();
                                 loadMore(reset: true);
                               },
-                            ))
-                        .toList(),
+                            ),
+                          );
+                        }).toList(),
+                      );
+                    },
                   ),
 
-                const SizedBox(height: 12),
+                const SizedBox(height: 10),
 
                 // ======================================================
-                // وضعیت یادآور
+                // وضعیت یادآور + دسته‌بندی
                 // ======================================================
-                DropdownButtonFormField<int>(
-                  value: reminderFilter,
-                  isExpanded: true,
+                LayoutBuilder(
+                  builder: (context, constraints) {
+                    final twoColumns = constraints.maxWidth >= 620;
+                    final gap = 10.0;
 
-                  decoration: decoration(
-                    "وضعیت یادآور",
-                    Icons.notifications_none_rounded,
-                  ),
-
-                  items: const [
-                    DropdownMenuItem(value: 0, child: Text('همه نامه‌ها')),
-                    DropdownMenuItem(
-                      value: 1,
-                      child: Text('یادآورهای موعدرسیده'),
-                    ),
-                    DropdownMenuItem(
-                      value: 2,
-                      child: Text('دارای یادآور فعال'),
-                    ),
-                    DropdownMenuItem(value: 3, child: Text('یادآورهای آینده')),
-                  ],
-
-                  onChanged: (value) {
-                    if (value == null) return;
-
-                    _clearSelectionForFilterChange();
-
-                    setState(() {
-                      reminderFilter = value;
-                    });
-
-                    loadMore(reset: true);
-                  },
-                ),
-
-                const SizedBox(height: 12),
-
-                // ======================================================
-                // دسته بندی
-                // ======================================================
-                TextField(
-                  controller: categoryFilterController,
-                  textDirection: TextDirection.rtl,
-
-                  decoration: decoration("دسته بندی", Icons.category_outlined),
-
-                  onChanged: (value) {
-                    _debounceCategoryFilter?.cancel();
-
-                    _debounceCategoryFilter = Timer(
-                      const Duration(milliseconds: 300),
-                      () async {
-                        if (value.trim().isEmpty) {
-                          if (!mounted) return;
-
-                          setState(() {
-                            categoryFilterSuggestions.clear();
-                          });
-
-                          return;
-                        }
-
-                        final result = await DatabaseHelper.searchCategories(
-                          value.trim(),
-                        );
-
-                        if (!mounted) return;
-
-                        setState(() {
-                          categoryFilterSuggestions = result;
-                        });
+                    final reminderWidget = DropdownButtonFormField<int>(
+                      value: reminderFilter,
+                      isExpanded: true,
+                      decoration: decoration(
+                        'وضعیت یادآور',
+                        Icons.notifications_none_rounded,
+                      ),
+                      items: const [
+                        DropdownMenuItem(
+                          value: 0,
+                          child: Text('همه نامه‌ها'),
+                        ),
+                        DropdownMenuItem(
+                          value: 1,
+                          child: Text('یادآورهای موعدرسیده'),
+                        ),
+                        DropdownMenuItem(
+                          value: 2,
+                          child: Text('دارای یادآور فعال'),
+                        ),
+                        DropdownMenuItem(
+                          value: 3,
+                          child: Text('یادآورهای آینده'),
+                        ),
+                      ],
+                      onChanged: (value) {
+                        if (value == null) return;
+                        _clearSelectionForFilterChange();
+                        setState(() => reminderFilter = value);
+                        loadMore(reset: true);
                       },
                     );
-                  },
 
-                  onSubmitted: (value) {
-                    _addCategoryFilter(value.trim());
+                    final categoryWidget = TextField(
+                      controller: categoryFilterController,
+                      textDirection: TextDirection.rtl,
+                      decoration: decoration(
+                        'دسته بندی',
+                        Icons.category_outlined,
+                      ),
+                      onChanged: (value) {
+                        _debounceCategoryFilter?.cancel();
+                        _debounceCategoryFilter = Timer(
+                          const Duration(milliseconds: 300),
+                          () async {
+                            if (value.trim().isEmpty) {
+                              if (!mounted) return;
+                              setState(() => categoryFilterSuggestions.clear());
+                              return;
+                            }
+
+                            final result = await DatabaseHelper.searchCategories(
+                              value.trim(),
+                            );
+                            if (!mounted) return;
+                            setState(() => categoryFilterSuggestions = result);
+                          },
+                        );
+                      },
+                      onSubmitted: (value) {
+                        _addCategoryFilter(value.trim());
+                      },
+                    );
+
+                    if (twoColumns) {
+                      return Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Expanded(child: reminderWidget),
+                          SizedBox(width: gap),
+                          Expanded(child: categoryWidget),
+                        ],
+                      );
+                    }
+
+                    return Column(
+                      children: [
+                        reminderWidget,
+                        const SizedBox(height: 10),
+                        categoryWidget,
+                      ],
+                    );
                   },
                 ),
+
 
                 // ======================================================
                 // دسته‌بندی‌های انتخاب شده
@@ -1205,6 +1249,24 @@ class _HomePageState extends State<HomePage> {
     );
   }
 
+  IconData _cardSchemaIcon(String? code) {
+    const icons = <String, IconData>{
+      'mail': Icons.mail_outline,
+      'description': Icons.description_outlined,
+      'article': Icons.article_outlined,
+      'attach_file': Icons.attach_file_outlined,
+      'folder': Icons.folder_outlined,
+      'folder_open': Icons.folder_open_outlined,
+      'image': Icons.image_outlined,
+      'picture_as_pdf': Icons.picture_as_pdf_outlined,
+      'archive': Icons.archive_outlined,
+      'inventory': Icons.inventory_2_outlined,
+      'assignment': Icons.assignment_outlined,
+    };
+
+    return icons[code] ?? Icons.mail_outline;
+  }
+
   Widget buildRecordCard(Map<String, dynamic> r, int i) {
     final id = _getRecordId(r);
     final selected = _isRecordSelected(id);
@@ -1311,9 +1373,17 @@ class _HomePageState extends State<HomePage> {
                           ),
                         ),
                         const SizedBox(width: 10),
-                        Icon(
-                          _fieldIcon(titleField),
-                          color: Colors.blue,
+                        Container(
+                          width: 42,
+                          height: 42,
+                          decoration: BoxDecoration(
+                            color: Colors.blue.withOpacity(.10),
+                            borderRadius: BorderRadius.circular(14),
+                          ),
+                          child: Icon(
+                            _cardSchemaIcon(_card.icon),
+                            color: Colors.blue,
+                          ),
                         ),
                       ],
                     ),

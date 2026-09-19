@@ -579,10 +579,44 @@ class _LayoutTabState extends State<_LayoutTab> {
         child: ListTile(
           leading: Icon(_schemaIcon(field?.icon, field?.type)),
           title: Text(field?.label ?? key),
-          subtitle: Text(
-            '${key} • عرض ${field?.gridSpan ?? 1} از ${sections[sectionIndex].columns}',
+          subtitle: Text(key),
+          trailing: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              DropdownButton<int>(
+                value: (field?.gridSpan ?? 1)
+                    .clamp(1, sections[sectionIndex].columns)
+                    .toInt(),
+                underline: const SizedBox.shrink(),
+                items: List.generate(
+                  sections[sectionIndex].columns,
+                  (i) => DropdownMenuItem<int>(
+                    value: i + 1,
+                    child: Text('${i + 1} ستون'),
+                  ),
+                ),
+                onChanged: field == null
+                    ? null
+                    : (value) async {
+                        if (value == null) return;
+                        try {
+                          await SchemaService.updateField(
+                            field.copyWith(gridSpan: value),
+                          );
+                          await widget.onChanged();
+                        } catch (e) {
+                          if (mounted) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(content: Text('خطا در تغییر عرض فیلد: $e')),
+                            );
+                          }
+                        }
+                      },
+              ),
+              const SizedBox(width: 4),
+              const Icon(Icons.drag_indicator),
+            ],
           ),
-          trailing: const Icon(Icons.drag_indicator),
         ),
       ),
     );
@@ -1079,6 +1113,7 @@ class _CardTabState extends State<_CardTab> {
 
   late List<String> body;
   late List<String> footer;
+  String? cardIcon;
 
   @override
   void initState() {
@@ -1103,6 +1138,7 @@ class _CardTabState extends State<_CardTab> {
     body = [...card.bodyFields];
 
     footer = [...card.footerFields];
+    cardIcon = card.icon;
   }
 
   void _emit() {
@@ -1111,6 +1147,7 @@ class _CardTabState extends State<_CardTab> {
         titleField: title,
         bodyFields: [...body],
         footerFields: [...footer],
+        icon: cardIcon,
       ),
     );
   }
@@ -1137,6 +1174,42 @@ class _CardTabState extends State<_CardTab> {
               'در کارت حفظ می‌شوند.',
             ),
           ),
+        ),
+        const SizedBox(height: 12),
+        DropdownButtonFormField<String?>(
+          value: cardIcon,
+          decoration: const InputDecoration(
+            labelText: 'آیکون کارت',
+            border: OutlineInputBorder(),
+          ),
+          items: [
+            const DropdownMenuItem<String?>(
+              value: null,
+              child: Row(
+                children: [
+                  Icon(Icons.mail_outline),
+                  SizedBox(width: 8),
+                  Text('بدون آیکون اختصاصی'),
+                ],
+              ),
+            ),
+            ..._cardIconChoices.map(
+              (item) => DropdownMenuItem<String?>(
+                value: item.code,
+                child: Row(
+                  children: [
+                    Icon(_schemaIcon(item.code, null)),
+                    const SizedBox(width: 8),
+                    Text(item.label),
+                  ],
+                ),
+              ),
+            ),
+          ],
+          onChanged: (value) {
+            setState(() => cardIcon = value);
+            _emit();
+          },
         ),
         const SizedBox(height: 12),
         DropdownButtonFormField<String?>(
@@ -1568,6 +1641,20 @@ class _IconChoice {
   const _IconChoice(this.code, this.label);
 }
 
+const _cardIconChoices = <_IconChoice>[
+  _IconChoice('mail', 'نامه'),
+  _IconChoice('description', 'سند'),
+  _IconChoice('article', 'برگه'),
+  _IconChoice('attach_file', 'فایل'),
+  _IconChoice('folder', 'پوشه'),
+  _IconChoice('folder_open', 'پوشه باز'),
+  _IconChoice('image', 'تصویر'),
+  _IconChoice('picture_as_pdf', 'PDF'),
+  _IconChoice('archive', 'بایگانی'),
+  _IconChoice('inventory', 'پرونده'),
+  _IconChoice('assignment', 'مکاتبه'),
+];
+
 const _iconChoices = <_IconChoice>[
   _IconChoice('text', 'متن'),
   _IconChoice('subject', 'موضوع'),
@@ -1610,6 +1697,15 @@ IconData _schemaIcon(String? code, FieldType? type) {
       'forward': Icons.forward_outlined,
       'link': Icons.link_outlined,
       'check_circle': Icons.check_circle_outline,
+      'mail': Icons.mail_outline,
+      'article': Icons.article_outlined,
+      'folder': Icons.folder_outlined,
+      'folder_open': Icons.folder_open_outlined,
+      'image': Icons.image_outlined,
+      'picture_as_pdf': Icons.picture_as_pdf_outlined,
+      'archive': Icons.archive_outlined,
+      'inventory': Icons.inventory_2_outlined,
+      'assignment': Icons.assignment_outlined,
     };
     final named = map[code];
     if (named != null) return named;
