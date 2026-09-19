@@ -126,7 +126,7 @@ class DatabaseHelper {
 
     return openDatabase(
       dbPath,
-      version: 5,
+      version: 6,
       onCreate: (db, version) async {
         await db.execute('''
           CREATE TABLE IF NOT EXISTS daftare_andicator (
@@ -267,6 +267,17 @@ class DatabaseHelper {
         if (oldVersion < 4) {
           await _createDynamicSchemaForLegacyDatabase(db);
         }
+
+        // نسخه 5: ستون card_json و ستون date را برای دیتابیس‌های قدیمی
+        // تضمین می‌کند. در نسخه‌های قبلی این متد تعریف شده بود اما از
+        // onUpgrade فراخوانی نمی‌شد.
+        if (oldVersion < 6) {
+          await _ensureV5(db);
+        }
+
+        // نسخه 6 فقط منطق Schema را ارتقا داده است؛ نرمال‌سازی فیلدهای
+        // داینامیک هنگام SchemaService.load انجام می‌شود تا با نسخه‌های
+        // قبلی که قبلاً نصب شده‌اند نیز سازگار باشد.
       },
     );
   }
@@ -280,6 +291,7 @@ class DatabaseHelper {
         layout_json TEXT NOT NULL,
         search_json TEXT NOT NULL,
         stats_json TEXT NOT NULL,
+        card_json TEXT NOT NULL DEFAULT '{}',
         created_at TEXT NOT NULL,
         updated_at TEXT NOT NULL
       );
@@ -295,22 +307,27 @@ class DatabaseHelper {
       {'key':'guy','label':'موضوع','type':'text','visible':true,'searchable':true,'suggestions':true,'section':'اطلاعات اصلی','order':3},
       {'key':'sh_name_reside','label':'شماره تماس','type':'phone','visible':true,'searchable':true,'section':'اطلاعات اصلی','order':4},
       {'key':'onvan','label':'گیرنده نامه','type':'text','visible':true,'searchable':true,'suggestions':true,'section':'اطلاعات اصلی','order':5},
-      {'key':'comment','label':'توضیحات','type':'multiline','visible':true,'searchable':true,'maxLines':4,'section':'اطلاعات اصلی','order':6},
-      {'key':'shomare_badi','label':'شماره بعدی','type':'text','visible':true,'searchable':true,'section':'اطلاعات اصلی','order':7},
+      {'key':'comment','label':'توضیحات','type':'multiline','visible':true,'searchable':true,'filterable':true,'maxLines':4,'section':'اطلاعات اصلی','order':6},
+      {'key':'shomare_badi','label':'شماره بعدی','type':'text','visible':true,'searchable':true,'filterable':true,'section':'اطلاعات اصلی','order':7},
       {'key':'goshashte','label':'شماره قبلی','type':'text','visible':true,'searchable':true,'section':'سایر اطلاعات','order':8},
       {'key':'from_pywa','label':'پیوست نامه','type':'text','visible':true,'searchable':true,'section':'سایر اطلاعات','order':9},
       {'key':'t_name_reside','label':'تاریخ نامه','type':'date','visible':true,'searchable':true,'section':'سایر اطلاعات','order':10},
       {'key':'wordmost2','label':'پیوست مکاتبه','type':'text','visible':true,'searchable':true,'section':'سایر اطلاعات','order':11},
       {'key':'t_name_ersali','label':'تاریخ مکاتبه','type':'date','visible':true,'searchable':true,'section':'سایر اطلاعات','order':12},
       {'key':'adres_name','label':'آدرس','type':'multiline','visible':true,'searchable':true,'maxLines':4,'section':'سایر اطلاعات','order':13},
+      {'key':'__category__','label':'دسته‌بندی','type':'category','visible':true,'searchable':false,'filterable':false,'system':true,'deletable':false,'section':'اطلاعات اصلی','order':14,'icon':'label'},
     ];
     final layout = {
       'sections': [
-        {'id':'main','title':'اطلاعات اصلی','order':0,'columns':2,'fields':['Shomare_Radif','date','saheb_name','guy','sh_name_reside','onvan','comment','shomare_badi']},
+        {'id':'main','title':'اطلاعات اصلی','order':0,'columns':2,'fields':['Shomare_Radif','date','saheb_name','guy','sh_name_reside','onvan','comment','shomare_badi','__category__']},
         {'id':'other','title':'سایر اطلاعات','order':1,'columns':1,'collapsible':true,'fields':['goshashte','from_pywa','t_name_reside','wordmost2','t_name_ersali','adres_name']},
       ],
     };
-    final search = {'defaultFields':['guy','saheb_name','Shomare_Radif','sh_name_reside']};
+    final search = {
+      'defaultFields':['guy','saheb_name','Shomare_Radif','sh_name_reside'],
+      'filterFields':['onvan','comment','shomare_badi','saheb_name','guy','sh_name_reside'],
+      'filterColumns':2,
+    };
     final stats = {'enabled':true,'dateField':'date','groupFields':['onvan','guy','saheb_name']};
     final now = DateTime.now().toIso8601String();
 
@@ -321,6 +338,7 @@ class DatabaseHelper {
       'layout_json':jsonEncode(layout),
       'search_json':jsonEncode(search),
       'stats_json':jsonEncode(stats),
+      'card_json':jsonEncode({}),
       'created_at':now,
       'updated_at':now,
     });

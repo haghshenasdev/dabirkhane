@@ -267,6 +267,7 @@ class _HomePageState extends State<HomePage> {
         shomareBadi: shomareBadi,
         categories: selectedCategories,
         reminderFilter: reminderFilter,
+        dynamicFilters: _dynamicFilters,
       );
 
       final mutableData = data
@@ -326,16 +327,20 @@ class _HomePageState extends State<HomePage> {
   }
 
   void _rebuildFiltered() {
-    final q = query.trim().toLowerCase();
+    final q = query.trim().replaceAll('\u200c', '').replaceAll('\u200d', '').toLowerCase();
+    final searchFields = _schema?.searchableFields ?? const <FieldDefinition>[];
 
     filtered = records.where((r) {
-      if (q.isEmpty) {
-        return true;
+      if (q.isEmpty) return true;
+      if (searchFields.isEmpty) {
+        return r.values.any((value) => value.toString().toLowerCase().contains(q));
       }
-
-      return (r['onvan'] ?? '').toString().toLowerCase().contains(q) ||
-          (r['saheb_name'] ?? '').toString().toLowerCase().contains(q) ||
-          (r['Shomare_Radif'] ?? '').toString().contains(q);
+      return searchFields.any((field) => (r[field.key] ?? '')
+          .toString()
+          .replaceAll('\u200c', '')
+          .replaceAll('\u200d', '')
+          .toLowerCase()
+          .contains(q));
     }).toList();
   }
 
@@ -388,13 +393,88 @@ class _HomePageState extends State<HomePage> {
   Future<void> _loadSchema() async {
     final s = await SchemaService.load();
     if (!mounted || s == null) return;
-    for (final f in s.fields.where((f) => f.visible && f.filterable && !f.system)) {
-      _dynamicFilterControllers.putIfAbsent(f.key, () => TextEditingController());
+
+    final allowed = s.fields
+        .where((f) => f.visible && f.filterable && !f.system)
+        .map((f) => f.key)
+        .toSet();
+
+    final order = s.filterFields.where(allowed.contains).toList();
+    for (final field in s.fields) {
+      if (allowed.contains(field.key) && !order.contains(field.key)) {
+        order.add(field.key);
+      }
     }
+
+    final active = order.toSet();
+    for (final key in _dynamicFilterControllers.keys.toList()) {
+      if (!active.contains(key)) {
+        _dynamicFilterControllers.remove(key)?.dispose();
+      }
+    }
+    for (final key in order) {
+      _dynamicFilterControllers.putIfAbsent(
+        key,
+        () => TextEditingController(),
+      );
+    }
+
     setState(() => _schema = s);
   }
   Map<String,String> get _dynamicFilters => {for(final e in _dynamicFilterControllers.entries) if(e.value.text.trim().isNotEmpty)e.key:e.value.text.trim()};
-  IconData _fieldIcon(FieldType? t)=>t==FieldType.date?Icons.calendar_today_outlined:t==FieldType.number?Icons.numbers_outlined:t==FieldType.phone?Icons.phone_outlined:t==FieldType.multiline?Icons.notes_outlined:Icons.text_fields_outlined;
+  IconData _fieldIcon(FieldDefinition? field) {
+    const icons = <String, IconData>{
+      'text': Icons.text_fields_outlined,
+      'subject': Icons.subject_outlined,
+      'person': Icons.person_outline,
+      'person_outline': Icons.person_outline,
+      'numbers': Icons.numbers_outlined,
+      'event': Icons.event_outlined,
+      'event_note': Icons.event_note_outlined,
+      'phone': Icons.phone_outlined,
+      'email': Icons.email_outlined,
+      'notes': Icons.notes_outlined,
+      'description': Icons.description_outlined,
+      'attach_file': Icons.attach_file_outlined,
+      'location_on': Icons.location_on_outlined,
+      'label': Icons.label_outline,
+      'history': Icons.history_outlined,
+      'forward': Icons.forward_outlined,
+      'link': Icons.link_outlined,
+      'check_circle': Icons.check_circle_outline,
+    };
+    final code = field?.icon;
+    if (code != null && icons.containsKey(code)) return icons[code]!;
+    final parsed = int.tryParse(code ?? '');
+    if (parsed != null) return IconData(parsed, fontFamily: 'MaterialIcons');
+    switch (field?.type) {
+      case FieldType.date:
+      case FieldType.datetime:
+        return Icons.calendar_today_outlined;
+      case FieldType.number:
+        return Icons.numbers_outlined;
+      case FieldType.phone:
+        return Icons.phone_outlined;
+      case FieldType.multiline:
+        return Icons.notes_outlined;
+      case FieldType.category:
+        return Icons.label_outline_rounded;
+      case FieldType.boolean:
+        return Icons.toggle_on_outlined;
+      case FieldType.select:
+      case FieldType.multiselect:
+        return Icons.list_alt_outlined;
+      case FieldType.email:
+        return Icons.email_outlined;
+      case FieldType.url:
+        return Icons.link_outlined;
+      case FieldType.file:
+        return Icons.attach_file_outlined;
+      case FieldType.text:
+      case null:
+        return Icons.text_fields_outlined;
+    }
+  }
 
   @override
   void initState() {
@@ -853,7 +933,31 @@ class _HomePageState extends State<HomePage> {
 
                 const SizedBox(height: 12),
 
-                ...(_schema?.fields.where((f)=>f.visible&&f.filterable&&!f.system).map((f)=>Padding(padding:const EdgeInsets.only(bottom:12),child:TextField(controller:_dynamicFilterControllers.putIfAbsent(f.key,()=>TextEditingController()),textDirection:TextDirection.rtl,decoration:decoration(f.label,_fieldIcon(f.type)),onChanged:(_){_clearSelectionForFilterChange();loadMore(reset:true);},)))??const <Widget>[]),
+                if (_schema != null)
+                  GridView.count(
+                    crossAxisCount: _schema!.filterColumns.clamp(1, 2).toInt(),
+                    shrinkWrap: true,
+                    physics: const NeverScrollableScrollPhysics(),
+                    crossAxisSpacing: 10,
+                    mainAxisSpacing: 10,
+                    childAspectRatio: 3.5,
+                    children: _schema!.filterFields
+                        .map(_schema!.field)
+                        .whereType<FieldDefinition>()
+                        .where((f) => f.visible && f.filterable && !f.system)
+                        .map((f) => TextField(
+                              controller: _dynamicFilterControllers[f.key],
+                              textDirection: TextDirection.rtl,
+                              decoration: decoration(f.label, _fieldIcon(f)),
+                              onChanged: (_) {
+                                _clearSelectionForFilterChange();
+                                loadMore(reset: true);
+                              },
+                            ))
+                        .toList(),
+                  ),
+
+                const SizedBox(height: 12),
 
                 // ======================================================
                 // وضعیت یادآور
@@ -1101,11 +1205,168 @@ class _HomePageState extends State<HomePage> {
     );
   }
 
-  Widget buildRecordCard(Map<String,dynamic> r,int i){
-    final id=_getRecordId(r), selected=_isRecordSelected(id), due=id!=null&&dueReminderRecordIds.contains(id);
-    final title=_card.titleField??'guy'; final body=_card.bodyFields.isNotEmpty?_card.bodyFields:['saheb_name']; final foot=_card.footerFields.isNotEmpty?_card.footerFields:['date'];
-    String val(String k)=>(r[k]==null||r[k].toString().isEmpty)?'—':r[k].toString();
-    return Padding(padding:const EdgeInsets.symmetric(horizontal:6,vertical:6),child:Material(color:Colors.transparent,child:InkWell(borderRadius:BorderRadius.circular(22),onTap:()async{if(selectionMode){if(id!=null)_toggleRecordSelection(id);}else{final result=await Navigator.push<Map<String,dynamic>>(context,MaterialPageRoute(builder:(_)=>RecordForm(record:r)));if(result!=null)await _refreshAfterRecordSaved();}},onLongPress:()=>id!=null?_enterSelectionMode(id):null,child:AnimatedContainer(duration:const Duration(milliseconds:180),padding:const EdgeInsets.all(18),decoration:BoxDecoration(borderRadius:BorderRadius.circular(22),color:selected?Colors.blue.withOpacity(.10):Colors.white.withOpacity(.72),border:Border.all(color:selected?Colors.blue:Colors.white,width:selected?2:1.2),boxShadow:[BoxShadow(color:Colors.black.withOpacity(.06),blurRadius:18,offset:const Offset(0,8))]),child:Stack(children:[Column(crossAxisAlignment:CrossAxisAlignment.end,children:[Row(textDirection:TextDirection.rtl,children:[Expanded(child:Text(val(title),textAlign:TextAlign.right,maxLines:2,overflow:TextOverflow.ellipsis,style:const TextStyle(fontSize:18,fontWeight:FontWeight.bold))),const SizedBox(width:10),const Icon(Icons.mail_outline,color:Colors.blue)]),const SizedBox(height:16),...body.where((k)=>k!=title&&k!='Shomare_Radif').map((k){final f=_schema?.field(k);return Padding(padding:const EdgeInsets.only(bottom:8),child:Row(textDirection:TextDirection.rtl,children:[Icon(_fieldIcon(f?.type),size:17),const SizedBox(width:7),Text('${f?.label??k}: ',style:const TextStyle(fontWeight:FontWeight.w600,fontSize:12)),Expanded(child:Text(val(k),textAlign:TextAlign.right,maxLines:2,overflow:TextOverflow.ellipsis))]));}),if(due)Text('یادآور موعدرسیده',style:TextStyle(color:Colors.orange.shade800,fontWeight:FontWeight.bold)),const Divider(height:20),Wrap(spacing:8,runSpacing:8,children:[...foot.where((k)=>k!='Shomare_Radif').map((k)=>_recordChip(_fieldIcon(_schema?.field(k)?.type),'${_schema?.field(k)?.label??k}: ${val(k)}')),_recordChip(Icons.confirmation_number_outlined,'ردیف ${r['Shomare_Radif']??'—'}')])]),if(selectionMode)Positioned(left:0,top:0,child:Icon(selected?Icons.check_circle:Icons.radio_button_unchecked,color:selected?Colors.blue:Colors.grey,size:28))])))));
+  Widget buildRecordCard(Map<String, dynamic> r, int i) {
+    final id = _getRecordId(r);
+    final selected = _isRecordSelected(id);
+    final due = id != null && dueReminderRecordIds.contains(id);
+
+    final titleKey = _card.titleField ?? 'guy';
+    final titleField = _schema?.field(titleKey);
+    final bodyKeys = (_card.bodyFields.isNotEmpty
+            ? _card.bodyFields
+            : ['saheb_name'])
+        .where((key) => _schema?.field(key)?.visible != false)
+        .toList();
+    final footerKeys = (_card.footerFields.isNotEmpty
+            ? _card.footerFields
+            : ['date'])
+        .where((key) => _schema?.field(key)?.visible != false)
+        .toList();
+
+    String value(String key) {
+      final raw = r[key];
+      return raw == null || raw.toString().trim().isEmpty
+          ? '—'
+          : raw.toString();
+    }
+
+    Widget fieldLine(String key) {
+      final field = _schema?.field(key);
+      return Padding(
+        padding: const EdgeInsets.only(bottom: 8),
+        child: Row(
+          textDirection: TextDirection.rtl,
+          children: [
+            Icon(_fieldIcon(field), size: 17, color: Colors.blueGrey),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                value(key),
+                textAlign: TextAlign.right,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 6),
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          borderRadius: BorderRadius.circular(22),
+          onTap: () async {
+            if (selectionMode) {
+              if (id != null) _toggleRecordSelection(id);
+            } else {
+              final result = await Navigator.push<Map<String, dynamic>>(
+                context,
+                MaterialPageRoute(builder: (_) => RecordForm(record: r)),
+              );
+              if (result != null) await _refreshAfterRecordSaved();
+            }
+          },
+          onLongPress: () => id != null ? _enterSelectionMode(id) : null,
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 180),
+            padding: const EdgeInsets.all(18),
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(22),
+              color: selected
+                  ? Colors.blue.withOpacity(.10)
+                  : Colors.white.withOpacity(.72),
+              border: Border.all(
+                color: selected ? Colors.blue : Colors.white,
+                width: selected ? 2 : 1.2,
+              ),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withOpacity(.06),
+                  blurRadius: 18,
+                  offset: const Offset(0, 8),
+                ),
+              ],
+            ),
+            child: Stack(
+              children: [
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.end,
+                  children: [
+                    Row(
+                      textDirection: TextDirection.rtl,
+                      children: [
+                        Expanded(
+                          child: Text(
+                            value(titleKey),
+                            textAlign: TextAlign.right,
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                              fontSize: 18,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 10),
+                        Icon(
+                          _fieldIcon(titleField),
+                          color: Colors.blue,
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 16),
+                    ...bodyKeys
+                        .where((key) =>
+                            key != titleKey && key != 'Shomare_Radif')
+                        .map(fieldLine),
+                    if (due)
+                      Text(
+                        'یادآور موعدرسیده',
+                        style: TextStyle(
+                          color: Colors.orange.shade800,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    const Divider(height: 20),
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
+                      children: [
+                        ...footerKeys
+                            .where((key) => key != 'Shomare_Radif')
+                            .map((key) => _recordChip(
+                                  _fieldIcon(_schema?.field(key)),
+                                  value(key),
+                                )),
+                        _recordChip(
+                          Icons.confirmation_number_outlined,
+                          'ردیف ${r['Shomare_Radif'] ?? '—'}',
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+                if (selectionMode)
+                  Positioned(
+                    left: 0,
+                    top: 0,
+                    child: Icon(
+                      selected
+                          ? Icons.check_circle
+                          : Icons.radio_button_unchecked,
+                      color: selected ? Colors.blue : Colors.grey,
+                      size: 28,
+                    ),
+                  ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
   }
 
   Widget _recordChip(IconData icon, String text) {
@@ -1294,52 +1555,38 @@ class _HomePageState extends State<HomePage> {
   // ============================================================
 
   bool _recordMatchesCurrentFilters(Map<String, dynamic> record) {
-    final q = query.trim().toLowerCase();
+    final q = query
+        .trim()
+        .replaceAll('\u200c', '')
+        .replaceAll('\u200d', '')
+        .toLowerCase();
 
     if (q.isNotEmpty) {
-      final matchesSearch =
-          (record['guy'] ?? '').toString().toLowerCase().contains(q) ||
-          (record['saheb_name'] ?? '').toString().toLowerCase().contains(q) ||
-          (record['Shomare_Radif'] ?? '').toString().contains(q) ||
-          (record['sh_name_reside'] ?? '').toString().toLowerCase().contains(q);
-
-      if (!matchesSearch) {
-        return false;
-      }
-    }
-
-    final onvan = onvanController.text.trim();
-
-    if (onvan.isNotEmpty) {
-      final value = (record['onvan'] ?? '').toString();
-
-      if (!value.contains(onvan)) {
-        return false;
-      }
+      final fields = _schema?.searchableFields ?? const <FieldDefinition>[];
+      final matches = fields.isEmpty
+          ? record.values.any((value) => value.toString().toLowerCase().contains(q))
+          : fields.any((field) => (record[field.key] ?? '')
+              .toString()
+              .replaceAll('\u200c', '')
+              .replaceAll('\u200d', '')
+              .toLowerCase()
+              .contains(q));
+      if (!matches) return false;
     }
 
     final fromDate = fromDateController.text.trim();
-
-    if (fromDate.isNotEmpty) {
-      final date = (record['date'] ?? '').toString();
-
-      if (date.compareTo(fromDate) < 0) {
-        return false;
-      }
-    }
-
     final toDate = toDateController.text.trim();
+    final date = (record['date'] ?? '').toString();
+    if (fromDate.isNotEmpty && date.compareTo(fromDate) < 0) return false;
+    if (toDate.isNotEmpty && date.compareTo(toDate) > 0) return false;
 
-    if (toDate.isNotEmpty) {
-      final date = (record['date'] ?? '').toString();
-
-      if (date.compareTo(toDate) > 0) {
+    for (final entry in _dynamicFilters.entries) {
+      if (!(record[entry.key] ?? '')
+          .toString()
+          .toLowerCase()
+          .contains(entry.value.toLowerCase())) {
         return false;
       }
-    }
-
-    if (selectedCategoryFilters.isNotEmpty) {
-      return false;
     }
 
     return true;

@@ -169,18 +169,7 @@ class _RecordFormState extends State<RecordForm>
     _loadScanSettings();
     _loadReminderStatus();
 
-    for (final field in [...mainFields, ...otherFields]) {
-      c[field] = TextEditingController(
-        text: widget.record?[field]?.toString() ?? '',
-      );
-
-      focusNodes[field] = FocusNode();
-    }
-
-    if (widget.record == null) {
-      _setInitialValues();
-    } else {
-      _captureInitialState();
+    if (widget.record != null) {
       _loadFiles();
       _loadCategories();
     }
@@ -193,51 +182,40 @@ class _RecordFormState extends State<RecordForm>
       final schema = await SchemaService.load();
       if (schema == null || !mounted) return;
 
-      final configuredMain = <String>[];
-      final configuredOther = <String>[];
-      final labels = <String, String>{};
+      final labels = <String, String>{
+        for (final field in schema.fields) field.key: field.label,
+      };
 
-      for (final field in schema.fields) {
-        labels[field.key] = field.label;
-      }
+      final dataFields = schema.fields
+          .where((f) => f.visible && f.key != '__category__')
+          .toList()
+        ..sort((a, b) => a.order.compareTo(b.order));
 
-      for (final section in schema.sections..sort((a, b) => a.order.compareTo(b.order))) {
-        final visible = section.fields.where((key) {
-          final field = schema.field(key);
-          return field != null && field.visible;
-        });
-        if (configuredMain.isEmpty) {
-          configuredMain.addAll(visible);
-        } else {
-          configuredOther.addAll(visible);
-        }
-      }
-
-      final allConfigured = [...configuredMain, ...configuredOther];
-      final missing = schema.fields
-          .where((f) => f.visible && !f.system && !allConfigured.contains(f.key))
-          .map((f) => f.key);
-      configuredOther.addAll(missing);
-
-      if (!configuredMain.contains('Shomare_Radif') && schema.field('Shomare_Radif')?.visible != false) {
-        configuredMain.insert(0, 'Shomare_Radif');
-      }
-
-      for (final key in [...configuredMain, ...configuredOther]) {
-        if (!c.containsKey(key)) {
-          c[key] = TextEditingController(text: widget.record?[key]?.toString() ?? '');
-          focusNodes[key] = FocusNode();
-        }
+      for (final field in dataFields) {
+        c.putIfAbsent(
+          field.key,
+          () => TextEditingController(
+            text: widget.record?[field.key]?.toString() ?? '',
+          ),
+        );
+        focusNodes.putIfAbsent(field.key, FocusNode.new);
       }
 
       if (!mounted) return;
+
       setState(() {
         _schema = schema;
-        mainFields = configuredMain;
-        otherFields = configuredOther;
+        mainFields = dataFields.map((f) => f.key).toList();
+        otherFields = <String>[];
         fieldLabels = labels;
         _schemaLoading = false;
       });
+
+      if (widget.record != null) {
+        _captureInitialState();
+      } else {
+        await _setInitialValues();
+      }
     } catch (e) {
       debugPrint('Schema load error: $e');
       if (mounted) setState(() => _schemaLoading = false);
@@ -262,7 +240,7 @@ class _RecordFormState extends State<RecordForm>
   Map<String, String> _getCurrentFieldValues() {
     return {
       for (final field in [...mainFields, ...otherFields])
-        field: c[field]?.text ?? '',
+        if (field != '__category__') field: c[field]?.text ?? '',
     };
   }
 
@@ -390,7 +368,7 @@ class _RecordFormState extends State<RecordForm>
     try {
       final data = {
         for (final field in [...mainFields, ...otherFields])
-          field: c[field]!.text,
+          if (field != '__category__') field: c[field]!.text,
       };
 
       int id;
@@ -1194,7 +1172,7 @@ class _RecordFormState extends State<RecordForm>
     try {
       final data = {
         for (final field in [...mainFields, ...otherFields])
-          field: c[field]!.text,
+          if (field != '__category__') field: c[field]!.text,
       };
 
       int id;
@@ -1373,6 +1351,7 @@ class _RecordFormState extends State<RecordForm>
       },
       focusNode: focusNodes['guy']!,
       nextFocus: focusNodes['saheb_name'],
+      icon: _fieldIcon(_schema?.field('guy')),
     );
   }
 
@@ -1424,6 +1403,7 @@ class _RecordFormState extends State<RecordForm>
       },
       focusNode: focusNodes['onvan']!,
       nextFocus: null,
+      icon: _fieldIcon(_schema?.field('onvan')),
     );
   }
 
@@ -1439,6 +1419,7 @@ class _RecordFormState extends State<RecordForm>
     required void Function(String) onSelected,
     required FocusNode focusNode,
     FocusNode? nextFocus,
+    IconData? icon,
   }) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -1449,6 +1430,7 @@ class _RecordFormState extends State<RecordForm>
             focusNode: focusNode,
             decoration: _glassInputDecoration(
               label: label,
+              prefixIcon: icon == null ? null : Icon(icon, size: 20),
               suffixIcon: suggestions.isNotEmpty
                   ? IconButton(
                       tooltip: 'بستن پیشنهادها',
@@ -1504,7 +1486,7 @@ class _RecordFormState extends State<RecordForm>
             controller: c['saheb_name'],
             decoration: _glassInputDecoration(
               label: 'صاحب نامه',
-              prefixIcon: const Icon(Icons.person_outline_rounded),
+              prefixIcon: Icon(_fieldIcon(_schema?.field('saheb_name')), size: 20),
               suffixIcon: sahebSuggestions.isNotEmpty
                   ? IconButton(
                       icon: const Icon(Icons.close_rounded),
@@ -1659,7 +1641,7 @@ class _RecordFormState extends State<RecordForm>
   // ============================================================
   // Category
   // ============================================================
-  Widget buildCategoryField() {
+  Widget buildCategoryField([FieldDefinition? definition]) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -1669,8 +1651,8 @@ class _RecordFormState extends State<RecordForm>
             controller: categoryController,
             focusNode: categoryFocus,
             decoration: _glassInputDecoration(
-              label: 'دسته‌بندی',
-              prefixIcon: const Icon(Icons.label_outline_rounded),
+              label: definition?.label ?? 'دسته‌بندی',
+              prefixIcon: Icon(_fieldIcon(definition), size: 20),
 
               suffixIcon: Row(
                 mainAxisSize: MainAxisSize.min,
@@ -1984,8 +1966,66 @@ class _RecordFormState extends State<RecordForm>
   // Text fields
   // ============================================================
 
+  IconData _fieldIcon(FieldDefinition? definition) {
+    const icons = <String, IconData>{
+      'text': Icons.text_fields_outlined,
+      'subject': Icons.subject_outlined,
+      'person': Icons.person_outline,
+      'person_outline': Icons.person_outline,
+      'numbers': Icons.numbers_outlined,
+      'event': Icons.event_outlined,
+      'event_note': Icons.event_note_outlined,
+      'phone': Icons.phone_outlined,
+      'email': Icons.email_outlined,
+      'notes': Icons.notes_outlined,
+      'description': Icons.description_outlined,
+      'attach_file': Icons.attach_file_outlined,
+      'location_on': Icons.location_on_outlined,
+      'label': Icons.label_outline,
+      'history': Icons.history_outlined,
+      'forward': Icons.forward_outlined,
+      'link': Icons.link_outlined,
+      'check_circle': Icons.check_circle_outline,
+    };
+    final code = definition?.icon;
+    if (code != null && icons.containsKey(code)) return icons[code]!;
+    final parsed = int.tryParse(code ?? '');
+    if (parsed != null) return IconData(parsed, fontFamily: 'MaterialIcons');
+    switch (definition?.type) {
+      case FieldType.date:
+      case FieldType.datetime:
+        return Icons.calendar_today_outlined;
+      case FieldType.number:
+        return Icons.numbers_outlined;
+      case FieldType.boolean:
+        return Icons.toggle_on_outlined;
+      case FieldType.select:
+      case FieldType.multiselect:
+        return Icons.list_alt_outlined;
+      case FieldType.phone:
+        return Icons.phone_outlined;
+      case FieldType.email:
+        return Icons.email_outlined;
+      case FieldType.url:
+        return Icons.link_outlined;
+      case FieldType.multiline:
+        return Icons.notes_outlined;
+      case FieldType.category:
+        return Icons.label_outline_rounded;
+      case FieldType.file:
+        return Icons.attach_file_outlined;
+      case FieldType.text:
+      case null:
+        return Icons.text_fields_outlined;
+    }
+  }
+
   Widget buildTextField(String field) {
     final definition = _schema?.field(field);
+
+    if (field == '__category__' || definition?.type == FieldType.category) {
+      return buildCategoryField(definition);
+    }
 
     if (field == 'saheb_name' && definition?.suggestions != false) {
       return buildSahebNameField();
@@ -2036,7 +2076,7 @@ class _RecordFormState extends State<RecordForm>
         keyboardType: keyboardType,
         decoration: _glassInputDecoration(
           label: definition?.label ?? fieldLabels[field] ?? field,
-          prefixIcon: field == 'comment' ? const Icon(Icons.notes_outlined) : null,
+          prefixIcon: Icon(_fieldIcon(definition), size: 20),
           alignLabelWithHint: isMultiline,
         ),
         textDirection: TextDirection.rtl,
@@ -2068,7 +2108,7 @@ class _RecordFormState extends State<RecordForm>
         decoration: _glassInputDecoration(
           label: definition?.label ?? fieldLabels[field] ?? field,
           hint: '1405/01/15',
-          prefixIcon: const Icon(Icons.calendar_today_outlined),
+          prefixIcon: Icon(_fieldIcon(definition), size: 20),
         ),
         textDirection: TextDirection.rtl,
         validator: (value) {
@@ -2085,7 +2125,7 @@ class _RecordFormState extends State<RecordForm>
     return _glassField(
       child: DropdownButtonFormField<String>(
         value: definition.options.contains(c[definition.key]?.text) ? c[definition.key]?.text : null,
-        decoration: _glassInputDecoration(label: definition.label),
+        decoration: _glassInputDecoration(label: definition.label, prefixIcon: Icon(_fieldIcon(definition), size: 20)),
         items: definition.options.map((item) => DropdownMenuItem(value: item, child: Text(item, textDirection: TextDirection.rtl))).toList(),
         onChanged: (value) => c[definition.key]?.text = value ?? '',
         validator: definition.required ? (value) => value == null || value.isEmpty ? 'این فیلد الزامی است' : null : null,
@@ -2115,7 +2155,7 @@ class _RecordFormState extends State<RecordForm>
           if (result != null) setState(() => c[definition.key]!.text = result.join('|'));
         },
         child: InputDecorator(
-          decoration: _glassInputDecoration(label: definition.label),
+          decoration: _glassInputDecoration(label: definition.label, prefixIcon: Icon(_fieldIcon(definition), size: 20)),
           child: Text(selected.isEmpty ? 'انتخاب کنید' : selected.join('، '), textDirection: TextDirection.rtl),
         ),
       ),
@@ -2127,6 +2167,7 @@ class _RecordFormState extends State<RecordForm>
     return _glassField(
       child: SwitchListTile.adaptive(
         title: Text(definition.label, textDirection: TextDirection.rtl),
+        secondary: Icon(_fieldIcon(definition)),
         value: value,
         onChanged: (v) => setState(() => c[definition.key]!.text = v ? '1' : '0'),
         contentPadding: const EdgeInsets.symmetric(horizontal: 12),
@@ -2156,6 +2197,7 @@ class _RecordFormState extends State<RecordForm>
       onSelected: (item) => setState(() { c[definition.key]!.text = item; _dynamicSuggestions[definition.key] = []; }),
       focusNode: focusNodes[definition.key]!,
       nextFocus: null,
+      icon: _fieldIcon(definition),
     );
   }
 
@@ -2773,7 +2815,6 @@ class _RecordFormState extends State<RecordForm>
           children: [
             _buildTodayReminderBanner(),
             ...sections.map(_buildDynamicSection),
-            buildCategoryField(),
             const SizedBox(height: 2),
             _buildFormButtons(),
           ],
@@ -2790,23 +2831,52 @@ class _RecordFormState extends State<RecordForm>
 
     if (fields.isEmpty) return const SizedBox.shrink();
 
-    final children = <Widget>[];
-    for (var i = 0; i < fields.length; i++) {
-      if (section.columns > 1 && i + 1 < fields.length) {
-        children.add(Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Expanded(child: buildTextField(fields[i])),
-            const SizedBox(width: 8),
-            Expanded(child: buildTextField(fields[++i])),
-          ],
-        ));
-      } else {
-        children.add(buildTextField(fields[i]));
-      }
+    final columns = section.columns.clamp(1, 3).toInt();
+    final rows = <List<String>>[];
+    var current = <String>[];
+    var used = 0;
+
+    void flush() {
+      if (current.isNotEmpty) rows.add(current);
+      current = <String>[];
+      used = 0;
     }
 
-    final content = Column(children: children);
+    for (final key in fields) {
+      final definition = _schema!.field(key)!;
+      final span = definition.gridSpan.clamp(1, columns).toInt();
+      if (used > 0 && used + span > columns) flush();
+      current.add(key);
+      used += span;
+      if (used >= columns) flush();
+    }
+    flush();
+
+    Widget buildRow(List<String> row) {
+      final children = <Widget>[];
+      var usedColumns = 0;
+      for (final key in row) {
+        final definition = _schema!.field(key)!;
+        final span = definition.gridSpan.clamp(1, columns).toInt();
+        if (children.isNotEmpty) children.add(const SizedBox(width: 8));
+        children.add(Expanded(flex: span, child: buildTextField(key)));
+        usedColumns += span;
+      }
+      if (usedColumns < columns) children.add(const Spacer());
+      return Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: children,
+      );
+    }
+
+    final content = Column(
+      children: [
+        for (final row in rows) ...[
+          buildRow(row),
+          const SizedBox(height: 8),
+        ],
+      ],
+    );
 
     if (!section.collapsible) {
       return Container(
@@ -2823,7 +2893,13 @@ class _RecordFormState extends State<RecordForm>
         borderRadius: BorderRadius.circular(22),
         color: Colors.white.withOpacity(.52),
         border: Border.all(color: Colors.white.withOpacity(.82)),
-        boxShadow: [BoxShadow(color: Colors.black.withOpacity(.035), blurRadius: 18, offset: const Offset(0, 7))],
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(.035),
+            blurRadius: 18,
+            offset: const Offset(0, 7),
+          ),
+        ],
       ),
       child: ClipRRect(
         borderRadius: BorderRadius.circular(22),
@@ -2833,11 +2909,19 @@ class _RecordFormState extends State<RecordForm>
             tilePadding: const EdgeInsets.symmetric(horizontal: 18, vertical: 2),
             childrenPadding: const EdgeInsets.fromLTRB(14, 0, 14, 14),
             leading: Container(
-              width: 38, height: 38,
-              decoration: BoxDecoration(borderRadius: BorderRadius.circular(12), color: colorScheme.primary.withOpacity(.09)),
+              width: 38,
+              height: 38,
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(12),
+                color: colorScheme.primary.withOpacity(.09),
+              ),
               child: Icon(Icons.tune_rounded, color: colorScheme.primary, size: 20),
             ),
-            title: Text(section.title, textDirection: TextDirection.rtl, style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 14)),
+            title: Text(
+              section.title,
+              textDirection: TextDirection.rtl,
+              style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 14),
+            ),
             children: [content],
           ),
         ),

@@ -76,9 +76,7 @@ class _SchemaConfigPageState extends State<SchemaConfigPage>
     if (result == null) return;
 
     try {
-      // امضای واقعی متد در SchemaService فعلی:
-      // addField(FieldDefinition field, FieldDefinition result)
-      await SchemaService.addField(result, result);
+      await SchemaService.addField(result);
 
       await _refresh();
 
@@ -178,6 +176,8 @@ class _SchemaConfigPageState extends State<SchemaConfigPage>
           dateField: finalSchema.dateField,
           statsGroupFields: finalSchema.statsGroupFields,
           statsEnabled: finalSchema.statsEnabled,
+          filterFields: finalSchema.filterFields,
+          filterColumns: finalSchema.filterColumns,
           card: _pendingCard!,
         );
       }
@@ -401,7 +401,10 @@ class _LayoutTabState extends State<_LayoutTab> {
   @override
   void initState() {
     super.initState();
+    _sync();
+  }
 
+  void _sync() {
     sections = [...widget.schema.sections]
       ..sort((a, b) => a.order.compareTo(b.order));
   }
@@ -409,10 +412,8 @@ class _LayoutTabState extends State<_LayoutTab> {
   @override
   void didUpdateWidget(covariant _LayoutTab oldWidget) {
     super.didUpdateWidget(oldWidget);
-
     if (oldWidget.schema.schemaVersion != widget.schema.schemaVersion) {
-      sections = [...widget.schema.sections]
-        ..sort((a, b) => a.order.compareTo(b.order));
+      _sync();
     }
   }
 
@@ -420,24 +421,17 @@ class _LayoutTabState extends State<_LayoutTab> {
     try {
       await SchemaService.setLayout(sections);
       await widget.onChanged();
-
-      if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(const SnackBar(content: Text('چینش ذخیره شد')));
-      }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text('خطا در ذخیره چینش: $e')));
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('خطا در ذخیره چینش: $e')),
+        );
       }
     }
   }
 
   Future<void> _addSection() async {
     final controller = TextEditingController();
-
     final title = await showDialog<String>(
       context: context,
       builder: (_) => AlertDialog(
@@ -457,17 +451,13 @@ class _LayoutTabState extends State<_LayoutTab> {
             child: const Text('انصراف'),
           ),
           FilledButton(
-            onPressed: () {
-              Navigator.pop(context, controller.text.trim());
-            },
+            onPressed: () => Navigator.pop(context, controller.text.trim()),
             child: const Text('افزودن'),
           ),
         ],
       ),
     );
-
     controller.dispose();
-
     if (title == null || title.isEmpty) return;
 
     setState(() {
@@ -480,15 +470,11 @@ class _LayoutTabState extends State<_LayoutTab> {
         ),
       );
     });
-
     await _save();
   }
 
   Future<void> _renameSection(int index) async {
-    final section = sections[index];
-
-    final controller = TextEditingController(text: section.title);
-
+    final controller = TextEditingController(text: sections[index].title);
     final title = await showDialog<String>(
       context: context,
       builder: (_) => AlertDialog(
@@ -508,71 +494,98 @@ class _LayoutTabState extends State<_LayoutTab> {
             child: const Text('انصراف'),
           ),
           FilledButton(
-            onPressed: () {
-              Navigator.pop(context, controller.text.trim());
-            },
+            onPressed: () => Navigator.pop(context, controller.text.trim()),
             child: const Text('ذخیره'),
           ),
         ],
       ),
     );
-
     controller.dispose();
-
     if (title == null || title.isEmpty) return;
-
-    setState(() {
-      sections[index] = section.copyWith(title: title);
-    });
-
+    setState(() => sections[index] = sections[index].copyWith(title: title));
     await _save();
   }
 
   Future<void> _deleteSection(int index) async {
     final section = sections[index];
-
     if (section.fields.isNotEmpty) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('ابتدا فیلدهای این بخش را به بخش دیگری منتقل کنید.'),
-          ),
-        );
-      }
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('ابتدا فیلدهای این بخش را به بخش دیگری منتقل کنید.')),
+      );
       return;
     }
-
     if (sections.length <= 1) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('حداقل یک بخش باید وجود داشته باشد.')),
-        );
-      }
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('حداقل یک بخش باید وجود داشته باشد.')),
+      );
       return;
     }
-
-    setState(() {
-      sections.removeAt(index);
-    });
-
+    setState(() => sections.removeAt(index));
     await _save();
   }
 
-  void _moveField(int sectionIndex, int oldIndex, int newIndex) {
-    final section = sections[sectionIndex];
-
-    if (newIndex > oldIndex) {
-      newIndex--;
-    }
-
-    final fields = [...section.fields];
-
+  void _moveFieldInside(int sectionIndex, int oldIndex, int newIndex) {
+    if (newIndex > oldIndex) newIndex--;
+    final fields = [...sections[sectionIndex].fields];
     final item = fields.removeAt(oldIndex);
-    fields.insert(newIndex, item);
+    fields.insert(newIndex.clamp(0, fields.length), item);
+    setState(() {
+      sections[sectionIndex] = sections[sectionIndex].copyWith(fields: fields);
+    });
+  }
+
+  Future<void> _moveFieldToSection(String key, int targetSectionIndex) async {
+    final target = sections[targetSectionIndex];
+    if (target.fields.contains(key)) return;
 
     setState(() {
-      sections[sectionIndex] = section.copyWith(fields: fields);
+      for (var i = 0; i < sections.length; i++) {
+        sections[i] = sections[i].copyWith(
+          fields: sections[i].fields.where((e) => e != key).toList(),
+        );
+      }
+      sections[targetSectionIndex] = target.copyWith(
+        fields: [...target.fields, key],
+      );
     });
+    await _save();
+  }
+
+  Widget _fieldTile(String key, int sectionIndex, int fieldIndex) {
+    final field = widget.schema.field(key);
+    return KeyedSubtree(
+      key: ValueKey('field-$key'),
+      child: LongPressDraggable<String>(
+        data: key,
+      feedback: Material(
+        color: Colors.transparent,
+        child: SizedBox(
+          width: 280,
+          child: Card(
+            child: ListTile(
+              leading: Icon(_schemaIcon(field?.icon, field?.type)),
+              title: Text(field?.label ?? key),
+            ),
+          ),
+        ),
+      ),
+      childWhenDragging: Opacity(
+        opacity: .35,
+        child: ListTile(
+          leading: Icon(_schemaIcon(field?.icon, field?.type)),
+          title: Text(field?.label ?? key),
+        ),
+      ),
+        child: ListTile(
+          leading: Icon(_schemaIcon(field?.icon, field?.type)),
+          title: Text(field?.label ?? key),
+          subtitle: Text(
+            '${key} • عرض ${field?.gridSpan ?? 1} از ${sections[sectionIndex].columns}',
+          ),
+          trailing: const Icon(Icons.drag_indicator),
+        ),
+      ),
+    );
   }
 
   @override
@@ -580,9 +593,14 @@ class _LayoutTabState extends State<_LayoutTab> {
     return ListView(
       padding: const EdgeInsets.all(16),
       children: [
-        const Text(
-          'بخش‌ها و ترتیب نمایش فیلدها را تنظیم کنید.',
-          style: TextStyle(fontSize: 13),
+        const Card(
+          child: Padding(
+            padding: EdgeInsets.all(16),
+            child: Text(
+              'بخش‌ها، ترتیب فیلدها و تعداد ستون هر بخش را تنظیم کنید. '
+              'برای انتقال فیلد بین بخش‌ها، آن را نگه دارید و روی بخش مقصد رها کنید.',
+            ),
+          ),
         ),
         const SizedBox(height: 12),
         ReorderableListView.builder(
@@ -590,100 +608,97 @@ class _LayoutTabState extends State<_LayoutTab> {
           physics: const NeverScrollableScrollPhysics(),
           itemCount: sections.length,
           onReorder: (oldIndex, newIndex) async {
-            if (newIndex > oldIndex) {
-              newIndex--;
-            }
-
+            if (newIndex > oldIndex) newIndex--;
             final item = sections.removeAt(oldIndex);
             sections.insert(newIndex, item);
-
             setState(() {});
-
             await _save();
           },
           itemBuilder: (context, index) {
             final section = sections[index];
-
-            return Card(
+            return DragTarget<String>(
               key: ValueKey('section-${section.id}'),
-              child: Padding(
-                padding: const EdgeInsets.all(10),
-                child: Column(
-                  children: [
-                    Row(
+              onWillAcceptWithDetails: (details) =>
+                  !section.fields.contains(details.data),
+              onAcceptWithDetails: (details) =>
+                  _moveFieldToSection(details.data, index),
+              builder: (context, candidate, rejected) {
+                final highlighted = candidate.isNotEmpty;
+                return Card(
+                  margin: const EdgeInsets.only(bottom: 12),
+                  color: highlighted
+                      ? Theme.of(context).colorScheme.primary.withOpacity(.08)
+                      : null,
+                  child: Padding(
+                    padding: const EdgeInsets.all(10),
+                    child: Column(
                       children: [
-                        const Icon(Icons.drag_indicator_rounded),
-                        const SizedBox(width: 4),
-                        Expanded(
-                          child: Text(
-                            section.title,
-                            style: const TextStyle(
-                              fontWeight: FontWeight.bold,
-                              fontSize: 16,
+                        Row(
+                          children: [
+                            const Icon(Icons.drag_indicator_rounded),
+                            const SizedBox(width: 4),
+                            Expanded(
+                              child: Text(
+                                section.title,
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 16,
+                                ),
+                              ),
                             ),
-                          ),
-                        ),
-                        IconButton(
-                          tooltip: 'تغییر نام بخش',
-                          onPressed: () => _renameSection(index),
-                          icon: const Icon(Icons.edit_outlined),
-                        ),
-                        if (sections.length > 1)
-                          IconButton(
-                            tooltip: 'حذف بخش',
-                            onPressed: () => _deleteSection(index),
-                            icon: const Icon(Icons.delete_outline),
-                          ),
-                        DropdownButton<int>(
-                          value: section.columns,
-                          items: const [
-                            DropdownMenuItem(value: 1, child: Text('۱ ستون')),
-                            DropdownMenuItem(value: 2, child: Text('۲ ستون')),
-                            DropdownMenuItem(value: 3, child: Text('۳ ستون')),
+                            IconButton(
+                              tooltip: 'تغییر نام بخش',
+                              onPressed: () => _renameSection(index),
+                              icon: const Icon(Icons.edit_outlined),
+                            ),
+                            if (sections.length > 1)
+                              IconButton(
+                                tooltip: 'حذف بخش',
+                                onPressed: () => _deleteSection(index),
+                                icon: const Icon(Icons.delete_outline),
+                              ),
+                            DropdownButton<int>(
+                              value: section.columns,
+                              items: const [
+                                DropdownMenuItem(value: 1, child: Text('۱ ستون')),
+                                DropdownMenuItem(value: 2, child: Text('۲ ستون')),
+                                DropdownMenuItem(value: 3, child: Text('۳ ستون')),
+                              ],
+                              onChanged: (value) async {
+                                if (value == null) return;
+                                setState(() {
+                                  sections[index] = section.copyWith(columns: value);
+                                });
+                                await _save();
+                              },
+                            ),
                           ],
-                          onChanged: (value) async {
-                            if (value == null) return;
-
-                            setState(() {
-                              sections[index] = section.copyWith(
-                                columns: value,
-                              );
-                            });
-
+                        ),
+                        const Divider(),
+                        ReorderableListView.builder(
+                          shrinkWrap: true,
+                          physics: const NeverScrollableScrollPhysics(),
+                          itemCount: section.fields.length,
+                          onReorder: (oldIndex, newIndex) async {
+                            _moveFieldInside(index, oldIndex, newIndex);
                             await _save();
                           },
+                          itemBuilder: (context, fieldIndex) => _fieldTile(
+                            section.fields[fieldIndex],
+                            index,
+                            fieldIndex,
+                          ),
                         ),
+                        if (section.fields.isEmpty)
+                          const Padding(
+                            padding: EdgeInsets.all(14),
+                            child: Text('این بخش خالی است؛ فیلد را اینجا رها کنید.'),
+                          ),
                       ],
                     ),
-                    const Divider(),
-                    ReorderableListView.builder(
-                      shrinkWrap: true,
-                      physics: const NeverScrollableScrollPhysics(),
-                      itemCount: section.fields.length,
-                      onReorder: (oldFieldIndex, newFieldIndex) {
-                        _moveField(index, oldFieldIndex, newFieldIndex);
-                      },
-                      itemBuilder: (context, fieldIndex) {
-                        final key = section.fields[fieldIndex];
-
-                        final field = widget.schema.field(key);
-
-                        return ListTile(
-                          key: ValueKey('$key-${section.id}'),
-                          leading: const Icon(Icons.drag_indicator),
-                          title: Text(field?.label ?? key),
-                          subtitle: Text(key),
-                        );
-                      },
-                    ),
-                    if (section.fields.isEmpty)
-                      const Padding(
-                        padding: EdgeInsets.all(12),
-                        child: Text('این بخش هنوز فیلدی ندارد.'),
-                      ),
-                  ],
-                ),
-              ),
+                  ),
+                );
+              },
             );
           },
         ),
@@ -714,27 +729,38 @@ class _SearchTab extends StatefulWidget {
 
 class _SearchTabState extends State<_SearchTab> {
   late Set<String> selected;
+  late List<String> filterOrder;
+  late int filterColumns;
 
   @override
   void initState() {
     super.initState();
+    _sync();
+  }
 
+  void _sync() {
     selected = widget.schema.defaultSearchFields.toSet();
+    filterOrder = [...widget.schema.filterFields];
+    if (filterOrder.isEmpty) {
+      filterOrder = widget.schema.fields
+          .where((f) => f.visible && f.filterable && !f.system)
+          .map((f) => f.key)
+          .toList();
+    }
+    filterColumns = widget.schema.filterColumns.clamp(1, 2).toInt();
   }
 
   @override
   void didUpdateWidget(covariant _SearchTab oldWidget) {
     super.didUpdateWidget(oldWidget);
-
     if (oldWidget.schema.schemaVersion != widget.schema.schemaVersion) {
-      selected = widget.schema.defaultSearchFields.toSet();
+      _sync();
     }
   }
 
-  Future<void> _save() async {
+  Future<void> _saveSearch() async {
     try {
       await SchemaService.setSearchFields(selected.toList());
-
       await widget.onChanged();
     } catch (e) {
       if (mounted) {
@@ -745,10 +771,31 @@ class _SearchTabState extends State<_SearchTab> {
     }
   }
 
+  Future<void> _saveFilter() async {
+    try {
+      await SchemaService.setFilterConfig(
+        fields: filterOrder,
+        columns: filterColumns,
+      );
+      await widget.onChanged();
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('خطا در ذخیره چینش فیلتر: $e')),
+        );
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
-    final fields = widget.schema.fields
+    final searchFields = widget.schema.fields
         .where((f) => f.visible && f.searchable)
+        .toList();
+    final filterFields = filterOrder
+        .map(widget.schema.field)
+        .whereType<FieldDefinition>()
+        .where((f) => f.visible && f.filterable && !f.system)
         .toList();
 
     return ListView(
@@ -758,13 +805,17 @@ class _SearchTabState extends State<_SearchTab> {
           child: Padding(
             padding: EdgeInsets.all(16),
             child: Text(
-              'فیلدهایی را انتخاب کنید که جستجوی عمومی '
-              'صفحه اصلی روی آن‌ها انجام شود.',
+              'فیلدهای جستجوی عمومی و فیلترهای صفحه اصلی را جداگانه تنظیم کنید.',
             ),
           ),
         ),
         const SizedBox(height: 12),
-        ...fields.map(
+        const Text(
+          'جستجوی عمومی',
+          style: TextStyle(fontWeight: FontWeight.bold, fontSize: 17),
+        ),
+        const SizedBox(height: 8),
+        ...searchFields.map(
           (field) => CheckboxListTile(
             value: selected.contains(field.key),
             onChanged: (value) async {
@@ -775,12 +826,68 @@ class _SearchTabState extends State<_SearchTab> {
                   selected.remove(field.key);
                 }
               });
-
-              await _save();
+              await _saveSearch();
             },
+            secondary: Icon(_schemaIcon(field.icon, field.type)),
             title: Text(field.label),
             subtitle: Text(field.key),
           ),
+        ),
+        const Divider(height: 32),
+        Row(
+          children: [
+            const Expanded(
+              child: Text(
+                'فیلترهای صفحه اصلی',
+                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 17),
+              ),
+            ),
+            DropdownButton<int>(
+              value: filterColumns,
+              items: const [
+                DropdownMenuItem(value: 1, child: Text('۱ ستون')),
+                DropdownMenuItem(value: 2, child: Text('۲ ستون')),
+              ],
+              onChanged: (value) async {
+                if (value == null) return;
+                setState(() => filterColumns = value);
+                await _saveFilter();
+              },
+            ),
+          ],
+        ),
+        const SizedBox(height: 4),
+        const Text('ترتیب فیلترها را با کشیدن و رها کردن تغییر دهید.'),
+        const SizedBox(height: 8),
+        ReorderableListView.builder(
+          shrinkWrap: true,
+          physics: const NeverScrollableScrollPhysics(),
+          itemCount: filterFields.length,
+          onReorder: (oldIndex, newIndex) async {
+            if (newIndex > oldIndex) newIndex--;
+            final item = filterFields.removeAt(oldIndex);
+            filterFields.insert(newIndex, item);
+            filterOrder = filterFields.map((f) => f.key).toList();
+            setState(() {});
+            await _saveFilter();
+          },
+          itemBuilder: (context, index) {
+            final field = filterFields[index];
+            return Card(
+              key: ValueKey('filter-${field.key}'),
+              child: ListTile(
+                leading: Icon(_schemaIcon(field.icon, field.type)),
+                title: Text(field.label),
+                subtitle: Text(field.key),
+                trailing: const Icon(Icons.drag_indicator_rounded),
+              ),
+            );
+          },
+        ),
+        const SizedBox(height: 8),
+        const Text(
+          'دسته‌بندی و وضعیت یادآور فیلترهای سیستمی هستند و مستقل از این لیست باقی می‌مانند.',
+          style: TextStyle(fontSize: 12),
         ),
       ],
     );
@@ -1011,7 +1118,7 @@ class _CardTabState extends State<_CardTab> {
   @override
   Widget build(BuildContext context) {
     final fields = widget.schema.fields
-        .where((f) => f.visible && f.key != 'Shomare_Radif')
+        .where((f) => f.visible && f.key != 'Shomare_Radif' && f.type != FieldType.category)
         .toList();
 
     final bodyFields = fields.where((f) => f.key != title);
@@ -1147,6 +1254,8 @@ class _FieldEditorDialogState extends State<_FieldEditorDialog> {
   bool suggestions = false;
   bool visible = true;
   bool filterable = true;
+  int gridSpan = 1;
+  String? iconCode;
 
   @override
   void initState() {
@@ -1173,6 +1282,8 @@ class _FieldEditorDialogState extends State<_FieldEditorDialog> {
     suggestions = field?.suggestions ?? false;
     visible = field?.visible ?? true;
     filterable = field?.filterable ?? true;
+    gridSpan = field?.gridSpan ?? 1;
+    iconCode = field?.icon;
   }
 
   bool get editing => widget.initial != null;
@@ -1226,7 +1337,9 @@ class _FieldEditorDialogState extends State<_FieldEditorDialog> {
                 ),
                 items: FieldType.values
                     .where(
-                      (e) => e != FieldType.category && e != FieldType.file,
+                      (e) =>
+                          (e != FieldType.category && e != FieldType.file) ||
+                          (systemField && e == type),
                     )
                     .map(
                       (e) => DropdownMenuItem<FieldType>(
@@ -1253,6 +1366,51 @@ class _FieldEditorDialogState extends State<_FieldEditorDialog> {
                   border: OutlineInputBorder(),
                 ),
                 textDirection: TextDirection.rtl,
+              ),
+              const SizedBox(height: 10),
+              Row(
+                children: [
+                  Expanded(
+                    child: DropdownButtonFormField<int>(
+                      value: gridSpan,
+                      decoration: const InputDecoration(
+                        labelText: 'عرض فیلد در فرم',
+                        border: OutlineInputBorder(),
+                      ),
+                      items: const [
+                        DropdownMenuItem(value: 1, child: Text('یک ستون')),
+                        DropdownMenuItem(value: 2, child: Text('دو ستون')),
+                        DropdownMenuItem(value: 3, child: Text('سه ستون')),
+                      ],
+                      onChanged: (value) {
+                        if (value != null) setState(() => gridSpan = value);
+                      },
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: DropdownButtonFormField<String?>(
+                      value: iconCode,
+                      decoration: const InputDecoration(
+                        labelText: 'آیکون فیلد',
+                        border: OutlineInputBorder(),
+                      ),
+                      items: _iconChoices.map((item) {
+                        return DropdownMenuItem<String?>(
+                          value: item.code,
+                          child: Row(
+                            children: [
+                              Icon(_schemaIcon(item.code, type)),
+                              const SizedBox(width: 8),
+                              Text(item.label),
+                            ],
+                          ),
+                        );
+                      }).toList(),
+                      onChanged: (value) => setState(() => iconCode = value),
+                    ),
+                  ),
+                ],
               ),
               if (type == FieldType.select ||
                   type == FieldType.multiselect) ...[
@@ -1385,8 +1543,9 @@ class _FieldEditorDialogState extends State<_FieldEditorDialog> {
       section: section,
       order: old?.order ?? (widget.existing?.length ?? 0),
       maxLines: type == FieldType.multiline ? 4 : (old?.maxLines ?? 3),
-      icon: old?.icon,
+      icon: iconCode,
       options: options,
+      gridSpan: gridSpan,
     );
 
     Navigator.pop(context, result);
@@ -1402,6 +1561,92 @@ class _FieldEditorDialogState extends State<_FieldEditorDialog> {
 // ============================================================================
 // HELPERS
 // ============================================================================
+
+class _IconChoice {
+  final String code;
+  final String label;
+  const _IconChoice(this.code, this.label);
+}
+
+const _iconChoices = <_IconChoice>[
+  _IconChoice('text', 'متن'),
+  _IconChoice('subject', 'موضوع'),
+  _IconChoice('person', 'شخص'),
+  _IconChoice('person_outline', 'شخص (خطی)'),
+  _IconChoice('numbers', 'عدد'),
+  _IconChoice('event', 'تاریخ'),
+  _IconChoice('event_note', 'تاریخ نامه'),
+  _IconChoice('phone', 'تلفن'),
+  _IconChoice('email', 'ایمیل'),
+  _IconChoice('notes', 'توضیحات'),
+  _IconChoice('description', 'سند'),
+  _IconChoice('attach_file', 'پیوست'),
+  _IconChoice('location_on', 'مکان'),
+  _IconChoice('label', 'برچسب'),
+  _IconChoice('history', 'تاریخچه'),
+  _IconChoice('forward', 'ارجاع'),
+  _IconChoice('link', 'لینک'),
+  _IconChoice('check_circle', 'تأیید'),
+];
+
+IconData _schemaIcon(String? code, FieldType? type) {
+  if (code != null && code.trim().isNotEmpty) {
+    const map = <String, IconData>{
+      'text': Icons.text_fields_outlined,
+      'subject': Icons.subject_outlined,
+      'person': Icons.person_outline,
+      'person_outline': Icons.person_outline,
+      'numbers': Icons.numbers_outlined,
+      'event': Icons.event_outlined,
+      'event_note': Icons.event_note_outlined,
+      'phone': Icons.phone_outlined,
+      'email': Icons.email_outlined,
+      'notes': Icons.notes_outlined,
+      'description': Icons.description_outlined,
+      'attach_file': Icons.attach_file_outlined,
+      'location_on': Icons.location_on_outlined,
+      'label': Icons.label_outline,
+      'history': Icons.history_outlined,
+      'forward': Icons.forward_outlined,
+      'link': Icons.link_outlined,
+      'check_circle': Icons.check_circle_outline,
+    };
+    final named = map[code];
+    if (named != null) return named;
+    final parsed = int.tryParse(code);
+    if (parsed != null) return IconData(parsed, fontFamily: 'MaterialIcons');
+  }
+
+  switch (type) {
+    case FieldType.date:
+    case FieldType.datetime:
+      return Icons.calendar_today_outlined;
+    case FieldType.number:
+      return Icons.numbers_outlined;
+    case FieldType.boolean:
+      return Icons.toggle_on_outlined;
+    case FieldType.select:
+    case FieldType.multiselect:
+      return Icons.list_alt_outlined;
+    case FieldType.phone:
+      return Icons.phone_outlined;
+    case FieldType.email:
+      return Icons.email_outlined;
+    case FieldType.url:
+      return Icons.link_outlined;
+    case FieldType.multiline:
+      return Icons.notes_outlined;
+    case FieldType.category:
+      return Icons.label_outline_rounded;
+    case FieldType.file:
+      return Icons.attach_file_outlined;
+    case FieldType.text:
+    case null:
+      return Icons.text_fields_outlined;
+  }
+}
+
+
 
 String _typeLabel(FieldType type) {
   switch (type) {
