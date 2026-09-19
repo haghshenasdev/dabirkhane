@@ -6,6 +6,8 @@ import 'package:dabirkhane/services/excel_export_service.dart';
 import 'package:dabirkhane/ui/dialogs/backup_restore_dialog.dart';
 import 'package:dabirkhane/ui/dialogs/csv_export_dialog.dart';
 import 'package:dabirkhane/utils/glass_toast.dart';
+import 'package:dabirkhane/services/sync/sync_service.dart';
+import 'package:dabirkhane/services/sync_models.dart';
 
 import '../pages/settings_page.dart';
 import '../pages/stats_page.dart';
@@ -585,8 +587,19 @@ class _HomePageState extends State<HomePage> {
                 ),
 
                 IconButton(
-                  tooltip: 'پشتیبان‌گیری و بازیابی',
-                  icon: const Icon(Icons.backup_rounded),
+                  tooltip: 'پشتیبان‌گیری، بازیابی و هماهنگ‌سازی',
+                  icon: AnimatedBuilder(
+                    animation: SyncService.statusNotifier,
+                    builder: (context, _) {
+                      final status = SyncService.statusNotifier.value;
+                      final color = switch (status) {
+                        SyncStatus.connected => Colors.green,
+                        SyncStatus.syncing || SyncStatus.connecting => Colors.orange,
+                        _ => null,
+                      };
+                      return Icon(Icons.backup_rounded, color: color);
+                    },
+                  ),
                   onPressed: () async {
                     _unfocusSearch();
 

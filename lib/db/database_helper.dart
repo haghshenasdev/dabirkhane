@@ -5,9 +5,13 @@ import 'package:dabirkhane/model/reminder.dart';
 import 'package:path/path.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:sqflite/sqflite.dart';
+import 'package:dabirkhane/services/sync_models.dart';
+import 'package:dabirkhane/utils/app_settings.dart';
+import 'package:dabirkhane/services/sync/sync_network_client.dart';
 
 class DatabaseHelper {
   static Database? _db;
+  static bool _syncApplying = false;
 
   static Future<Database> get database async {
     if (_db != null) return _db!;
@@ -126,12 +130,15 @@ class DatabaseHelper {
 
     return openDatabase(
       dbPath,
-      version: 6,
+      version: 7,
       onCreate: (db, version) async {
         await db.execute('''
           CREATE TABLE IF NOT EXISTS daftare_andicator (
             Shomare_Radif INTEGER PRIMARY KEY AUTOINCREMENT,
-            date TEXT NOT NULL DEFAULT ''
+            date TEXT NOT NULL DEFAULT '',
+            sync_id TEXT,
+            sync_updated_at TEXT,
+            sync_deleted INTEGER NOT NULL DEFAULT 0
           );
         ''');
 
@@ -199,6 +206,8 @@ class DatabaseHelper {
   CREATE INDEX IF NOT EXISTS idx_record_history_created_at
   ON record_history(created_at);
 ''');
+
+        await _createSyncTables(db);
 
         await db.execute('''
           CREATE TABLE IF NOT EXISTS record_schema (
@@ -278,8 +287,177 @@ class DatabaseHelper {
         // نسخه 6 فقط منطق Schema را ارتقا داده است؛ نرمال‌سازی فیلدهای
         // داینامیک هنگام SchemaService.load انجام می‌شود تا با نسخه‌های
         // قبلی که قبلاً نصب شده‌اند نیز سازگار باشد.
+        if (oldVersion < 7) {
+          await _createSyncTables(db);
+          await _ensureSyncColumns(db);
+        }
       },
     );
+  }
+
+  static Future<void> _createSyncTables(DatabaseExecutor db) async {
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS sync_meta (
+        key TEXT PRIMARY KEY,
+        value TEXT
+      );
+    ''');
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS sync_changes (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        change_id TEXT UNIQUE NOT NULL,
+        device_id TEXT NOT NULL,
+        entity_type TEXT NOT NULL,
+        entity_id TEXT NOT NULL,
+        operation TEXT NOT NULL,
+        payload TEXT NOT NULL,
+        created_at TEXT NOT NULL
+      );
+    ''');
+    await db.execute('''
+      CREATE INDEX IF NOT EXISTS idx_sync_changes_entity
+      ON sync_changes(entity_type, entity_id);
+    ''');
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS sync_number_state (
+        id INTEGER PRIMARY KEY CHECK (id = 1),
+        next_number INTEGER NOT NULL
+      );
+    ''');
+  }
+
+  static Future<void> _ensureSyncColumns(DatabaseExecutor db) async {
+    final columns = await db.rawQuery('PRAGMA table_info(daftare_andicator)');
+    final names = columns.map((e) => e['name']?.toString()).toSet();
+    if (!names.contains('sync_id')) await db.execute("ALTER TABLE daftare_andicator ADD COLUMN sync_id TEXT");
+    if (!names.contains('sync_updated_at')) await db.execute("ALTER TABLE daftare_andicator ADD COLUMN sync_updated_at TEXT");
+    if (!names.contains('sync_deleted')) await db.execute("ALTER TABLE daftare_andicator ADD COLUMN sync_deleted INTEGER NOT NULL DEFAULT 0");
+    final rows = await db.query('daftare_andicator', columns: ['Shomare_Radif', 'sync_id']);
+    for (final row in rows) {
+      final id = (row['Shomare_Radif'] as num).toInt();
+      final syncId = row['sync_id']?.toString();
+      if (syncId == null || syncId.isEmpty) {
+        await db.update('daftare_andicator', {'sync_id': 'legacy-record-$id'}, where: 'Shomare_Radif = ?', whereArgs: [id]);
+      }
+    }
+  }
+
+  static Future<int> reserveMasterLetterNumber() async {
+    final db = await database;
+    return db.transaction((txn) async {
+      final rows = await txn.query('sync_number_state', where: 'id = 1', limit: 1);
+      int next;
+      if (rows.isEmpty) {
+        next = ((await _maxLetterNumber(txn)) ?? 0) + 1;
+        await txn.insert('sync_number_state', {'id': 1, 'next_number': next + 1});
+      } else {
+        next = (rows.first['next_number'] as num).toInt();
+        await txn.update('sync_number_state', {'next_number': next + 1}, where: 'id = 1');
+      }
+      return next;
+    });
+  }
+
+  static Future<int?> _maxLetterNumber(DatabaseExecutor db) async {
+    final rows = await db.rawQuery('SELECT MAX(Shomare_Radif) AS maxRadif FROM daftare_andicator');
+    return (rows.first['maxRadif'] as num?)?.toInt();
+  }
+
+  static Future<void> ensureSyncIdentity() async {
+    final db = await database;
+    await _createSyncTables(db);
+    await _ensureSyncColumns(db);
+    final state = await db.query('sync_number_state', where: 'id = 1', limit: 1);
+    if (state.isEmpty && await AppSettings.getSyncRole() == 'master') {
+      final next = ((await _maxLetterNumber(db)) ?? 0) + 1;
+      await db.insert('sync_number_state', {'id': 1, 'next_number': next});
+    }
+    final syncCountRows = await db.rawQuery('SELECT COUNT(*) AS c FROM sync_changes');
+    final syncCount = (syncCountRows.first['c'] as num?)?.toInt() ?? 0;
+    if (syncCount == 0) {
+      final records = await db.query('daftare_andicator');
+      for (final record in records) {
+        final syncId = record['sync_id']?.toString();
+        if (syncId == null || syncId.isEmpty) continue;
+        final categoriesRows = await db.rawQuery('SELECT c.name FROM categories c JOIN record_categories rc ON rc.category_id = c.id WHERE rc.record_id = ?', [record['Shomare_Radif']]);
+        final categories = categoriesRows.map((e) => e['name']?.toString() ?? '').where((e) => e.isNotEmpty).toList();
+        await _logSyncChange(db, entityType: 'record', entityId: syncId, operation: 'upsert', payload: {'record': record, 'categories': categories});
+      }
+    }
+  }
+
+  static Future<void> _logSyncChange(DatabaseExecutor db, {required String entityType, required String entityId, required String operation, required Map<String, dynamic> payload}) async {
+    if (_syncApplying) return;
+    final deviceId = await AppSettings.getDeviceId();
+    final now = DateTime.now().toUtc().toIso8601String();
+    final changeId = '$deviceId-${DateTime.now().microsecondsSinceEpoch}-$entityType-$entityId';
+    await db.insert('sync_changes', {'change_id': changeId, 'device_id': deviceId, 'entity_type': entityType, 'entity_id': entityId, 'operation': operation, 'payload': jsonEncode(payload), 'created_at': now});
+  }
+
+  static Future<List<SyncChange>> getSyncChangesAfter(int id, {int limit = 100}) async {
+    final db = await database;
+    final rows = await db.query('sync_changes', where: 'id > ?', whereArgs: [id], orderBy: 'id ASC', limit: limit);
+    return rows.map((row) => SyncChange.fromMap(Map<String, dynamic>.from(row))).toList();
+  }
+
+  static Future<int> getLastSyncChangeId() async {
+    final db = await database;
+    final rows = await db.rawQuery('SELECT MAX(id) AS id FROM sync_changes');
+    return (rows.first['id'] as num?)?.toInt() ?? 0;
+  }
+
+  static Future<T> runWithoutSyncLogging<T>(Future<T> Function() action) async {
+    final previous = _syncApplying;
+    _syncApplying = true;
+    try { return await action(); } finally { _syncApplying = previous; }
+  }
+
+  static Future<void> applySyncChange(SyncChange change) async {
+    await runWithoutSyncLogging(() async {
+      final db = await database;
+      final p = change.payload;
+      if (change.entityType == 'record') {
+        if (change.operation == 'delete') {
+          await db.update('daftare_andicator', {'sync_deleted': 1, 'sync_updated_at': change.createdAt}, where: 'sync_id = ?', whereArgs: [change.entityId]);
+          return;
+        }
+        final data = Map<String, dynamic>.from(p['record'] as Map? ?? {});
+        final existing = await db.query('daftare_andicator', where: 'sync_id = ?', whereArgs: [change.entityId], limit: 1);
+        data['sync_id'] = change.entityId;
+        data['sync_updated_at'] = change.createdAt;
+        data['sync_deleted'] = 0;
+        if (existing.isEmpty) {
+          await db.insert('daftare_andicator', data);
+        } else {
+          final localId = existing.first['Shomare_Radif'];
+          data.remove('Shomare_Radif');
+          await db.update('daftare_andicator', data, where: 'Shomare_Radif = ?', whereArgs: [localId]);
+        }
+        final local = await db.query('daftare_andicator', columns: ['Shomare_Radif'], where: 'sync_id = ?', whereArgs: [change.entityId], limit: 1);
+        if (local.isNotEmpty) {
+          final localId = local.first['Shomare_Radif'].toString();
+          final categories = (p['categories'] as List? ?? const []).map((e) => e.toString()).toList();
+          await db.delete('record_categories', where: 'record_id = ?', whereArgs: [localId]);
+          for (final cat in categories) {
+            await db.insert('categories', {'name': cat}, conflictAlgorithm: ConflictAlgorithm.ignore);
+            final catRows = await db.query('categories', columns: ['id'], where: 'name = ?', whereArgs: [cat], limit: 1);
+            if (catRows.isNotEmpty) await db.insert('record_categories', {'record_id': localId, 'category_id': catRows.first['id']}, conflictAlgorithm: ConflictAlgorithm.ignore);
+          }
+        }
+        return;
+      }
+      if (change.entityType == 'reminder') {
+        final data = Map<String, dynamic>.from(p['reminder'] as Map? ?? {});
+        final id = int.tryParse(change.entityId);
+        if (id == null) return;
+        if (change.operation == 'delete') {
+          await db.delete('reminders', where: 'id = ?', whereArgs: [id]);
+          return;
+        }
+        final existing = await db.query('reminders', where: 'id = ?', whereArgs: [id], limit: 1);
+        if (existing.isEmpty) await db.insert('reminders', data); else await db.update('reminders', data, where: 'id = ?', whereArgs: [id]);
+      }
+    });
   }
 
   static Future<void> _createDynamicSchemaForLegacyDatabase(DatabaseExecutor db) async {
@@ -583,6 +761,40 @@ class DatabaseHelper {
     final db = await database;
 
     return db.transaction((txn) async {
+      await _ensureSyncColumns(txn);
+      data = Map<String, dynamic>.from(data);
+      if (!data.containsKey('Shomare_Radif') || data['Shomare_Radif'] == null) {
+        final role = await AppSettings.getSyncRole();
+        if (await AppSettings.getSyncEnabled()) {
+          if (role == 'master') {
+            final state = await txn.query('sync_number_state', where: 'id = 1', limit: 1);
+            if (state.isEmpty) {
+              final maxRows = await txn.rawQuery('SELECT MAX(Shomare_Radif) AS maxRadif FROM daftare_andicator');
+              final next = ((maxRows.first['maxRadif'] as num?)?.toInt() ?? 0) + 1;
+              await txn.insert('sync_number_state', {'id': 1, 'next_number': next + 1});
+              data['Shomare_Radif'] = next;
+            } else {
+              final next = (state.first['next_number'] as num).toInt();
+              await txn.update('sync_number_state', {'next_number': next + 1}, where: 'id = 1');
+              data['Shomare_Radif'] = next;
+            }
+          } else {
+            for (var attempt = 0; attempt < 20; attempt++) {
+              final masterNumber = await SyncNetworkClient.requestNextLetterNumber();
+              if (masterNumber == null) break;
+              final exists = await txn.query('daftare_andicator', columns: ['Shomare_Radif'], where: 'Shomare_Radif = ?', whereArgs: [masterNumber], limit: 1);
+              if (exists.isEmpty) {
+                data['Shomare_Radif'] = masterNumber;
+                break;
+              }
+            }
+          }
+        }
+      }
+      final syncId = data['sync_id']?.toString() ?? '${await AppSettings.getDeviceId()}-${DateTime.now().microsecondsSinceEpoch}';
+      data['sync_id'] = syncId;
+      data['sync_updated_at'] = DateTime.now().toUtc().toIso8601String();
+      data['sync_deleted'] = 0;
       final id = await txn.insert('daftare_andicator', data);
 
       await txn.insert('record_history', {
@@ -593,7 +805,7 @@ class DatabaseHelper {
         'new_value': 'نامه ایجاد شد',
         'created_at': DateTime.now().toIso8601String(),
       });
-
+      await _logSyncChange(txn, entityType: 'record', entityId: syncId, operation: 'upsert', payload: {'record': data, 'categories': <String>[]});
       return id;
     });
   }
@@ -639,12 +851,11 @@ class DatabaseHelper {
         }
       }
 
-      final result = await txn.update(
-        'daftare_andicator',
-        data,
-        where: 'Shomare_Radif = ?',
-        whereArgs: [id],
-      );
+      data = Map<String, dynamic>.from(data);
+      data.remove('sync_id');
+      data.remove('sync_deleted');
+      data['sync_updated_at'] = DateTime.now().toUtc().toIso8601String();
+      final result = await txn.update('daftare_andicator', data, where: 'Shomare_Radif = ?', whereArgs: [id]);
 
       if (changedFields.isNotEmpty) {
         final now = DateTime.now().toIso8601String();
@@ -661,6 +872,10 @@ class DatabaseHelper {
         }
       }
 
+      final after = await txn.query('daftare_andicator', where: 'Shomare_Radif = ?', whereArgs: [id], limit: 1);
+      if (after.isNotEmpty) {
+        await _logSyncChange(txn, entityType: 'record', entityId: after.first['sync_id'].toString(), operation: 'upsert', payload: {'record': after.first, 'categories': <String>[]});
+      }
       return result;
     });
   }
@@ -767,7 +982,10 @@ class DatabaseHelper {
   static Future<int> insertReminder(Reminder reminder) async {
     final db = await database;
 
-    return db.insert('reminders', reminder.toMap());
+    final id = await db.insert('reminders', reminder.toMap());
+    final row = await db.query('reminders', where: 'id = ?', whereArgs: [id], limit: 1);
+    if (row.isNotEmpty) await _logSyncChange(db, entityType: 'reminder', entityId: id.toString(), operation: 'upsert', payload: {'reminder': row.first});
+    return id;
   }
 
   /// دریافت یک یادآور با ID
@@ -830,46 +1048,39 @@ class DatabaseHelper {
 
     final db = await database;
 
-    return db.update(
-      'reminders',
-      reminder.toMap(),
-      where: 'id = ?',
-      whereArgs: [reminder.id],
-    );
+    final result = await db.update('reminders', reminder.toMap(), where: 'id = ?', whereArgs: [reminder.id]);
+    final row = await db.query('reminders', where: 'id = ?', whereArgs: [reminder.id], limit: 1);
+    if (row.isNotEmpty) await _logSyncChange(db, entityType: 'reminder', entityId: reminder.id.toString(), operation: 'upsert', payload: {'reminder': row.first});
+    return result;
   }
 
   /// علامت‌گذاری به عنوان انجام‌شده
   static Future<int> completeReminder(int id) async {
     final db = await database;
 
-    return db.update(
-      'reminders',
-      {
-        'status': ReminderStatus.completed,
-        'completed_at': DateTime.now().toIso8601String(),
-      },
-      where: 'id = ?',
-      whereArgs: [id],
-    );
+    final result = await db.update('reminders', {'status': ReminderStatus.completed, 'completed_at': DateTime.now().toIso8601String()}, where: 'id = ?', whereArgs: [id]);
+    final row = await db.query('reminders', where: 'id = ?', whereArgs: [id], limit: 1);
+    if (row.isNotEmpty) await _logSyncChange(db, entityType: 'reminder', entityId: id.toString(), operation: 'upsert', payload: {'reminder': row.first});
+    return result;
   }
 
   /// لغو یادآور
   static Future<int> cancelReminder(int id) async {
     final db = await database;
 
-    return db.update(
-      'reminders',
-      {'status': ReminderStatus.cancelled},
-      where: 'id = ?',
-      whereArgs: [id],
-    );
+    final result = await db.update('reminders', {'status': ReminderStatus.cancelled}, where: 'id = ?', whereArgs: [id]);
+    final row = await db.query('reminders', where: 'id = ?', whereArgs: [id], limit: 1);
+    if (row.isNotEmpty) await _logSyncChange(db, entityType: 'reminder', entityId: id.toString(), operation: 'upsert', payload: {'reminder': row.first});
+    return result;
   }
 
   /// حذف کامل یادآور
   static Future<int> deleteReminder(int id) async {
     final db = await database;
 
-    return db.delete('reminders', where: 'id = ?', whereArgs: [id]);
+    final result = await db.delete('reminders', where: 'id = ?', whereArgs: [id]);
+    if (result > 0) await _logSyncChange(db, entityType: 'reminder', entityId: id.toString(), operation: 'delete', payload: {});
+    return result;
   }
 
   /// یادآورهای فعال و سررسیدشده

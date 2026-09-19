@@ -3,6 +3,7 @@ import 'package:dabirkhane/services/notification_service.dart';
 import 'package:dabirkhane/utils/app_settings.dart';
 import 'db/database_helper.dart';
 import 'services/schema_service.dart';
+import 'services/sync/sync_service.dart';
 import 'pages/schema_config_page.dart';
 
 import 'providers/theme_provider.dart';
@@ -31,6 +32,8 @@ void main() async {
   // The schema itself lives inside SQLite so backup/restore moves
   // the form structure together with the records.
   await DatabaseHelper.database;
+  await DatabaseHelper.ensureSyncIdentity();
+  await SyncService.instance.initialize();
   var schema = await SchemaService.load();
   if (schema == null) {
     await SchemaService.initializeForNewInstall();

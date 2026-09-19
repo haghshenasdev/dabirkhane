@@ -1,4 +1,6 @@
 import 'dart:io';
+import 'dart:math';
+import 'dart:convert';
 
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:path_provider/path_provider.dart';
@@ -16,6 +18,144 @@ class AppSettings {
 
   static const String scannerCamScanner = 'camscanner';
   static const String scannerFastScanner = 'fastscanner';
+
+  // ============================================================
+  // Synchronization
+  // ============================================================
+
+  static const _syncEnabledKey = 'sync_enabled';
+  static const _syncRoleKey = 'sync_role';
+  static const _syncDeviceIdKey = 'sync_device_id';
+  static const _syncDeviceNameKey = 'sync_device_name';
+  static const _syncKeyKey = 'sync_key';
+  static const _syncPeerHostKey = 'sync_peer_host';
+  static const _syncPeerPortKey = 'sync_peer_port';
+  static const _syncPortKey = 'sync_port';
+  static const _syncPullCursorKey = 'sync_peer_pull_cursor';
+  static const _syncPushCursorKey = 'sync_peer_push_cursor';
+  static const _syncLastSuccessKey = 'sync_last_success';
+
+  static Future<bool> getSyncEnabled() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getBool(_syncEnabledKey) ?? false;
+  }
+
+  static Future<void> setSyncEnabled(bool value) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(_syncEnabledKey, value);
+  }
+
+  static Future<String> getSyncRole() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getString(_syncRoleKey) ?? 'client';
+  }
+
+  static Future<void> setSyncRole(String value) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_syncRoleKey, value);
+  }
+
+  static Future<String> getDeviceId() async {
+    final prefs = await SharedPreferences.getInstance();
+    var value = prefs.getString(_syncDeviceIdKey);
+    if (value == null || value.isEmpty) {
+      value = 'dev-${DateTime.now().microsecondsSinceEpoch}-${DateTime.now().millisecond}';
+      await prefs.setString(_syncDeviceIdKey, value);
+    }
+    return value;
+  }
+
+  static Future<String> getSyncDeviceName() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getString(_syncDeviceNameKey) ?? (Platform.isWindows ? 'دبیرخانه ویندوز' : 'دبیرخانه اندروید');
+  }
+
+  static Future<void> setSyncDeviceName(String value) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_syncDeviceNameKey, value);
+  }
+
+  static Future<String> getSyncKey() async {
+    final prefs = await SharedPreferences.getInstance();
+    var value = prefs.getString(_syncKeyKey);
+    if (value == null || value.isEmpty) {
+      value = _generateSyncKey();
+      await prefs.setString(_syncKeyKey, value);
+    }
+    return value;
+  }
+
+  static String _generateSyncKey() {
+    final random = Random.secure();
+    final bytes = List<int>.generate(32, (_) => random.nextInt(256));
+    return 'DK-${base64UrlEncode(bytes).replaceAll('=', '')}';
+  }
+
+  static Future<void> setSyncKey(String value) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_syncKeyKey, value);
+  }
+
+  static Future<String?> getSyncPeerHost() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getString(_syncPeerHostKey);
+  }
+
+  static Future<void> setSyncPeerHost(String? value) async {
+    final prefs = await SharedPreferences.getInstance();
+    if (value == null || value.trim().isEmpty) await prefs.remove(_syncPeerHostKey); else await prefs.setString(_syncPeerHostKey, value.trim());
+  }
+
+  static Future<int> getSyncPeerPort() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getInt(_syncPeerPortKey) ?? 39421;
+  }
+
+  static Future<void> setSyncPeerPort(int value) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setInt(_syncPeerPortKey, value);
+  }
+
+  static Future<int> getSyncPort() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getInt(_syncPortKey) ?? 39421;
+  }
+
+  static Future<void> setSyncPort(int value) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setInt(_syncPortKey, value);
+  }
+
+  static Future<int> getSyncPeerPullCursor() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getInt(_syncPullCursorKey) ?? 0;
+  }
+
+  static Future<void> setSyncPeerPullCursor(int value) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setInt(_syncPullCursorKey, value);
+  }
+
+  static Future<int> getSyncPeerPushCursor() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getInt(_syncPushCursorKey) ?? 0;
+  }
+
+  static Future<void> setSyncPeerPushCursor(int value) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setInt(_syncPushCursorKey, value);
+  }
+
+  static Future<DateTime?> getSyncLastSuccess() async {
+    final prefs = await SharedPreferences.getInstance();
+    final v = prefs.getString(_syncLastSuccessKey);
+    return v == null ? null : DateTime.tryParse(v);
+  }
+
+  static Future<void> setSyncLastSuccess(DateTime value) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_syncLastSuccessKey, value.toIso8601String());
+  }
 
   // ============================================================
   // Backup / Restore history

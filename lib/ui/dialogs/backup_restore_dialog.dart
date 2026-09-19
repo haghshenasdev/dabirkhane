@@ -1,5 +1,8 @@
 import 'dart:io';
 import 'dart:ui';
+import 'package:flutter/services.dart';
+import 'package:dabirkhane/services/sync/sync_service.dart';
+import 'package:dabirkhane/services/sync_models.dart';
 
 import 'package:dabirkhane/services/backup_restore_service.dart';
 import 'package:dabirkhane/utils/app_settings.dart';
@@ -42,18 +45,39 @@ class _BackupRestoreDialogState extends State<BackupRestoreDialog>
 
   bool _loadingHistory = true;
 
+  bool _syncEnabled = false;
+  String _syncRole = 'client';
+  String _syncKey = '';
+  String _syncDeviceName = '';
+  String? _syncPeerHost;
+  int _syncPeerPort = 39421;
+  int _syncPort = 39421;
+  DateTime? _syncLastSuccess;
+  final TextEditingController _syncHostController = TextEditingController();
+  final TextEditingController _syncPortController = TextEditingController();
+  final TextEditingController _syncLocalPortController = TextEditingController();
+  final TextEditingController _syncNameController = TextEditingController();
+  String _localHost = '127.0.0.1';
+  final TextEditingController _syncPairingController = TextEditingController();
+
   @override
   void initState() {
     super.initState();
 
-    _tabController = TabController(length: 2, vsync: this);
+    _tabController = TabController(length: 3, vsync: this);
 
     _loadBackupHistory();
+    _loadSyncSettings();
   }
 
   @override
   void dispose() {
     _tabController.dispose();
+    _syncHostController.dispose();
+    _syncPortController.dispose();
+    _syncLocalPortController.dispose();
+    _syncNameController.dispose();
+    _syncPairingController.dispose();
     super.dispose();
   }
 
@@ -148,6 +172,7 @@ class _BackupRestoreDialogState extends State<BackupRestoreDialog>
                         children: [
                           _buildBackupTab(colorScheme),
                           _buildRestoreTab(colorScheme),
+                          _buildSyncTab(colorScheme),
                         ],
                       ),
                     ),
@@ -537,6 +562,7 @@ class _BackupRestoreDialogState extends State<BackupRestoreDialog>
         tabs: const [
           Tab(icon: Icon(Icons.upload_rounded, size: 19), text: 'پشتیبان‌گیری'),
           Tab(icon: Icon(Icons.download_rounded, size: 19), text: 'بازیابی'),
+          Tab(icon: Icon(Icons.sync_rounded, size: 19), text: 'هماهنگ‌سازی'),
         ],
       ),
     );
@@ -729,6 +755,179 @@ class _BackupRestoreDialogState extends State<BackupRestoreDialog>
         ),
       ),
     );
+  }
+
+  Future<void> _loadSyncSettings() async {
+    final enabled = await AppSettings.getSyncEnabled();
+    final role = await AppSettings.getSyncRole();
+    final key = await AppSettings.getSyncKey();
+    final name = await AppSettings.getSyncDeviceName();
+    final host = await AppSettings.getSyncPeerHost();
+    final peerPort = await AppSettings.getSyncPeerPort();
+    final port = await AppSettings.getSyncPort();
+    final last = await AppSettings.getSyncLastSuccess();
+    if (!mounted) return;
+    _syncHostController.text = host ?? '';
+    _syncPortController.text = peerPort.toString();
+    _syncLocalPortController.text = port.toString();
+    _syncNameController.text = name;
+    final localHost = await _findLocalHost();
+    if (!mounted) return;
+    setState(() {
+      _syncEnabled = enabled;
+      _syncRole = role;
+      _syncKey = key;
+      _syncDeviceName = name;
+      _syncPeerHost = host;
+      _syncPeerPort = peerPort;
+      _syncPort = port;
+      _syncLastSuccess = last;
+      _localHost = localHost;
+    });
+  }
+
+  String _pairingText() => 'DABIRKHANE-SYNC|$_localHost|$_syncPort|$_syncKey';
+
+  Future<String> _findLocalHost() async {
+    try {
+      final interfaces = await NetworkInterface.list(type: InternetAddressType.IPv4, includeLoopback: false);
+      for (final i in interfaces) {
+        for (final a in i.addresses) {
+          if (!a.isLoopback && a.address.isNotEmpty) return a.address;
+        }
+      }
+    } catch (_) {}
+    return '127.0.0.1';
+  }
+
+  Future<void> _saveSyncSettings() async {
+    final port = int.tryParse(_syncLocalPortController.text.trim()) ?? _syncPort;
+    final peerPort = int.tryParse(_syncPortController.text.trim()) ?? _syncPeerPort;
+    await AppSettings.setSyncEnabled(_syncEnabled);
+    await AppSettings.setSyncRole(_syncRole);
+    await AppSettings.setSyncDeviceName(_syncDeviceName.trim().isEmpty ? 'دبیرخانه' : _syncDeviceName.trim());
+    await AppSettings.setSyncPort(port.clamp(1024, 65535).toInt());
+    await AppSettings.setSyncPeerPort(peerPort.clamp(1024, 65535).toInt());
+    await AppSettings.setSyncPeerHost(_syncHostController.text.trim());
+    if (_syncEnabled) {
+      await SyncService.instance.start();
+    } else {
+      await SyncService.instance.stop();
+    }
+    await _loadSyncSettings();
+  }
+
+  Future<void> _applyPairingCode() async {
+    final value = _syncPairingController.text.trim();
+    final parts = value.split('|');
+    if (parts.length < 4 || parts[0] != 'DABIRKHANE-SYNC') {
+      await _showResult(title: 'کد نامعتبر', message: 'کد اتصال دبیرخانه معتبر نیست.', success: false);
+      return;
+    }
+    final host = parts[1];
+    final port = int.tryParse(parts[2]);
+    final key = parts.sublist(3).join('|');
+    if (host.isEmpty || port == null || key.isEmpty) {
+      await _showResult(title: 'کد نامعتبر', message: 'اطلاعات اتصال ناقص است.', success: false);
+      return;
+    }
+    await AppSettings.setSyncPeerHost(host);
+    await AppSettings.setSyncPeerPort(port);
+    await AppSettings.setSyncKey(key);
+    await AppSettings.setSyncEnabled(true);
+    await _loadSyncSettings();
+    await SyncService.instance.start();
+    await SyncService.instance.syncNow();
+  }
+
+  Widget _buildSyncTab(ColorScheme colorScheme) {
+    return AnimatedBuilder(
+      animation: SyncService.statusNotifier,
+      builder: (context, _) {
+        final status = SyncService.statusNotifier.value;
+        final statusColor = switch (status) {
+          SyncStatus.connected => Colors.green,
+          SyncStatus.syncing || SyncStatus.connecting => Colors.orange,
+          SyncStatus.error => colorScheme.error,
+          SyncStatus.disconnected => colorScheme.outline,
+        };
+        final statusText = switch (status) {
+          SyncStatus.connected => 'متصل و هماهنگ',
+          SyncStatus.syncing => 'در حال ارسال و دریافت اطلاعات...',
+          SyncStatus.connecting => 'در حال اتصال...',
+          SyncStatus.error => 'اتصال ناموفق',
+          SyncStatus.disconnected => 'غیرفعال یا بدون اتصال',
+        };
+        return Column(
+          children: [
+            Expanded(
+              child: SingleChildScrollView(
+                padding: const EdgeInsets.fromLTRB(18, 18, 18, 12),
+                child: Column(
+                  children: [
+                    _buildSectionIntro(colorScheme, icon: Icons.sync_rounded, title: 'هماهنگ‌سازی امن بین دو دبیرخانه', description: 'هر دستگاه دیتابیس محلی خودش را دارد و فقط تغییرات و فایل‌های جدید بین دو دستگاه جابه‌جا می‌شوند.'),
+                    const SizedBox(height: 12),
+                    Container(
+                      padding: const EdgeInsets.all(14),
+                      decoration: BoxDecoration(color: statusColor.withOpacity(.08), borderRadius: BorderRadius.circular(17), border: Border.all(color: statusColor.withOpacity(.22))),
+                      child: Row(children: [Icon(Icons.circle, size: 12, color: statusColor), const SizedBox(width: 9), Expanded(child: Text(statusText, style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w800))), if (status == SyncStatus.syncing || status == SyncStatus.connecting) const SizedBox(width: 14, child: CircularProgressIndicator(strokeWidth: 2))]),
+                    ),
+                    const SizedBox(height: 12),
+                    SwitchListTile.adaptive(
+                      contentPadding: const EdgeInsets.symmetric(horizontal: 12),
+                      title: const Text('فعال‌سازی هماهنگ‌سازی', style: TextStyle(fontWeight: FontWeight.w800, fontSize: 13)),
+                      subtitle: const Text('ارتباط فقط با کلید امنیتی ثبت‌شده پذیرفته می‌شود.', style: TextStyle(fontSize: 11)),
+                      value: _syncEnabled,
+                      onChanged: (v) => setState(() => _syncEnabled = v),
+                    ),
+                    const SizedBox(height: 6),
+                    _syncField(label: 'نام این دستگاه', value: _syncDeviceName, onChanged: (v) => _syncDeviceName = v, colorScheme: colorScheme, controller: _syncNameController),
+                    const SizedBox(height: 10),
+                    DropdownButtonFormField<String>(
+                      value: _syncRole,
+                      decoration: const InputDecoration(labelText: 'نقش دستگاه', border: OutlineInputBorder()),
+                      items: const [DropdownMenuItem(value: 'master', child: Text('اصلی / مادر — مرجع شماره نامه')), DropdownMenuItem(value: 'client', child: Text('دستگاه دوم / متصل'))],
+                      onChanged: (v) => setState(() => _syncRole = v ?? 'client'),
+                    ),
+                    const SizedBox(height: 10),
+                    if (_syncRole == 'master') ...[
+                      _buildKeyCard(colorScheme),
+                      const SizedBox(height: 10),
+                      _syncField(label: 'پورت این دستگاه', value: _syncPort.toString(), onChanged: (v) => _syncLocalPortController.text = v, colorScheme: colorScheme, controller: _syncLocalPortController),
+                    ] else ...[
+                      _syncField(label: 'IP یا نام دستگاه مادر', value: _syncHostController.text, onChanged: (v) => _syncHostController.text = v, colorScheme: colorScheme, controller: _syncHostController),
+                      const SizedBox(height: 10),
+                      _syncField(label: 'پورت مادر', value: _syncPeerPort.toString(), onChanged: (v) => _syncPortController.text = v, colorScheme: colorScheme, controller: _syncPortController),
+                      const SizedBox(height: 10),
+                      TextField(controller: _syncPairingController, maxLines: 3, decoration: InputDecoration(labelText: 'کد جفت‌سازی مادر', hintText: 'DABIRKHANE-SYNC|IP|PORT|KEY', border: const OutlineInputBorder(), suffixIcon: IconButton(icon: const Icon(Icons.paste_rounded), onPressed: () async { final d = await Clipboard.getData('text/plain'); if (d?.text != null) _syncPairingController.text = d!.text!; })),),
+                      const SizedBox(height: 8),
+                      Align(alignment: Alignment.centerRight, child: TextButton.icon(onPressed: _applyPairingCode, icon: const Icon(Icons.link_rounded), label: const Text('اعمال کد و اتصال'))),
+                    ],
+                    if (_syncLastSuccess != null) Padding(padding: const EdgeInsets.only(top: 8), child: Align(alignment: Alignment.centerRight, child: Text('آخرین هماهنگی موفق: ${_syncLastSuccess!.toLocal()}', style: TextStyle(fontSize: 11, color: colorScheme.onSurfaceVariant)))),
+                  ],
+                ),
+              ),
+            ),
+            Container(
+              padding: const EdgeInsets.fromLTRB(18, 10, 18, 18),
+              decoration: BoxDecoration(border: Border(top: BorderSide(color: colorScheme.outlineVariant.withOpacity(.30)))),
+              child: Row(children: [Expanded(child: OutlinedButton.icon(onPressed: () async { await Clipboard.setData(ClipboardData(text: _pairingText())); await _showResult(title: 'کد اتصال', message: 'کد اتصال کپی شد. آن را در دستگاه دوم وارد کنید.', success: true); }, icon: const Icon(Icons.copy_rounded), label: const Text('کپی کد اتصال'))), const SizedBox(width: 10), Expanded(child: FilledButton.icon(onPressed: _working ? null : () async { await _saveSyncSettings(); await SyncService.instance.syncNow(); }, icon: const Icon(Icons.sync_rounded), label: const Text('ذخیره و هماهنگ‌سازی')))]),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  Widget _syncField({required String label, required String value, required ValueChanged<String> onChanged, required ColorScheme colorScheme, required TextEditingController controller}) {
+    return TextField(controller: controller, onChanged: onChanged, decoration: InputDecoration(labelText: label, border: const OutlineInputBorder(), isDense: true));
+  }
+
+  Widget _buildKeyCard(ColorScheme colorScheme) {
+    return Container(
+      padding: const EdgeInsets.all(13),
+      decoration: BoxDecoration(color: colorScheme.primary.withOpacity(.06), borderRadius: BorderRadius.circular(17), border: Border.all(color: colorScheme.primary.withOpacity(.18))),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [const Text('کلید امنیتی این دستگاه', style: TextStyle(fontWeight: FontWeight.w800, fontSize: 12.5)), const SizedBox(height: 7), SelectableText(_syncKey, style: const TextStyle(fontSize: 11.5, fontFamily: 'monospace')), const SizedBox(height: 7), Text('کد کامل اتصال برای دستگاه دوم:', style: TextStyle(fontSize: 10.5, color: colorScheme.onSurfaceVariant)), const SizedBox(height: 3), SelectableText(_pairingText(), style: const TextStyle(fontSize: 10.5, fontFamily: 'monospace'))]));
   }
 
   // ============================================================
