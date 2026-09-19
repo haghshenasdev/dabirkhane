@@ -14,7 +14,8 @@ class SyncService {
   SyncService._();
 
   static final SyncService instance = SyncService._();
-  static final ValueNotifier<SyncStatus> _statusNotifier = ValueNotifier<SyncStatus>(SyncStatus.disconnected);
+  static final ValueNotifier<SyncStatus> _statusNotifier =
+      ValueNotifier<SyncStatus>(SyncStatus.disconnected);
   static ValueNotifier<SyncStatus> get statusNotifier => _statusNotifier;
 
   HttpServer? _server;
@@ -45,10 +46,17 @@ class SyncService {
     if (_server == null) {
       final port = await AppSettings.getSyncPort();
       try {
-        _server = await HttpServer.bind(InternetAddress.anyIPv4, port, shared: true);
-        _server!.listen(_handleRequest, onError: (_) {
-          _setStatus(SyncStatus.error, 'خطا در سرور هماهنگ‌سازی');
-        });
+        _server = await HttpServer.bind(
+          InternetAddress.anyIPv4,
+          port,
+          shared: true,
+        );
+        _server!.listen(
+          _handleRequest,
+          onError: (_) {
+            _setStatus(SyncStatus.error, 'خطا در سرور هماهنگ‌سازی');
+          },
+        );
       } catch (e) {
         _lastError = 'امکان باز کردن پورت هماهنگ‌سازی وجود ندارد: $e';
         _setStatus(SyncStatus.error, _lastError);
@@ -61,7 +69,8 @@ class SyncService {
       final role = await AppSettings.getSyncRole();
       if (role == 'master') {
         final last = _lastPeerActivity;
-        if (last == null || DateTime.now().difference(last) > const Duration(seconds: 35)) {
+        if (last == null ||
+            DateTime.now().difference(last) > const Duration(seconds: 35)) {
           _setStatus(SyncStatus.disconnected);
         }
       } else {
@@ -148,7 +157,10 @@ class SyncService {
 
   Future<void> _pushLocal(String host, int port, String key) async {
     final cursor = await AppSettings.getSyncPeerPushCursor();
-    final changes = await DatabaseHelper.getSyncChangesAfter(cursor, limit: 100);
+    final changes = await DatabaseHelper.getSyncChangesAfter(
+      cursor,
+      limit: 100,
+    );
     if (changes.isEmpty) return;
 
     final response = await _requestJson(
@@ -157,9 +169,7 @@ class SyncService {
       host: host,
       port: port,
       key: key,
-      body: {
-        'changes': changes.map((e) => e.toMap()).toList(),
-      },
+      body: {'changes': changes.map((e) => e.toMap()).toList()},
     );
 
     if (response['ok'] == true) {
@@ -194,7 +204,10 @@ class SyncService {
       final req = await client.post(host, port, '/sync/file');
       final timestamp = DateTime.now().millisecondsSinceEpoch.toString();
       req.headers.set('x-sync-timestamp', timestamp);
-      req.headers.set('x-sync-signature', _sign(key, timestamp, 'POST', '/sync/file', base64Encode(bytes)));
+      req.headers.set(
+        'x-sync-signature',
+        _sign(key, timestamp, 'POST', '/sync/file', base64Encode(bytes)),
+      );
       req.headers.set('x-sync-path', Uri.encodeComponent(rel));
       req.headers.contentType = ContentType('application', 'octet-stream');
       req.add(bytes);
@@ -219,7 +232,9 @@ class SyncService {
     final result = <Map<String, dynamic>>[];
     await for (final entity in root.list(recursive: true, followLinks: false)) {
       if (entity is! File) continue;
-      final rel = path.relative(entity.path, from: root.path).replaceAll('\\', '/');
+      final rel = path
+          .relative(entity.path, from: root.path)
+          .replaceAll('\\', '/');
       final bytes = await entity.readAsBytes();
       final hash = sha256.convert(bytes).toString();
       result.add({'path': rel, 'sha256': hash, 'size': bytes.length});
@@ -227,14 +242,22 @@ class SyncService {
     return result;
   }
 
-  Future<void> _downloadFile(String host, int port, String key, String rel) async {
+  Future<void> _downloadFile(
+    String host,
+    int port,
+    String key,
+    String rel,
+  ) async {
     final client = HttpClient();
     try {
       final route = '/sync/file?path=${Uri.encodeQueryComponent(rel)}';
       final timestamp = DateTime.now().millisecondsSinceEpoch.toString();
       final req = await client.get(host, port, route);
       req.headers.set('x-sync-timestamp', timestamp);
-      req.headers.set('x-sync-signature', _sign(key, timestamp, 'GET', route, ''));
+      req.headers.set(
+        'x-sync-signature',
+        _sign(key, timestamp, 'GET', route, ''),
+      );
       final res = await req.close();
       if (res.statusCode != 200) return;
       final bytes = await res.fold<List<int>>(<int>[], (a, b) => a..addAll(b));
@@ -242,7 +265,9 @@ class SyncService {
       final target = File(path.join(root.path, rel));
       await target.parent.create(recursive: true);
       if (await target.exists()) {
-        final existingHash = sha256.convert(await target.readAsBytes()).toString();
+        final existingHash = sha256
+            .convert(await target.readAsBytes())
+            .toString();
         if (existingHash == sha256.convert(bytes).toString()) return;
       }
       await target.writeAsBytes(bytes, flush: true);
@@ -251,9 +276,17 @@ class SyncService {
     }
   }
 
-  String _sign(String key, String timestamp, String method, String route, String body) {
+  String _sign(
+    String key,
+    String timestamp,
+    String method,
+    String route,
+    String body,
+  ) {
     final mac = Hmac(sha256, utf8.encode(key));
-    return mac.convert(utf8.encode('$timestamp|$method|$route|$body')).toString();
+    return mac
+        .convert(utf8.encode('$timestamp|$method|$route|$body'))
+        .toString();
   }
 
   Future<Map<String, dynamic>> _requestJson(
@@ -272,7 +305,10 @@ class SyncService {
       final bodyText = body == null ? '' : jsonEncode(body);
       final timestamp = DateTime.now().millisecondsSinceEpoch.toString();
       req.headers.set('x-sync-timestamp', timestamp);
-      req.headers.set('x-sync-signature', _sign(key, timestamp, method, route, bodyText));
+      req.headers.set(
+        'x-sync-signature',
+        _sign(key, timestamp, method, route, bodyText),
+      );
       req.headers.contentType = ContentType.json;
       if (bodyText.isNotEmpty) req.write(bodyText);
       final res = await req.close();
@@ -280,7 +316,9 @@ class SyncService {
       if (res.statusCode < 200 || res.statusCode >= 300) {
         throw Exception(text.isEmpty ? 'HTTP ${res.statusCode}' : text);
       }
-      return text.isEmpty ? <String, dynamic>{} : Map<String, dynamic>.from(jsonDecode(text) as Map);
+      return text.isEmpty
+          ? <String, dynamic>{}
+          : Map<String, dynamic>.from(jsonDecode(text) as Map);
     } finally {
       client.close(force: true);
     }
@@ -289,13 +327,27 @@ class SyncService {
   Future<void> _handleRequest(HttpRequest request) async {
     try {
       final key = await AppSettings.getSyncKey();
-      final bodyBytes = request.method == 'POST' ? await request.fold<List<int>>(<int>[], (a, b) => a..addAll(b)) : <int>[];
+      final bodyBytes = request.method == 'POST'
+          ? await request.fold<List<int>>(<int>[], (a, b) => a..addAll(b))
+          : <int>[];
       final timestamp = request.headers.value('x-sync-timestamp') ?? '';
       final signature = request.headers.value('x-sync-signature') ?? '';
       final parsedTimestamp = int.tryParse(timestamp);
-      final fresh = parsedTimestamp != null && (DateTime.now().millisecondsSinceEpoch - parsedTimestamp).abs() <= 120000;
-      final bodyForSignature = request.method == 'POST' && request.uri.path == '/sync/file' ? base64Encode(bodyBytes) : utf8.decode(bodyBytes);
-      final expected = _sign(key, timestamp, request.method, request.uri.toString(), bodyForSignature);
+      final fresh =
+          parsedTimestamp != null &&
+          (DateTime.now().millisecondsSinceEpoch - parsedTimestamp).abs() <=
+              120000;
+      final bodyForSignature =
+          request.method == 'POST' && request.uri.path == '/sync/file'
+          ? base64Encode(bodyBytes)
+          : utf8.decode(bodyBytes);
+      final expected = _sign(
+        key,
+        timestamp,
+        request.method,
+        request.uri.toString(),
+        bodyForSignature,
+      );
       if (key.isEmpty || !fresh || signature != expected) {
         request.response.statusCode = HttpStatus.unauthorized;
         await request.response.close();
@@ -306,12 +358,15 @@ class SyncService {
 
       final uri = request.uri;
       if (uri.path == '/sync/info' && request.method == 'GET') {
+        final role = await AppSettings.getSyncRole();
+
         await _writeJson(request, {
           'ok': true,
           'device_id': await AppSettings.getDeviceId(),
-          'role': (await AppSettings.getSyncRole()).name,
+          'role': role,
           'port': await AppSettings.getSyncPort(),
         });
+
         return;
       }
 
@@ -329,7 +384,10 @@ class SyncService {
 
       if (uri.path == '/sync/pull' && request.method == 'GET') {
         final after = int.tryParse(uri.queryParameters['after'] ?? '') ?? 0;
-        final changes = await DatabaseHelper.getSyncChangesAfter(after, limit: 100);
+        final changes = await DatabaseHelper.getSyncChangesAfter(
+          after,
+          limit: 100,
+        );
         final last = await DatabaseHelper.getLastSyncChangeId();
         await _writeJson(request, {
           'ok': true,
@@ -383,7 +441,9 @@ class SyncService {
       }
 
       if (uri.path == '/sync/file' && request.method == 'POST') {
-        final rel = Uri.decodeComponent(request.headers.value('x-sync-path') ?? '');
+        final rel = Uri.decodeComponent(
+          request.headers.value('x-sync-path') ?? '',
+        );
         if (rel.isEmpty || path.isAbsolute(rel) || rel.contains('..')) {
           request.response.statusCode = HttpStatus.badRequest;
           await request.response.close();
@@ -422,7 +482,7 @@ class SyncService {
       await request.response.close();
     } catch (e) {
       request.response.statusCode = HttpStatus.internalServerError;
-      await request.response.write(jsonEncode({'ok': false, 'error': e.toString()}));
+      request.response.write(jsonEncode({'ok': false, 'error': e.toString()}));
       await request.response.close();
     }
   }
@@ -434,10 +494,16 @@ class SyncService {
     return Map<String, dynamic>.from(jsonDecode(text) as Map);
   }
 
-  Future<void> _writeJson(HttpRequest request, Map<String, dynamic> data) async {
-    request.response.headers.contentType = ContentType.json;
-    request.response.write(jsonEncode(data));
-    await request.response.close();
+  Future<void> _writeJson(
+    HttpRequest request,
+    Map<String, dynamic> data,
+  ) async {
+    final response = request.response;
+
+    response.headers.contentType = ContentType.json;
+    response.add(utf8.encode(jsonEncode(data)));
+
+    await response.close();
   }
 
   void _setStatus(SyncStatus value, [String? error]) {
@@ -445,4 +511,3 @@ class SyncService {
     _statusNotifier.value = value;
   }
 }
-
