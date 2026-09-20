@@ -11,13 +11,31 @@ import 'package:dabirkhane/services/sync/sync_network_client.dart';
 
 class DatabaseHelper {
   static Database? _db;
+  static Future<Database>? _dbOpening;
   static bool _syncApplying = false;
 
   static Future<Database> get database async {
     if (_db != null) return _db!;
 
-    _db = await initDb();
-    return _db!;
+    // از باز شدن هم‌زمان چند connection جلوگیری می‌کنیم.
+    // این موضوع برای Migrationهای SQLite بسیار مهم است؛ چون اگر دو
+    // فراخوانی هم‌زمان وارد onUpgrade شوند، ممکن است هر دو تشخیص دهند
+    // که یک ستون وجود ندارد و هر دو ALTER TABLE اجرا کنند.
+    final opening = _dbOpening;
+    if (opening != null) {
+      return opening;
+    }
+
+    final future = initDb();
+    _dbOpening = future;
+
+    try {
+      final db = await future;
+      _db = db;
+      return db;
+    } finally {
+      _dbOpening = null;
+    }
   }
 
   static Future<String> _dbPath() async {
@@ -94,7 +112,8 @@ class DatabaseHelper {
     return null;
   }
 
-  static String _quoteIdentifier(String value) => '"${value.replaceAll('"', '""')}"';
+  static String _quoteIdentifier(String value) =>
+      '"${value.replaceAll('"', '""')}"';
 
   static Future<void> _ensureFieldExists(String field) async {
     final columns = await _columns();
@@ -114,11 +133,24 @@ class DatabaseHelper {
     final rows = await db.query('record_schema', where: 'id = 1', limit: 1);
     if (rows.isEmpty) return ['Shomare_Radif'];
     try {
-      final fieldsDecoded = jsonDecode(rows.first['fields_json'].toString()) as Map<String, dynamic>;
+      final fieldsDecoded =
+          jsonDecode(rows.first['fields_json'].toString())
+              as Map<String, dynamic>;
       final fields = (fieldsDecoded['fields'] as List?) ?? const [];
-      final searchable = fields.whereType<Map>().where((e) => e['searchable'] == true && e['visible'] != false).map((e) => e['key'].toString()).toSet();
-      final searchDecoded = jsonDecode(rows.first['search_json'].toString()) as Map<String, dynamic>;
-      final configured = (searchDecoded['defaultFields'] as List?)?.map((e) => e.toString()).where(searchable.contains).toList() ?? const <String>[];
+      final searchable = fields
+          .whereType<Map>()
+          .where((e) => e['searchable'] == true && e['visible'] != false)
+          .map((e) => e['key'].toString())
+          .toSet();
+      final searchDecoded =
+          jsonDecode(rows.first['search_json'].toString())
+              as Map<String, dynamic>;
+      final configured =
+          (searchDecoded['defaultFields'] as List?)
+              ?.map((e) => e.toString())
+              .where(searchable.contains)
+              .toList() ??
+          const <String>[];
       return configured.isNotEmpty ? configured : searchable.toList();
     } catch (_) {
       return ['Shomare_Radif'];
@@ -128,105 +160,110 @@ class DatabaseHelper {
   static Future<Database> initDb() async {
     final dbPath = await _dbPath();
 
-    return openDatabase(
+    print('========== DATABASE START ==========');
+    print('DB PATH: $dbPath');
+    print('OPENING DATABASE...');
+
+    final db = await openDatabase(
       dbPath,
-      version: 7,
+      version: 9,
+
+      onConfigure: (db) async {
+        print('DATABASE: onConfigure');
+        await db.execute('PRAGMA foreign_keys = ON');
+        print('DATABASE: onConfigure DONE');
+      },
+
       onCreate: (db, version) async {
-        await db.execute('''
-          CREATE TABLE IF NOT EXISTS daftare_andicator (
-            Shomare_Radif INTEGER PRIMARY KEY AUTOINCREMENT,
-            date TEXT NOT NULL DEFAULT '',
-            sync_id TEXT,
-            sync_updated_at TEXT,
-            sync_deleted INTEGER NOT NULL DEFAULT 0
-          );
-        ''');
-
-        await db.execute('''
-          CREATE TABLE IF NOT EXISTS categories (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            name TEXT UNIQUE NOT NULL
-          );
-        ''');
-
-        await db.execute('''
-          CREATE TABLE IF NOT EXISTS record_categories (
-            record_id TEXT NOT NULL,
-            category_id INTEGER NOT NULL,
-            PRIMARY KEY (record_id, category_id),
-            FOREIGN KEY (record_id)
-              REFERENCES daftare_andicator(Shomare_Radif)
-              ON DELETE CASCADE,
-            FOREIGN KEY (category_id)
-              REFERENCES categories(id)
-              ON DELETE CASCADE
-          );
-        ''');
-
-        await db.execute('''
-  CREATE TABLE IF NOT EXISTS reminders (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    record_id INTEGER NOT NULL,
-    due_date TEXT NOT NULL,
-    text TEXT NOT NULL,
-    status INTEGER NOT NULL DEFAULT 0,
-    created_at TEXT NOT NULL,
-    completed_at TEXT
-  );
-''');
-
-        await db.execute('''
-  CREATE INDEX IF NOT EXISTS idx_reminders_record_id
-  ON reminders(record_id);
-''');
-
-        await db.execute('''
-  CREATE INDEX IF NOT EXISTS idx_reminders_due_date
-  ON reminders(due_date);
-''');
-
-        await db.execute('''
-  CREATE TABLE IF NOT EXISTS record_history (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    record_id INTEGER NOT NULL,
-    action TEXT NOT NULL,
-    field_name TEXT,
-    old_value TEXT,
-    new_value TEXT,
-    created_at TEXT NOT NULL
-  );
-''');
-
-        await db.execute('''
-  CREATE INDEX IF NOT EXISTS idx_record_history_record_id
-  ON record_history(record_id);
-''');
-
-        await db.execute('''
-  CREATE INDEX IF NOT EXISTS idx_record_history_created_at
-  ON record_history(created_at);
-''');
-
-        await _createSyncTables(db);
-
-        await db.execute('''
-          CREATE TABLE IF NOT EXISTS record_schema (
-            id INTEGER PRIMARY KEY CHECK (id = 1),
-            schema_version INTEGER NOT NULL DEFAULT 1,
-            fields_json TEXT NOT NULL,
-            layout_json TEXT NOT NULL,
-            search_json TEXT NOT NULL,
-            stats_json TEXT NOT NULL,
-          card_json TEXT NOT NULL DEFAULT '{}',
-            created_at TEXT NOT NULL,
-            updated_at TEXT NOT NULL
-          );
-        ''');
+        print('DATABASE: onCreate');
+        await _ensureCoreTables(db);
+        await _ensureLegacyRecordColumns(db);
+        await _ensureRecordSchemaTable(db);
+        await _ensureRecordSchemaColumns(db);
+        await _ensureSyncTablesAndColumns(db);
+        print('DATABASE: onCreate DONE');
       },
 
       onUpgrade: (db, oldVersion, newVersion) async {
-        if (oldVersion < 2) {
-          await db.execute('''
+        print('DATABASE: onUpgrade $oldVersion -> $newVersion');
+
+        await _migrateToLatest(db);
+
+        print('DATABASE: onUpgrade DONE');
+      },
+    );
+
+    print('DATABASE OPENED');
+    print('========== DATABASE END ==========');
+
+    return db;
+  }
+  // ============================================================
+  // DATABASE SCHEMA / MIGRATION
+  // ============================================================
+
+  /// Migration مقاوم در برابر دیتابیس‌های قدیمی و Migrationهای ناقص.
+  /// این متد عمداً به oldVersion وابسته نیست و ساختار واقعی SQLite را
+  /// بررسی و در صورت نیاز تکمیل می‌کند.
+  static Future<void> _migrateToLatest(DatabaseExecutor db) async {
+    print('MIGRATION: START');
+
+    print('MIGRATION: _ensureCoreTables');
+    await _ensureCoreTables(db);
+    print('MIGRATION: _ensureCoreTables DONE');
+
+    print('MIGRATION: _ensureLegacyRecordColumns');
+    await _ensureLegacyRecordColumns(db);
+    print('MIGRATION: _ensureLegacyRecordColumns DONE');
+
+    print('MIGRATION: _ensureRecordSchemaTable');
+    await _ensureRecordSchemaTable(db);
+    print('MIGRATION: _ensureRecordSchemaTable DONE');
+
+    print('MIGRATION: _ensureRecordSchemaColumns');
+    await _ensureRecordSchemaColumns(db);
+    print('MIGRATION: _ensureRecordSchemaColumns DONE');
+
+    print('MIGRATION: _ensureSyncTablesAndColumns');
+    await _ensureSyncTablesAndColumns(db);
+    print('MIGRATION: _ensureSyncTablesAndColumns DONE');
+
+    print('MIGRATION: ALL DONE');
+  }
+
+  static Future<void> _ensureCoreTables(DatabaseExecutor db) async {
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS daftare_andicator (
+        Shomare_Radif INTEGER PRIMARY KEY AUTOINCREMENT,
+        date TEXT NOT NULL DEFAULT '',
+        sync_id TEXT,
+        sync_updated_at TEXT,
+        sync_deleted INTEGER NOT NULL DEFAULT 0
+      );
+    ''');
+
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS categories (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT UNIQUE NOT NULL
+      );
+    ''');
+
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS record_categories (
+        record_id TEXT NOT NULL,
+        category_id INTEGER NOT NULL,
+        PRIMARY KEY (record_id, category_id),
+        FOREIGN KEY (record_id)
+          REFERENCES daftare_andicator(Shomare_Radif)
+          ON DELETE CASCADE,
+        FOREIGN KEY (category_id)
+          REFERENCES categories(id)
+          ON DELETE CASCADE
+      );
+    ''');
+
+    await db.execute('''
       CREATE TABLE IF NOT EXISTS reminders (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         record_id INTEGER NOT NULL,
@@ -238,61 +275,254 @@ class DatabaseHelper {
       );
     ''');
 
-          await db.execute('''
+    await db.execute('''
       CREATE INDEX IF NOT EXISTS idx_reminders_record_id
       ON reminders(record_id);
     ''');
 
-          await db.execute('''
+    await db.execute('''
       CREATE INDEX IF NOT EXISTS idx_reminders_due_date
       ON reminders(due_date);
     ''');
-        }
 
-        if (oldVersion < 3) {
-          await db.execute('''
-    CREATE TABLE IF NOT EXISTS record_history (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      record_id INTEGER NOT NULL,
-      action TEXT NOT NULL,
-      field_name TEXT,
-      old_value TEXT,
-      new_value TEXT,
-      created_at TEXT NOT NULL
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS record_history (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        record_id INTEGER NOT NULL,
+        action TEXT NOT NULL,
+        field_name TEXT,
+        old_value TEXT,
+        new_value TEXT,
+        created_at TEXT NOT NULL
+      );
+    ''');
+
+    await db.execute('''
+      CREATE INDEX IF NOT EXISTS idx_record_history_record_id
+      ON record_history(record_id);
+    ''');
+
+    await db.execute('''
+      CREATE INDEX IF NOT EXISTS idx_record_history_created_at
+      ON record_history(created_at);
+    ''');
+  }
+
+  static Future<bool> _tableExists(DatabaseExecutor db, String table) async {
+    final rows = await db.rawQuery(
+      'SELECT name FROM sqlite_master WHERE type = ? AND lower(name) = lower(?)',
+      ['table', table],
     );
-  ''');
+    return rows.isNotEmpty;
+  }
 
-          await db.execute('''
-    CREATE INDEX IF NOT EXISTS idx_record_history_record_id
-    ON record_history(record_id);
-  ''');
-
-          await db.execute('''
-    CREATE INDEX IF NOT EXISTS idx_record_history_created_at
-    ON record_history(created_at);
-  ''');
-        }
-
-        if (oldVersion < 4) {
-          await _createDynamicSchemaForLegacyDatabase(db);
-        }
-
-        // نسخه 5: ستون card_json و ستون date را برای دیتابیس‌های قدیمی
-        // تضمین می‌کند. در نسخه‌های قبلی این متد تعریف شده بود اما از
-        // onUpgrade فراخوانی نمی‌شد.
-        if (oldVersion < 6) {
-          await _ensureV5(db);
-        }
-
-        // نسخه 6 فقط منطق Schema را ارتقا داده است؛ نرمال‌سازی فیلدهای
-        // داینامیک هنگام SchemaService.load انجام می‌شود تا با نسخه‌های
-        // قبلی که قبلاً نصب شده‌اند نیز سازگار باشد.
-        if (oldVersion < 7) {
-          await _createSyncTables(db);
-          await _ensureSyncColumns(db);
-        }
-      },
+  static Future<Set<String>> _tableColumns(
+    DatabaseExecutor db,
+    String table,
+  ) async {
+    if (!await _tableExists(db, table)) return <String>{};
+    final rows = await db.rawQuery(
+      'PRAGMA table_info(${_sqlIdentifier(table)})',
     );
+    return rows
+        .map((row) => row['name']?.toString() ?? '')
+        .where((name) => name.isNotEmpty)
+        .toSet();
+  }
+
+  static String _sqlIdentifier(String value) {
+    return '"${value.replaceAll('"', '""')}"';
+  }
+
+  static Future<void> _addColumnIfMissing(
+    DatabaseExecutor db, {
+    required String table,
+    required String column,
+    required String definition,
+  }) async {
+    final normalizedColumn = column.trim().toLowerCase();
+
+    // SQLite نام ستون‌ها را case-insensitive در نظر می‌گیرد؛ بنابراین
+    // مقایسه‌ی case-sensitive می‌تواند به duplicate column ختم شود.
+    final columns = await _tableColumns(db, table);
+    final exists = columns.any(
+      (name) => name.trim().toLowerCase() == normalizedColumn,
+    );
+
+    if (exists) return;
+
+    try {
+      await db.execute(
+        'ALTER TABLE ${_sqlIdentifier(table)} '
+        'ADD COLUMN ${_sqlIdentifier(column)} $definition',
+      );
+    } catch (e) {
+      // یک فراخوانی هم‌زمان یا یک state متفاوت SQLite ممکن است باعث شود
+      // PRAGMA قبل از ALTER ستون را نبیند؛ در این حالت بعد از خطا دوباره
+      // ساختار را می‌خوانیم.
+      final columnsAfterError = await _tableColumns(db, table);
+      final existsAfterError = columnsAfterError.any(
+        (name) => name.trim().toLowerCase() == normalizedColumn,
+      );
+
+      if (existsAfterError) return;
+
+      final message = e.toString().toLowerCase();
+      if (message.contains('duplicate column name') ||
+          message.contains('duplicate column') ||
+          message.contains('already exists')) {
+        // برای این متد، چنین خطایی فقط زمانی قابل چشم‌پوشی است که ستون
+        // واقعاً وجود داشته باشد. اگر PRAGMA وجود آن را تأیید نکرد،
+        // خطا را مخفی نمی‌کنیم تا خرابی واقعی دیتابیس پنهان نماند.
+        rethrow;
+      }
+
+      rethrow;
+    }
+  }
+
+  /// همه فیلدهای قدیمی را نگه می‌داریم تا اطلاعات دیتابیس‌های قبلی
+  /// هرگز به خاطر Migration از بین نرود.
+  static Future<void> _ensureLegacyRecordColumns(DatabaseExecutor db) async {
+    if (!await _tableExists(db, 'daftare_andicator')) return;
+
+    const textColumns = <String>[
+      'saheb_name',
+      'guy',
+      'sh_name_reside',
+      'onvan',
+      'comment',
+      'shomare_badi',
+      'goshashte',
+      'from_pywa',
+      't_name_reside',
+      'wordmost2',
+      't_name_ersali',
+      'adres_name',
+    ];
+
+    for (final column in textColumns) {
+      await _addColumnIfMissing(
+        db,
+        table: 'daftare_andicator',
+        column: column,
+        definition: 'TEXT',
+      );
+    }
+
+    await _addColumnIfMissing(
+      db,
+      table: 'daftare_andicator',
+      column: 'date',
+      definition: "TEXT NOT NULL DEFAULT ''",
+    );
+    await _addColumnIfMissing(
+      db,
+      table: 'daftare_andicator',
+      column: 'sync_id',
+      definition: 'TEXT',
+    );
+    await _addColumnIfMissing(
+      db,
+      table: 'daftare_andicator',
+      column: 'sync_updated_at',
+      definition: 'TEXT',
+    );
+    await _addColumnIfMissing(
+      db,
+      table: 'daftare_andicator',
+      column: 'sync_deleted',
+      definition: 'INTEGER NOT NULL DEFAULT 0',
+    );
+  }
+
+  static Future<void> _ensureRecordSchemaTable(DatabaseExecutor db) async {
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS record_schema (
+        id INTEGER PRIMARY KEY CHECK (id = 1),
+        schema_version INTEGER NOT NULL DEFAULT 1,
+        fields_json TEXT NOT NULL DEFAULT '{}',
+        layout_json TEXT NOT NULL DEFAULT '{}',
+        search_json TEXT NOT NULL DEFAULT '{}',
+        stats_json TEXT NOT NULL DEFAULT '{}',
+        card_json TEXT NOT NULL DEFAULT '{}',
+        created_at TEXT NOT NULL DEFAULT '',
+        updated_at TEXT NOT NULL DEFAULT ''
+      );
+    ''');
+  }
+
+  static Future<void> _ensureRecordSchemaColumns(DatabaseExecutor db) async {
+    await _ensureRecordSchemaTable(db);
+
+    await _addColumnIfMissing(
+      db,
+      table: 'record_schema',
+      column: 'schema_version',
+      definition: 'INTEGER NOT NULL DEFAULT 1',
+    );
+    await _addColumnIfMissing(
+      db,
+      table: 'record_schema',
+      column: 'fields_json',
+      definition: "TEXT NOT NULL DEFAULT '{}'",
+    );
+    await _addColumnIfMissing(
+      db,
+      table: 'record_schema',
+      column: 'layout_json',
+      definition: "TEXT NOT NULL DEFAULT '{}'",
+    );
+    await _addColumnIfMissing(
+      db,
+      table: 'record_schema',
+      column: 'search_json',
+      definition: "TEXT NOT NULL DEFAULT '{}'",
+    );
+    await _addColumnIfMissing(
+      db,
+      table: 'record_schema',
+      column: 'stats_json',
+      definition: "TEXT NOT NULL DEFAULT '{}'",
+    );
+    await _addColumnIfMissing(
+      db,
+      table: 'record_schema',
+      column: 'card_json',
+      definition: "TEXT NOT NULL DEFAULT '{}'",
+    );
+    await _addColumnIfMissing(
+      db,
+      table: 'record_schema',
+      column: 'created_at',
+      definition: "TEXT NOT NULL DEFAULT ''",
+    );
+    await _addColumnIfMissing(
+      db,
+      table: 'record_schema',
+      column: 'updated_at',
+      definition: "TEXT NOT NULL DEFAULT ''",
+    );
+
+    final rows = await db.query(
+      'record_schema',
+      columns: ['id'],
+      where: 'id = 1',
+      limit: 1,
+    );
+
+    if (rows.isEmpty) {
+      // در نصب جدید هنوز رکوردی وجود ندارد؛ SchemaService باید Schema
+      // اولیه خودش را بسازد. اما اگر دیتابیس قدیمی رکورد دارد و Schema
+      // آن از بین رفته/ناقص شده، باید Schema سازگار با Legacy ساخته شود.
+      final countRows = await db.rawQuery(
+        'SELECT COUNT(*) AS c FROM daftare_andicator',
+      );
+      final count = (countRows.first['c'] as num?)?.toInt() ?? 0;
+      if (count > 0) {
+        await _createDynamicSchemaForLegacyDatabase(db);
+      }
+    }
   }
 
   static Future<void> _createSyncTables(DatabaseExecutor db) async {
@@ -326,40 +556,94 @@ class DatabaseHelper {
     ''');
   }
 
+  static Future<void> _ensureSyncTablesAndColumns(DatabaseExecutor db) async {
+    await _createSyncTables(db);
+    await _ensureSyncColumns(db);
+  }
+
   static Future<void> _ensureSyncColumns(DatabaseExecutor db) async {
-    final columns = await db.rawQuery('PRAGMA table_info(daftare_andicator)');
-    final names = columns.map((e) => e['name']?.toString()).toSet();
-    if (!names.contains('sync_id')) await db.execute("ALTER TABLE daftare_andicator ADD COLUMN sync_id TEXT");
-    if (!names.contains('sync_updated_at')) await db.execute("ALTER TABLE daftare_andicator ADD COLUMN sync_updated_at TEXT");
-    if (!names.contains('sync_deleted')) await db.execute("ALTER TABLE daftare_andicator ADD COLUMN sync_deleted INTEGER NOT NULL DEFAULT 0");
-    final rows = await db.query('daftare_andicator', columns: ['Shomare_Radif', 'sync_id']);
-    for (final row in rows) {
-      final id = (row['Shomare_Radif'] as num).toInt();
-      final syncId = row['sync_id']?.toString();
-      if (syncId == null || syncId.isEmpty) {
-        await db.update('daftare_andicator', {'sync_id': 'legacy-record-$id'}, where: 'Shomare_Radif = ?', whereArgs: [id]);
-      }
+    if (!await _tableExists(db, 'daftare_andicator')) {
+      return;
+    }
+
+    // ------------------------------------------------------------
+    // فقط ساختار دیتابیس را تکمیل می‌کنیم.
+    // در Migration نباید رکوردهای قدیمی را یکی‌یکی UPDATE کنیم.
+    // ------------------------------------------------------------
+
+    await _addColumnIfMissing(
+      db,
+      table: 'daftare_andicator',
+      column: 'sync_id',
+      definition: 'TEXT',
+    );
+
+    await _addColumnIfMissing(
+      db,
+      table: 'daftare_andicator',
+      column: 'sync_updated_at',
+      definition: 'TEXT',
+    );
+
+    await _addColumnIfMissing(
+      db,
+      table: 'daftare_andicator',
+      column: 'sync_deleted',
+      definition: 'INTEGER NOT NULL DEFAULT 0',
+    );
+
+    // ------------------------------------------------------------
+    // برای دیتابیس‌های قدیمی، sync_id را در یک UPDATE واحد مقداردهی
+    // می‌کنیم؛ نه اینکه برای هر رکورد یک UPDATE جداگانه اجرا شود.
+    //
+    // این قسمت عمداً ساده نگه داشته شده تا Migration دیتابیس‌های
+    // قدیمی سریع و قابل اعتماد باقی بماند.
+    // ------------------------------------------------------------
+
+    try {
+      await db.execute('''
+      UPDATE daftare_andicator
+      SET sync_id = 'legacy-record-' || CAST(Shomare_Radif AS TEXT)
+      WHERE sync_id IS NULL
+         OR sync_id = ''
+    ''');
+    } catch (_) {
+      // اگر دیتابیس خیلی قدیمی یا ساختار آن غیرعادی باشد،
+      // شکست این مرحله نباید مانع باز شدن برنامه شود.
+      //
+      // sync_id در ادامه توسط ensureSyncIdentity تکمیل خواهد شد.
     }
   }
 
   static Future<int> reserveMasterLetterNumber() async {
     final db = await database;
     return db.transaction((txn) async {
-      final rows = await txn.query('sync_number_state', where: 'id = 1', limit: 1);
+      final rows = await txn.query(
+        'sync_number_state',
+        where: 'id = 1',
+        limit: 1,
+      );
       int next;
       if (rows.isEmpty) {
         next = ((await _maxLetterNumber(txn)) ?? 0) + 1;
-        await txn.insert('sync_number_state', {'id': 1, 'next_number': next + 1});
+        await txn.insert('sync_number_state', {
+          'id': 1,
+          'next_number': next + 1,
+        });
       } else {
         next = (rows.first['next_number'] as num).toInt();
-        await txn.update('sync_number_state', {'next_number': next + 1}, where: 'id = 1');
+        await txn.update('sync_number_state', {
+          'next_number': next + 1,
+        }, where: 'id = 1');
       }
       return next;
     });
   }
 
   static Future<int?> _maxLetterNumber(DatabaseExecutor db) async {
-    final rows = await db.rawQuery('SELECT MAX(Shomare_Radif) AS maxRadif FROM daftare_andicator');
+    final rows = await db.rawQuery(
+      'SELECT MAX(Shomare_Radif) AS maxRadif FROM daftare_andicator',
+    );
     return (rows.first['maxRadif'] as num?)?.toInt();
   }
 
@@ -367,37 +651,81 @@ class DatabaseHelper {
     final db = await database;
     await _createSyncTables(db);
     await _ensureSyncColumns(db);
-    final state = await db.query('sync_number_state', where: 'id = 1', limit: 1);
+    final state = await db.query(
+      'sync_number_state',
+      where: 'id = 1',
+      limit: 1,
+    );
     if (state.isEmpty && await AppSettings.getSyncRole() == 'master') {
       final next = ((await _maxLetterNumber(db)) ?? 0) + 1;
       await db.insert('sync_number_state', {'id': 1, 'next_number': next});
     }
-    final syncCountRows = await db.rawQuery('SELECT COUNT(*) AS c FROM sync_changes');
+    final syncCountRows = await db.rawQuery(
+      'SELECT COUNT(*) AS c FROM sync_changes',
+    );
     final syncCount = (syncCountRows.first['c'] as num?)?.toInt() ?? 0;
     if (syncCount == 0) {
       final records = await db.query('daftare_andicator');
       for (final record in records) {
         final syncId = record['sync_id']?.toString();
         if (syncId == null || syncId.isEmpty) continue;
-        final categoriesRows = await db.rawQuery('SELECT c.name FROM categories c JOIN record_categories rc ON rc.category_id = c.id WHERE rc.record_id = ?', [record['Shomare_Radif']]);
-        final categories = categoriesRows.map((e) => e['name']?.toString() ?? '').where((e) => e.isNotEmpty).toList();
-        await _logSyncChange(db, entityType: 'record', entityId: syncId, operation: 'upsert', payload: {'record': record, 'categories': categories});
+        final categoriesRows = await db.rawQuery(
+          'SELECT c.name FROM categories c JOIN record_categories rc ON rc.category_id = c.id WHERE rc.record_id = ?',
+          [record['Shomare_Radif']],
+        );
+        final categories = categoriesRows
+            .map((e) => e['name']?.toString() ?? '')
+            .where((e) => e.isNotEmpty)
+            .toList();
+        await _logSyncChange(
+          db,
+          entityType: 'record',
+          entityId: syncId,
+          operation: 'upsert',
+          payload: {'record': record, 'categories': categories},
+        );
       }
     }
   }
 
-  static Future<void> _logSyncChange(DatabaseExecutor db, {required String entityType, required String entityId, required String operation, required Map<String, dynamic> payload}) async {
+  static Future<void> _logSyncChange(
+    DatabaseExecutor db, {
+    required String entityType,
+    required String entityId,
+    required String operation,
+    required Map<String, dynamic> payload,
+  }) async {
     if (_syncApplying) return;
     final deviceId = await AppSettings.getDeviceId();
     final now = DateTime.now().toUtc().toIso8601String();
-    final changeId = '$deviceId-${DateTime.now().microsecondsSinceEpoch}-$entityType-$entityId';
-    await db.insert('sync_changes', {'change_id': changeId, 'device_id': deviceId, 'entity_type': entityType, 'entity_id': entityId, 'operation': operation, 'payload': jsonEncode(payload), 'created_at': now});
+    final changeId =
+        '$deviceId-${DateTime.now().microsecondsSinceEpoch}-$entityType-$entityId';
+    await db.insert('sync_changes', {
+      'change_id': changeId,
+      'device_id': deviceId,
+      'entity_type': entityType,
+      'entity_id': entityId,
+      'operation': operation,
+      'payload': jsonEncode(payload),
+      'created_at': now,
+    });
   }
 
-  static Future<List<SyncChange>> getSyncChangesAfter(int id, {int limit = 100}) async {
+  static Future<List<SyncChange>> getSyncChangesAfter(
+    int id, {
+    int limit = 100,
+  }) async {
     final db = await database;
-    final rows = await db.query('sync_changes', where: 'id > ?', whereArgs: [id], orderBy: 'id ASC', limit: limit);
-    return rows.map((row) => SyncChange.fromMap(Map<String, dynamic>.from(row))).toList();
+    final rows = await db.query(
+      'sync_changes',
+      where: 'id > ?',
+      whereArgs: [id],
+      orderBy: 'id ASC',
+      limit: limit,
+    );
+    return rows
+        .map((row) => SyncChange.fromMap(Map<String, dynamic>.from(row)))
+        .toList();
   }
 
   static Future<int> getLastSyncChangeId() async {
@@ -409,7 +737,11 @@ class DatabaseHelper {
   static Future<T> runWithoutSyncLogging<T>(Future<T> Function() action) async {
     final previous = _syncApplying;
     _syncApplying = true;
-    try { return await action(); } finally { _syncApplying = previous; }
+    try {
+      return await action();
+    } finally {
+      _syncApplying = previous;
+    }
   }
 
   static Future<void> applySyncChange(SyncChange change) async {
@@ -418,11 +750,21 @@ class DatabaseHelper {
       final p = change.payload;
       if (change.entityType == 'record') {
         if (change.operation == 'delete') {
-          await db.update('daftare_andicator', {'sync_deleted': 1, 'sync_updated_at': change.createdAt}, where: 'sync_id = ?', whereArgs: [change.entityId]);
+          await db.update(
+            'daftare_andicator',
+            {'sync_deleted': 1, 'sync_updated_at': change.createdAt},
+            where: 'sync_id = ?',
+            whereArgs: [change.entityId],
+          );
           return;
         }
         final data = Map<String, dynamic>.from(p['record'] as Map? ?? {});
-        final existing = await db.query('daftare_andicator', where: 'sync_id = ?', whereArgs: [change.entityId], limit: 1);
+        final existing = await db.query(
+          'daftare_andicator',
+          where: 'sync_id = ?',
+          whereArgs: [change.entityId],
+          limit: 1,
+        );
         data['sync_id'] = change.entityId;
         data['sync_updated_at'] = change.createdAt;
         data['sync_deleted'] = 0;
@@ -431,17 +773,46 @@ class DatabaseHelper {
         } else {
           final localId = existing.first['Shomare_Radif'];
           data.remove('Shomare_Radif');
-          await db.update('daftare_andicator', data, where: 'Shomare_Radif = ?', whereArgs: [localId]);
+          await db.update(
+            'daftare_andicator',
+            data,
+            where: 'Shomare_Radif = ?',
+            whereArgs: [localId],
+          );
         }
-        final local = await db.query('daftare_andicator', columns: ['Shomare_Radif'], where: 'sync_id = ?', whereArgs: [change.entityId], limit: 1);
+        final local = await db.query(
+          'daftare_andicator',
+          columns: ['Shomare_Radif'],
+          where: 'sync_id = ?',
+          whereArgs: [change.entityId],
+          limit: 1,
+        );
         if (local.isNotEmpty) {
           final localId = local.first['Shomare_Radif'].toString();
-          final categories = (p['categories'] as List? ?? const []).map((e) => e.toString()).toList();
-          await db.delete('record_categories', where: 'record_id = ?', whereArgs: [localId]);
+          final categories = (p['categories'] as List? ?? const [])
+              .map((e) => e.toString())
+              .toList();
+          await db.delete(
+            'record_categories',
+            where: 'record_id = ?',
+            whereArgs: [localId],
+          );
           for (final cat in categories) {
-            await db.insert('categories', {'name': cat}, conflictAlgorithm: ConflictAlgorithm.ignore);
-            final catRows = await db.query('categories', columns: ['id'], where: 'name = ?', whereArgs: [cat], limit: 1);
-            if (catRows.isNotEmpty) await db.insert('record_categories', {'record_id': localId, 'category_id': catRows.first['id']}, conflictAlgorithm: ConflictAlgorithm.ignore);
+            await db.insert('categories', {
+              'name': cat,
+            }, conflictAlgorithm: ConflictAlgorithm.ignore);
+            final catRows = await db.query(
+              'categories',
+              columns: ['id'],
+              where: 'name = ?',
+              whereArgs: [cat],
+              limit: 1,
+            );
+            if (catRows.isNotEmpty)
+              await db.insert('record_categories', {
+                'record_id': localId,
+                'category_id': catRows.first['id'],
+              }, conflictAlgorithm: ConflictAlgorithm.ignore);
           }
         }
         return;
@@ -454,13 +825,23 @@ class DatabaseHelper {
           await db.delete('reminders', where: 'id = ?', whereArgs: [id]);
           return;
         }
-        final existing = await db.query('reminders', where: 'id = ?', whereArgs: [id], limit: 1);
-        if (existing.isEmpty) await db.insert('reminders', data); else await db.update('reminders', data, where: 'id = ?', whereArgs: [id]);
+        final existing = await db.query(
+          'reminders',
+          where: 'id = ?',
+          whereArgs: [id],
+          limit: 1,
+        );
+        if (existing.isEmpty)
+          await db.insert('reminders', data);
+        else
+          await db.update('reminders', data, where: 'id = ?', whereArgs: [id]);
       }
     });
   }
 
-  static Future<void> _createDynamicSchemaForLegacyDatabase(DatabaseExecutor db) async {
+  static Future<void> _createDynamicSchemaForLegacyDatabase(
+    DatabaseExecutor db,
+  ) async {
     await db.execute('''
       CREATE TABLE IF NOT EXISTS record_schema (
         id INTEGER PRIMARY KEY CHECK (id = 1),
@@ -479,46 +860,225 @@ class DatabaseHelper {
     if (exists.isNotEmpty) return;
 
     const fields = [
-      {'key':'Shomare_Radif','label':'شماره نامه','type':'number','required':true,'visible':true,'searchable':true,'sortable':true,'system':true,'deletable':false,'section':'اطلاعات اصلی','order':0},
-      {'key':'date','label':'تاریخ','type':'date','required':true,'visible':true,'searchable':true,'sortable':true,'section':'اطلاعات اصلی','order':1},
-      {'key':'saheb_name','label':'صاحب نامه','type':'text','visible':true,'searchable':true,'sortable':true,'suggestions':true,'section':'اطلاعات اصلی','order':2},
-      {'key':'guy','label':'موضوع','type':'text','visible':true,'searchable':true,'suggestions':true,'section':'اطلاعات اصلی','order':3},
-      {'key':'sh_name_reside','label':'شماره تماس','type':'phone','visible':true,'searchable':true,'section':'اطلاعات اصلی','order':4},
-      {'key':'onvan','label':'گیرنده نامه','type':'text','visible':true,'searchable':true,'suggestions':true,'section':'اطلاعات اصلی','order':5},
-      {'key':'comment','label':'توضیحات','type':'multiline','visible':true,'searchable':true,'filterable':true,'maxLines':4,'section':'اطلاعات اصلی','order':6},
-      {'key':'shomare_badi','label':'شماره بعدی','type':'text','visible':true,'searchable':true,'filterable':true,'section':'اطلاعات اصلی','order':7},
-      {'key':'goshashte','label':'شماره قبلی','type':'text','visible':true,'searchable':true,'section':'سایر اطلاعات','order':8},
-      {'key':'from_pywa','label':'پیوست نامه','type':'text','visible':true,'searchable':true,'section':'سایر اطلاعات','order':9},
-      {'key':'t_name_reside','label':'تاریخ نامه','type':'date','visible':true,'searchable':true,'section':'سایر اطلاعات','order':10},
-      {'key':'wordmost2','label':'پیوست مکاتبه','type':'text','visible':true,'searchable':true,'section':'سایر اطلاعات','order':11},
-      {'key':'t_name_ersali','label':'تاریخ مکاتبه','type':'date','visible':true,'searchable':true,'section':'سایر اطلاعات','order':12},
-      {'key':'adres_name','label':'آدرس','type':'multiline','visible':true,'searchable':true,'maxLines':4,'section':'سایر اطلاعات','order':13},
-      {'key':'__category__','label':'دسته‌بندی','type':'category','visible':true,'searchable':false,'filterable':false,'system':true,'deletable':false,'section':'اطلاعات اصلی','order':14,'icon':'label'},
+      {
+        'key': 'Shomare_Radif',
+        'label': 'شماره نامه',
+        'type': 'number',
+        'required': true,
+        'visible': true,
+        'searchable': true,
+        'sortable': true,
+        'system': true,
+        'deletable': false,
+        'section': 'اطلاعات اصلی',
+        'order': 0,
+      },
+      {
+        'key': 'date',
+        'label': 'تاریخ',
+        'type': 'date',
+        'required': true,
+        'visible': true,
+        'searchable': true,
+        'sortable': true,
+        'section': 'اطلاعات اصلی',
+        'order': 1,
+      },
+      {
+        'key': 'saheb_name',
+        'label': 'صاحب نامه',
+        'type': 'text',
+        'visible': true,
+        'searchable': true,
+        'sortable': true,
+        'suggestions': true,
+        'section': 'اطلاعات اصلی',
+        'order': 2,
+      },
+      {
+        'key': 'guy',
+        'label': 'موضوع',
+        'type': 'text',
+        'visible': true,
+        'searchable': true,
+        'suggestions': true,
+        'section': 'اطلاعات اصلی',
+        'order': 3,
+      },
+      {
+        'key': 'sh_name_reside',
+        'label': 'شماره تماس',
+        'type': 'phone',
+        'visible': true,
+        'searchable': true,
+        'section': 'اطلاعات اصلی',
+        'order': 4,
+      },
+      {
+        'key': 'onvan',
+        'label': 'گیرنده نامه',
+        'type': 'text',
+        'visible': true,
+        'searchable': true,
+        'suggestions': true,
+        'section': 'اطلاعات اصلی',
+        'order': 5,
+      },
+      {
+        'key': 'comment',
+        'label': 'توضیحات',
+        'type': 'multiline',
+        'visible': true,
+        'searchable': true,
+        'filterable': true,
+        'maxLines': 4,
+        'section': 'اطلاعات اصلی',
+        'order': 6,
+      },
+      {
+        'key': 'shomare_badi',
+        'label': 'شماره بعدی',
+        'type': 'text',
+        'visible': true,
+        'searchable': true,
+        'filterable': true,
+        'section': 'اطلاعات اصلی',
+        'order': 7,
+      },
+      {
+        'key': 'goshashte',
+        'label': 'شماره قبلی',
+        'type': 'text',
+        'visible': true,
+        'searchable': true,
+        'section': 'سایر اطلاعات',
+        'order': 8,
+      },
+      {
+        'key': 'from_pywa',
+        'label': 'پیوست نامه',
+        'type': 'text',
+        'visible': true,
+        'searchable': true,
+        'section': 'سایر اطلاعات',
+        'order': 9,
+      },
+      {
+        'key': 't_name_reside',
+        'label': 'تاریخ نامه',
+        'type': 'date',
+        'visible': true,
+        'searchable': true,
+        'section': 'سایر اطلاعات',
+        'order': 10,
+      },
+      {
+        'key': 'wordmost2',
+        'label': 'پیوست مکاتبه',
+        'type': 'text',
+        'visible': true,
+        'searchable': true,
+        'section': 'سایر اطلاعات',
+        'order': 11,
+      },
+      {
+        'key': 't_name_ersali',
+        'label': 'تاریخ مکاتبه',
+        'type': 'date',
+        'visible': true,
+        'searchable': true,
+        'section': 'سایر اطلاعات',
+        'order': 12,
+      },
+      {
+        'key': 'adres_name',
+        'label': 'آدرس',
+        'type': 'multiline',
+        'visible': true,
+        'searchable': true,
+        'maxLines': 4,
+        'section': 'سایر اطلاعات',
+        'order': 13,
+      },
+      {
+        'key': '__category__',
+        'label': 'دسته‌بندی',
+        'type': 'category',
+        'visible': true,
+        'searchable': false,
+        'filterable': false,
+        'system': true,
+        'deletable': false,
+        'section': 'اطلاعات اصلی',
+        'order': 14,
+        'icon': 'label',
+      },
     ];
     final layout = {
       'sections': [
-        {'id':'main','title':'اطلاعات اصلی','order':0,'columns':2,'fields':['Shomare_Radif','date','saheb_name','guy','sh_name_reside','onvan','comment','shomare_badi','__category__']},
-        {'id':'other','title':'سایر اطلاعات','order':1,'columns':1,'collapsible':true,'fields':['goshashte','from_pywa','t_name_reside','wordmost2','t_name_ersali','adres_name']},
+        {
+          'id': 'main',
+          'title': 'اطلاعات اصلی',
+          'order': 0,
+          'columns': 2,
+          'fields': [
+            'Shomare_Radif',
+            'date',
+            'saheb_name',
+            'guy',
+            'sh_name_reside',
+            'onvan',
+            'comment',
+            'shomare_badi',
+            '__category__',
+          ],
+        },
+        {
+          'id': 'other',
+          'title': 'سایر اطلاعات',
+          'order': 1,
+          'columns': 1,
+          'collapsible': true,
+          'fields': [
+            'goshashte',
+            'from_pywa',
+            't_name_reside',
+            'wordmost2',
+            't_name_ersali',
+            'adres_name',
+          ],
+        },
       ],
     };
     final search = {
-      'defaultFields':['guy','saheb_name','Shomare_Radif','sh_name_reside'],
-      'filterFields':['onvan','comment','shomare_badi','saheb_name','guy','sh_name_reside'],
-      'filterColumns':2,
+      'defaultFields': ['guy', 'saheb_name', 'Shomare_Radif', 'sh_name_reside'],
+      'filterFields': [
+        'onvan',
+        'comment',
+        'shomare_badi',
+        'saheb_name',
+        'guy',
+        'sh_name_reside',
+      ],
+      'filterColumns': 2,
     };
-    final stats = {'enabled':true,'dateField':'date','groupFields':['onvan','guy','saheb_name']};
+    final stats = {
+      'enabled': true,
+      'dateField': 'date',
+      'groupFields': ['onvan', 'guy', 'saheb_name'],
+    };
     final now = DateTime.now().toIso8601String();
 
     await db.insert('record_schema', {
-      'id':1,
-      'schema_version':1,
-      'fields_json':jsonEncode({'schemaVersion':1,'fields':fields}),
-      'layout_json':jsonEncode(layout),
-      'search_json':jsonEncode(search),
-      'stats_json':jsonEncode(stats),
-      'card_json':jsonEncode({}),
-      'created_at':now,
-      'updated_at':now,
+      'id': 1,
+      'schema_version': 1,
+      'fields_json': jsonEncode({'schemaVersion': 1, 'fields': fields}),
+      'layout_json': jsonEncode(layout),
+      'search_json': jsonEncode(search),
+      'stats_json': jsonEncode(stats),
+      'card_json': jsonEncode({}),
+      'created_at': now,
+      'updated_at': now,
     });
   }
 
@@ -592,7 +1152,9 @@ class DatabaseHelper {
       for (final field in searchable) {
         if (!existing.contains(field)) continue;
         final safe = _quoteIdentifier(field);
-        expressions.add("REPLACE(REPLACE(CAST(COALESCE($safe, '') AS TEXT), char(8204), ''), char(8205), '') LIKE ?");
+        expressions.add(
+          "REPLACE(REPLACE(CAST(COALESCE($safe, '') AS TEXT), char(8204), ''), char(8205), '') LIKE ?",
+        );
         args.add('%$q%');
       }
       if (expressions.isNotEmpty) {
@@ -655,19 +1217,25 @@ class DatabaseHelper {
     // ------------------------------------------------------------
     // فیلتر عنوان / گیرنده
     // ------------------------------------------------------------
-    if (onvan != null && onvan.trim().isNotEmpty && (await _columns()).contains('onvan')) {
+    if (onvan != null &&
+        onvan.trim().isNotEmpty &&
+        (await _columns()).contains('onvan')) {
       conditions.add('onvan LIKE ?');
       args.add('%${onvan.trim()}%');
     }
 
     // 📝 فیلتر توضیحات
-    if (comment != null && comment.isNotEmpty && (await _columns()).contains('comment')) {
+    if (comment != null &&
+        comment.isNotEmpty &&
+        (await _columns()).contains('comment')) {
       conditions.add('comment LIKE ?');
       args.add('%$comment%');
     }
 
     // 🔢 فیلتر شماره بعد
-    if (shomareBadi != null && shomareBadi.isNotEmpty && (await _columns()).contains('shomare_badi')) {
+    if (shomareBadi != null &&
+        shomareBadi.isNotEmpty &&
+        (await _columns()).contains('shomare_badi')) {
       conditions.add('shomare_badi LIKE ?');
       args.add('%$shomareBadi%');
     }
@@ -675,7 +1243,9 @@ class DatabaseHelper {
     // ------------------------------------------------------------
     // فیلتر تاریخ شروع
     // ------------------------------------------------------------
-    if (fromDate != null && fromDate.trim().isNotEmpty && (await _columns()).contains('date')) {
+    if (fromDate != null &&
+        fromDate.trim().isNotEmpty &&
+        (await _columns()).contains('date')) {
       conditions.add('date >= ?');
       args.add(fromDate.trim());
     }
@@ -683,7 +1253,9 @@ class DatabaseHelper {
     // ------------------------------------------------------------
     // فیلتر تاریخ پایان
     // ------------------------------------------------------------
-    if (toDate != null && toDate.trim().isNotEmpty && (await _columns()).contains('date')) {
+    if (toDate != null &&
+        toDate.trim().isNotEmpty &&
+        (await _columns()).contains('date')) {
       conditions.add('date <= ?');
       args.add(toDate.trim());
     }
@@ -767,22 +1339,41 @@ class DatabaseHelper {
         final role = await AppSettings.getSyncRole();
         if (await AppSettings.getSyncEnabled()) {
           if (role == 'master') {
-            final state = await txn.query('sync_number_state', where: 'id = 1', limit: 1);
+            final state = await txn.query(
+              'sync_number_state',
+              where: 'id = 1',
+              limit: 1,
+            );
             if (state.isEmpty) {
-              final maxRows = await txn.rawQuery('SELECT MAX(Shomare_Radif) AS maxRadif FROM daftare_andicator');
-              final next = ((maxRows.first['maxRadif'] as num?)?.toInt() ?? 0) + 1;
-              await txn.insert('sync_number_state', {'id': 1, 'next_number': next + 1});
+              final maxRows = await txn.rawQuery(
+                'SELECT MAX(Shomare_Radif) AS maxRadif FROM daftare_andicator',
+              );
+              final next =
+                  ((maxRows.first['maxRadif'] as num?)?.toInt() ?? 0) + 1;
+              await txn.insert('sync_number_state', {
+                'id': 1,
+                'next_number': next + 1,
+              });
               data['Shomare_Radif'] = next;
             } else {
               final next = (state.first['next_number'] as num).toInt();
-              await txn.update('sync_number_state', {'next_number': next + 1}, where: 'id = 1');
+              await txn.update('sync_number_state', {
+                'next_number': next + 1,
+              }, where: 'id = 1');
               data['Shomare_Radif'] = next;
             }
           } else {
             for (var attempt = 0; attempt < 20; attempt++) {
-              final masterNumber = await SyncNetworkClient.requestNextLetterNumber();
+              final masterNumber =
+                  await SyncNetworkClient.requestNextLetterNumber();
               if (masterNumber == null) break;
-              final exists = await txn.query('daftare_andicator', columns: ['Shomare_Radif'], where: 'Shomare_Radif = ?', whereArgs: [masterNumber], limit: 1);
+              final exists = await txn.query(
+                'daftare_andicator',
+                columns: ['Shomare_Radif'],
+                where: 'Shomare_Radif = ?',
+                whereArgs: [masterNumber],
+                limit: 1,
+              );
               if (exists.isEmpty) {
                 data['Shomare_Radif'] = masterNumber;
                 break;
@@ -791,7 +1382,9 @@ class DatabaseHelper {
           }
         }
       }
-      final syncId = data['sync_id']?.toString() ?? '${await AppSettings.getDeviceId()}-${DateTime.now().microsecondsSinceEpoch}';
+      final syncId =
+          data['sync_id']?.toString() ??
+          '${await AppSettings.getDeviceId()}-${DateTime.now().microsecondsSinceEpoch}';
       data['sync_id'] = syncId;
       data['sync_updated_at'] = DateTime.now().toUtc().toIso8601String();
       data['sync_deleted'] = 0;
@@ -805,7 +1398,13 @@ class DatabaseHelper {
         'new_value': 'نامه ایجاد شد',
         'created_at': DateTime.now().toIso8601String(),
       });
-      await _logSyncChange(txn, entityType: 'record', entityId: syncId, operation: 'upsert', payload: {'record': data, 'categories': <String>[]});
+      await _logSyncChange(
+        txn,
+        entityType: 'record',
+        entityId: syncId,
+        operation: 'upsert',
+        payload: {'record': data, 'categories': <String>[]},
+      );
       return id;
     });
   }
@@ -855,7 +1454,12 @@ class DatabaseHelper {
       data.remove('sync_id');
       data.remove('sync_deleted');
       data['sync_updated_at'] = DateTime.now().toUtc().toIso8601String();
-      final result = await txn.update('daftare_andicator', data, where: 'Shomare_Radif = ?', whereArgs: [id]);
+      final result = await txn.update(
+        'daftare_andicator',
+        data,
+        where: 'Shomare_Radif = ?',
+        whereArgs: [id],
+      );
 
       if (changedFields.isNotEmpty) {
         final now = DateTime.now().toIso8601String();
@@ -872,9 +1476,20 @@ class DatabaseHelper {
         }
       }
 
-      final after = await txn.query('daftare_andicator', where: 'Shomare_Radif = ?', whereArgs: [id], limit: 1);
+      final after = await txn.query(
+        'daftare_andicator',
+        where: 'Shomare_Radif = ?',
+        whereArgs: [id],
+        limit: 1,
+      );
       if (after.isNotEmpty) {
-        await _logSyncChange(txn, entityType: 'record', entityId: after.first['sync_id'].toString(), operation: 'upsert', payload: {'record': after.first, 'categories': <String>[]});
+        await _logSyncChange(
+          txn,
+          entityType: 'record',
+          entityId: after.first['sync_id'].toString(),
+          operation: 'upsert',
+          payload: {'record': after.first, 'categories': <String>[]},
+        );
       }
       return result;
     });
@@ -983,8 +1598,20 @@ class DatabaseHelper {
     final db = await database;
 
     final id = await db.insert('reminders', reminder.toMap());
-    final row = await db.query('reminders', where: 'id = ?', whereArgs: [id], limit: 1);
-    if (row.isNotEmpty) await _logSyncChange(db, entityType: 'reminder', entityId: id.toString(), operation: 'upsert', payload: {'reminder': row.first});
+    final row = await db.query(
+      'reminders',
+      where: 'id = ?',
+      whereArgs: [id],
+      limit: 1,
+    );
+    if (row.isNotEmpty)
+      await _logSyncChange(
+        db,
+        entityType: 'reminder',
+        entityId: id.toString(),
+        operation: 'upsert',
+        payload: {'reminder': row.first},
+      );
     return id;
   }
 
@@ -1048,9 +1675,26 @@ class DatabaseHelper {
 
     final db = await database;
 
-    final result = await db.update('reminders', reminder.toMap(), where: 'id = ?', whereArgs: [reminder.id]);
-    final row = await db.query('reminders', where: 'id = ?', whereArgs: [reminder.id], limit: 1);
-    if (row.isNotEmpty) await _logSyncChange(db, entityType: 'reminder', entityId: reminder.id.toString(), operation: 'upsert', payload: {'reminder': row.first});
+    final result = await db.update(
+      'reminders',
+      reminder.toMap(),
+      where: 'id = ?',
+      whereArgs: [reminder.id],
+    );
+    final row = await db.query(
+      'reminders',
+      where: 'id = ?',
+      whereArgs: [reminder.id],
+      limit: 1,
+    );
+    if (row.isNotEmpty)
+      await _logSyncChange(
+        db,
+        entityType: 'reminder',
+        entityId: reminder.id.toString(),
+        operation: 'upsert',
+        payload: {'reminder': row.first},
+      );
     return result;
   }
 
@@ -1058,9 +1702,29 @@ class DatabaseHelper {
   static Future<int> completeReminder(int id) async {
     final db = await database;
 
-    final result = await db.update('reminders', {'status': ReminderStatus.completed, 'completed_at': DateTime.now().toIso8601String()}, where: 'id = ?', whereArgs: [id]);
-    final row = await db.query('reminders', where: 'id = ?', whereArgs: [id], limit: 1);
-    if (row.isNotEmpty) await _logSyncChange(db, entityType: 'reminder', entityId: id.toString(), operation: 'upsert', payload: {'reminder': row.first});
+    final result = await db.update(
+      'reminders',
+      {
+        'status': ReminderStatus.completed,
+        'completed_at': DateTime.now().toIso8601String(),
+      },
+      where: 'id = ?',
+      whereArgs: [id],
+    );
+    final row = await db.query(
+      'reminders',
+      where: 'id = ?',
+      whereArgs: [id],
+      limit: 1,
+    );
+    if (row.isNotEmpty)
+      await _logSyncChange(
+        db,
+        entityType: 'reminder',
+        entityId: id.toString(),
+        operation: 'upsert',
+        payload: {'reminder': row.first},
+      );
     return result;
   }
 
@@ -1068,9 +1732,26 @@ class DatabaseHelper {
   static Future<int> cancelReminder(int id) async {
     final db = await database;
 
-    final result = await db.update('reminders', {'status': ReminderStatus.cancelled}, where: 'id = ?', whereArgs: [id]);
-    final row = await db.query('reminders', where: 'id = ?', whereArgs: [id], limit: 1);
-    if (row.isNotEmpty) await _logSyncChange(db, entityType: 'reminder', entityId: id.toString(), operation: 'upsert', payload: {'reminder': row.first});
+    final result = await db.update(
+      'reminders',
+      {'status': ReminderStatus.cancelled},
+      where: 'id = ?',
+      whereArgs: [id],
+    );
+    final row = await db.query(
+      'reminders',
+      where: 'id = ?',
+      whereArgs: [id],
+      limit: 1,
+    );
+    if (row.isNotEmpty)
+      await _logSyncChange(
+        db,
+        entityType: 'reminder',
+        entityId: id.toString(),
+        operation: 'upsert',
+        payload: {'reminder': row.first},
+      );
     return result;
   }
 
@@ -1078,8 +1759,19 @@ class DatabaseHelper {
   static Future<int> deleteReminder(int id) async {
     final db = await database;
 
-    final result = await db.delete('reminders', where: 'id = ?', whereArgs: [id]);
-    if (result > 0) await _logSyncChange(db, entityType: 'reminder', entityId: id.toString(), operation: 'delete', payload: {});
+    final result = await db.delete(
+      'reminders',
+      where: 'id = ?',
+      whereArgs: [id],
+    );
+    if (result > 0)
+      await _logSyncChange(
+        db,
+        entityType: 'reminder',
+        entityId: id.toString(),
+        operation: 'delete',
+        payload: {},
+      );
     return result;
   }
 
@@ -1189,19 +1881,25 @@ class DatabaseHelper {
   }
 
   static Future<void> _ensureV5(DatabaseExecutor db) async {
-    final sc = await db.rawQuery('PRAGMA table_info(record_schema)');
-    if (!sc.any((r) => r['name'] == 'card_json')) {
-      await db.execute("ALTER TABLE record_schema ADD COLUMN card_json TEXT NOT NULL DEFAULT '{}'");
-    }
-    final rc = await db.rawQuery('PRAGMA table_info(daftare_andicator)');
-    if (!rc.any((r) => r['name'] == 'date')) {
-      await db.execute("ALTER TABLE daftare_andicator ADD COLUMN date TEXT NOT NULL DEFAULT ''");
-    }
+    // سازگاری با کدهای قدیمی؛ Migration اصلی اکنون _migrateToLatest است.
+    await _ensureRecordSchemaTable(db);
+    await _ensureRecordSchemaColumns(db);
+    await _ensureLegacyRecordColumns(db);
   }
 
   static Future<void> closeDb() async {
-    if (_db != null) {
-      await _db!.close();
+    final opening = _dbOpening;
+    if (opening != null) {
+      try {
+        await opening;
+      } catch (_) {
+        // خطای باز شدن دیتابیس قبلاً در خود Future مدیریت می‌شود.
+      }
+    }
+
+    final db = _db;
+    if (db != null) {
+      await db.close();
       _db = null;
     }
   }
@@ -1244,7 +1942,7 @@ class DatabaseHelper {
     return Map<String, dynamic>.from(result.first);
   }
 
-    // ============================================================
+  // ============================================================
   // STREAM / CHUNK PAGINATION FOR CSV EXPORT
   // ============================================================
   //
