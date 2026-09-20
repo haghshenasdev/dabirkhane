@@ -22,12 +22,13 @@ class _SchemaConfigPageState extends State<SchemaConfigPage>
   late TabController tabs;
 
   CardSchema? _pendingCard;
+  HistorySuggestionSchema? _pendingHistorySuggestion;
 
   @override
   void initState() {
     super.initState();
 
-    tabs = TabController(length: 5, vsync: this);
+    tabs = TabController(length: 6, vsync: this);
 
     _load();
   }
@@ -41,6 +42,7 @@ class _SchemaConfigPageState extends State<SchemaConfigPage>
       setState(() {
         schema = loaded;
         _pendingCard = loaded?.card;
+        _pendingHistorySuggestion = loaded?.historySuggestion;
         loading = false;
       });
     } catch (e) {
@@ -62,6 +64,7 @@ class _SchemaConfigPageState extends State<SchemaConfigPage>
     setState(() {
       schema = loaded;
       _pendingCard = loaded.card;
+      _pendingHistorySuggestion = loaded.historySuggestion;
     });
   }
 
@@ -167,7 +170,7 @@ class _SchemaConfigPageState extends State<SchemaConfigPage>
     try {
       var finalSchema = schema!;
 
-      if (_pendingCard != null) {
+      if (_pendingCard != null || _pendingHistorySuggestion != null) {
         finalSchema = RecordSchema(
           schemaVersion: finalSchema.schemaVersion + 1,
           fields: finalSchema.fields,
@@ -178,7 +181,9 @@ class _SchemaConfigPageState extends State<SchemaConfigPage>
           statsEnabled: finalSchema.statsEnabled,
           filterFields: finalSchema.filterFields,
           filterColumns: finalSchema.filterColumns,
-          card: _pendingCard!,
+          card: _pendingCard ?? finalSchema.card,
+          historySuggestion:
+              _pendingHistorySuggestion ?? finalSchema.historySuggestion,
         );
       }
 
@@ -236,6 +241,7 @@ class _SchemaConfigPageState extends State<SchemaConfigPage>
               Tab(icon: Icon(Icons.search_outlined), text: 'جستجو'),
               Tab(icon: Icon(Icons.analytics_outlined), text: 'آمار'),
               Tab(icon: Icon(Icons.credit_card_outlined), text: 'کارت نمایش'),
+              Tab(icon: Icon(Icons.history_rounded), text: 'سابقه'),
             ],
           ),
         ),
@@ -257,6 +263,16 @@ class _SchemaConfigPageState extends State<SchemaConfigPage>
               onChanged: (card) {
                 setState(() {
                   _pendingCard = card;
+                });
+              },
+            ),
+            _HistorySuggestionTab(
+              schema: schema!,
+              initialConfig:
+                  _pendingHistorySuggestion ?? schema!.historySuggestion,
+              onChanged: (config) {
+                setState(() {
+                  _pendingHistorySuggestion = config;
                 });
               },
             ),
@@ -1823,5 +1839,285 @@ IconData _iconFor(FieldType type) {
 
     case FieldType.text:
       return Icons.text_fields_outlined;
+  }
+}
+
+
+class _HistorySuggestionTab extends StatefulWidget {
+  final RecordSchema schema;
+  final HistorySuggestionSchema initialConfig;
+  final ValueChanged<HistorySuggestionSchema> onChanged;
+
+  const _HistorySuggestionTab({
+    required this.schema,
+    required this.initialConfig,
+    required this.onChanged,
+  });
+
+  @override
+  State<_HistorySuggestionTab> createState() => _HistorySuggestionTabState();
+}
+
+class _HistorySuggestionTabState extends State<_HistorySuggestionTab> {
+  late bool enabled;
+  late String? targetField;
+  late String? searchField;
+  late List<String> displayFields;
+
+  @override
+  void initState() {
+    super.initState();
+    _load(widget.initialConfig);
+  }
+
+  @override
+  void didUpdateWidget(covariant _HistorySuggestionTab oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.initialConfig != widget.initialConfig) {
+      _load(widget.initialConfig);
+    }
+  }
+
+  void _load(HistorySuggestionSchema config) {
+    enabled = config.enabled;
+    targetField = config.targetField;
+    searchField = config.searchField;
+    displayFields = [...config.displayFields];
+  }
+
+  List<FieldDefinition> get availableFields => widget.schema.fields
+      .where((f) => f.visible && !f.system && f.type != FieldType.category)
+      .toList()
+    ..sort((a, b) => a.order.compareTo(b.order));
+
+  FieldDefinition? _field(String? key) {
+    if (key == null) return null;
+    for (final f in availableFields) {
+      if (f.key == key) return f;
+    }
+    return null;
+  }
+
+  void _emit() {
+    final availableKeys = availableFields.map((e) => e.key).toSet();
+
+    if (targetField != null && !availableKeys.contains(targetField)) {
+      targetField = availableFields.isNotEmpty ? availableFields.first.key : null;
+    }
+
+    if (searchField == null || !availableKeys.contains(searchField)) {
+      searchField = targetField;
+    }
+
+    displayFields = displayFields
+        .where(availableKeys.contains)
+        .toSet()
+        .toList();
+
+    if (targetField != null && !displayFields.contains(targetField)) {
+      displayFields.insert(0, targetField!);
+    }
+
+    widget.onChanged(
+      HistorySuggestionSchema(
+        enabled: enabled && targetField != null,
+        targetField: targetField,
+        searchField: searchField,
+        displayFields: displayFields,
+      ),
+    );
+  }
+
+  void _move(int index, int delta) {
+    final next = index + delta;
+    if (next < 0 || next >= displayFields.length) return;
+
+    setState(() {
+      final value = displayFields.removeAt(index);
+      displayFields.insert(next, value);
+    });
+
+    _emit();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final fields = availableFields;
+
+    if (fields.isEmpty) {
+      return const Center(
+        child: Text(
+          'برای فعال کردن سابقه، حداقل یک فیلد قابل استفاده در فرم ایجاد کنید.',
+          textDirection: TextDirection.rtl,
+        ),
+      );
+    }
+
+    return ListView(
+      padding: const EdgeInsets.all(16),
+      children: [
+        Card(
+          child: SwitchListTile(
+            value: enabled,
+            title: const Text('نمایش سابقه آخرین نامه'),
+            subtitle: const Text(
+              'با انتخاب یک مقدار قبلی، اطلاعات آخرین نامه مربوط به آن مقدار نمایش داده می‌شود.',
+              textDirection: TextDirection.rtl,
+            ),
+            onChanged: (value) {
+              setState(() => enabled = value);
+              _emit();
+            },
+          ),
+        ),
+        const SizedBox(height: 12),
+        Card(
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                const Text(
+                  'فیلدی که سابقه روی آن فعال باشد',
+                  style: TextStyle(fontWeight: FontWeight.w700),
+                ),
+                const SizedBox(height: 8),
+                DropdownButtonFormField<String>(
+                  value: _field(targetField) != null
+                      ? targetField
+                      : fields.first.key,
+                  decoration: const InputDecoration(
+                    border: OutlineInputBorder(),
+                    labelText: 'فیلد هدف',
+                  ),
+                  items: fields
+                      .map(
+                        (f) => DropdownMenuItem(
+                          value: f.key,
+                          child: Text(
+                            f.label,
+                            textDirection: TextDirection.rtl,
+                          ),
+                        ),
+                      )
+                      .toList(),
+                  onChanged: !enabled
+                      ? null
+                      : (value) {
+                          setState(() => targetField = value);
+                          _emit();
+                        },
+                ),
+                const SizedBox(height: 14),
+                DropdownButtonFormField<String>(
+                  value: _field(searchField) != null
+                      ? searchField
+                      : (targetField ?? fields.first.key),
+                  decoration: const InputDecoration(
+                    border: OutlineInputBorder(),
+                    labelText: 'فیلدی که مقدار آن جستجو شود',
+                  ),
+                  items: fields
+                      .map(
+                        (f) => DropdownMenuItem(
+                          value: f.key,
+                          child: Text(
+                            f.label,
+                            textDirection: TextDirection.rtl,
+                          ),
+                        ),
+                      )
+                      .toList(),
+                  onChanged: !enabled
+                      ? null
+                      : (value) {
+                          setState(() => searchField = value);
+                          _emit();
+                        },
+                ),
+              ],
+            ),
+          ),
+        ),
+        const SizedBox(height: 12),
+        Card(
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                const Text(
+                  'چینش اطلاعات سابقه',
+                  style: TextStyle(fontWeight: FontWeight.w700),
+                ),
+                const SizedBox(height: 6),
+                const Text(
+                  'فیلدها را انتخاب کنید و با فلش‌ها ترتیب نمایش آن‌ها در کارت سابقه را مشخص کنید.',
+                  style: TextStyle(fontSize: 12),
+                ),
+                const SizedBox(height: 10),
+                ...displayFields.asMap().entries.map((entry) {
+                  final index = entry.key;
+                  final field = _field(entry.value);
+                  if (field == null) return const SizedBox.shrink();
+
+                  return ListTile(
+                    contentPadding: EdgeInsets.zero,
+                    leading: CircleAvatar(
+                      radius: 15,
+                      child: Text('${index + 1}'),
+                    ),
+                    title: Text(field.label),
+                    subtitle: Text(field.key),
+                    trailing: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        IconButton(
+                          tooltip: 'بالا',
+                          onPressed: index == 0
+                              ? null
+                              : () => _move(index, -1),
+                          icon: const Icon(Icons.keyboard_arrow_up),
+                        ),
+                        IconButton(
+                          tooltip: 'پایین',
+                          onPressed: index == displayFields.length - 1
+                              ? null
+                              : () => _move(index, 1),
+                          icon: const Icon(Icons.keyboard_arrow_down),
+                        ),
+                      ],
+                    ),
+                  );
+                }),
+                const Divider(),
+                ...fields.map(
+                  (field) => CheckboxListTile(
+                    value: displayFields.contains(field.key),
+                    title: Text(field.label),
+                    subtitle: Text(field.key),
+                    dense: true,
+                    onChanged: !enabled
+                        ? null
+                        : (value) {
+                            setState(() {
+                              if (value == true) {
+                                if (!displayFields.contains(field.key)) {
+                                  displayFields.add(field.key);
+                                }
+                              } else {
+                                displayFields.remove(field.key);
+                              }
+                            });
+                            _emit();
+                          },
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ],
+    );
   }
 }

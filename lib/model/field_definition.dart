@@ -248,6 +248,67 @@ class CardSchema {
   );
 }
 
+
+class HistorySuggestionSchema {
+  final bool enabled;
+  final String? targetField;
+  final String? searchField;
+  final List<String> displayFields;
+
+  const HistorySuggestionSchema({
+    this.enabled = true,
+    this.targetField = 'saheb_name',
+    this.searchField,
+    this.displayFields = const ['saheb_name', 'guy', 'onvan'],
+  });
+
+  HistorySuggestionSchema copyWith({
+    bool? enabled,
+    String? targetField,
+    String? searchField,
+    List<String>? displayFields,
+  }) {
+    return HistorySuggestionSchema(
+      enabled: enabled ?? this.enabled,
+      targetField: targetField ?? this.targetField,
+      searchField: searchField ?? this.searchField,
+      displayFields: displayFields ?? this.displayFields,
+    );
+  }
+
+  Map<String, dynamic> toJson() => {
+        'enabled': enabled,
+        'targetField': targetField,
+        'searchField': searchField,
+        'displayFields': displayFields,
+      };
+
+  factory HistorySuggestionSchema.fromJson(dynamic raw) {
+    if (raw is! Map) {
+      return const HistorySuggestionSchema();
+    }
+    final map = Map<String, dynamic>.from(raw);
+    final display = (map['displayFields'] as List?)
+            ?.map((e) => e.toString())
+            .where((e) => e.isNotEmpty)
+            .toList() ??
+        const <String>['saheb_name', 'guy', 'onvan'];
+
+    return HistorySuggestionSchema(
+      enabled: map['enabled'] != false,
+      targetField: map['targetField']?.toString().isNotEmpty == true
+          ? map['targetField'].toString()
+          : 'saheb_name',
+      searchField: map['searchField']?.toString().isNotEmpty == true
+          ? map['searchField'].toString()
+          : null,
+      displayFields: display.isEmpty
+          ? const ['saheb_name', 'guy', 'onvan']
+          : display,
+    );
+  }
+}
+
 class RecordSchema {
   final int schemaVersion;
   final List<FieldDefinition> fields;
@@ -259,6 +320,7 @@ class RecordSchema {
   final List<String> filterFields;
   final int filterColumns;
   final CardSchema card;
+  final HistorySuggestionSchema historySuggestion;
 
   const RecordSchema({
     this.schemaVersion = 1,
@@ -271,6 +333,7 @@ class RecordSchema {
     this.filterFields = const [],
     this.filterColumns = 2,
     this.card = const CardSchema(),
+    this.historySuggestion = const HistorySuggestionSchema(),
   });
 
   FieldDefinition? field(String key) {
@@ -300,6 +363,7 @@ class RecordSchema {
     'defaultFields': defaultSearchFields,
     'filterFields': filterFields,
     'filterColumns': filterColumns,
+    'historySuggestion': historySuggestion.toJson(),
   };
 
   Map<String, dynamic> cardJson() => card.toJson();
@@ -313,6 +377,7 @@ class RecordSchema {
   String get fieldsJsonString => jsonEncode(fieldsJson());
   String get layoutJsonString => jsonEncode(layoutJson());
   String get searchJsonString => jsonEncode(searchJson());
+  String get historySuggestionJsonString => jsonEncode(historySuggestion.toJson());
   String get statsJsonString => jsonEncode(statsJson());
   String get cardJsonString => jsonEncode(cardJson());
 
@@ -322,6 +387,7 @@ class RecordSchema {
     final searchRaw = _decode(row['search_json']);
     final statsRaw = _decode(row['stats_json']);
     final cardRaw = _decode(row['card_json']);
+    final historySuggestionRaw = searchRaw['historySuggestion'];
 
     final fields =
         (fieldsRaw['fields'] as List?)

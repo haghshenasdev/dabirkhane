@@ -22,7 +22,8 @@ class SchemaService {
     if (normalized.schemaVersion != schema.schemaVersion ||
         normalized.fieldsJsonString != schema.fieldsJsonString ||
         normalized.layoutJsonString != schema.layoutJsonString ||
-        normalized.searchJsonString != schema.searchJsonString) {
+        normalized.searchJsonString != schema.searchJsonString ||
+        normalized.historySuggestionJsonString != schema.historySuggestionJsonString) {
       await _saveWithExecutor(db, normalized);
       return normalized;
     }
@@ -118,6 +119,17 @@ class SchemaService {
       changed = true;
     }
 
+    final normalizedHistory = _normalizeHistorySuggestion(
+      schema.historySuggestion,
+      fields,
+    );
+    if (!_historySuggestionEquals(
+      normalizedHistory,
+      schema.historySuggestion,
+    )) {
+      changed = true;
+    }
+
     if (!changed) return schema;
 
     return RecordSchema(
@@ -131,7 +143,26 @@ class SchemaService {
       filterFields: normalizedFilters,
       filterColumns: schema.filterColumns,
       card: schema.card,
+      historySuggestion: normalizedHistory,
     );
+  }
+
+  static Future<void> repairDatabaseColumns() async {
+    final schema = await load();
+    if (schema == null) return;
+
+    final db = await DatabaseHelper.database;
+    final columns = await _columns(db);
+
+    for (final field in schema.fields) {
+      if (field.system || field.type == FieldType.category) continue;
+      if (columns.contains(field.key)) continue;
+
+      final sqlType = _sqlType(field.type);
+      await db.execute(
+        'ALTER TABLE $recordTable ADD COLUMN "${_quote(field.key)}" $sqlType',
+      );
+    }
   }
 
   static Future<bool> hasSchema() async {
@@ -210,6 +241,12 @@ class SchemaService {
       statsGroupFields: const [],
       filterFields: const [],
       filterColumns: 2,
+      historySuggestion: HistorySuggestionSchema(
+        enabled: true,
+        targetField: 'saheb_name',
+        searchField: 'saheb_name',
+        displayFields: const ['saheb_name', 'guy', 'onvan'],
+      ),
     );
 
     await save(starter);
@@ -245,6 +282,12 @@ class SchemaService {
       statsGroupFields: const ['onvan', 'guy', 'saheb_name'],
       filterFields: const ['onvan', 'comment', 'shomare_badi', 'saheb_name', 'guy', 'sh_name_reside'],
       filterColumns: 2,
+      historySuggestion: HistorySuggestionSchema(
+        enabled: true,
+        targetField: 'saheb_name',
+        searchField: 'saheb_name',
+        displayFields: const ['saheb_name', 'guy', 'onvan'],
+      ),
     );
 
     final db = await DatabaseHelper.database;
@@ -450,6 +493,7 @@ class SchemaService {
       filterFields: schema.filterFields,
       filterColumns: schema.filterColumns,
       card: schema.card,
+      historySuggestion: schema.historySuggestion,
     ));
   }
 
@@ -483,6 +527,54 @@ class SchemaService {
       filterFields: normalized,
       filterColumns: columns.clamp(1, 2).toInt(),
     ));
+  }
+
+
+  static Future<void> setHistorySuggestionConfig(
+    HistorySuggestionSchema config,
+  ) async {
+    final schema = await load();
+    if (schema == null) return;
+
+    final available = schema.fields
+        .where((f) => f.visible && !f.system && f.type != FieldType.category)
+        .map((f) => f.key)
+        .toSet();
+
+    String? target = config.targetField;
+    if (target != null && !available.contains(target)) {
+      target = available.isNotEmpty ? available.first : null;
+    }
+
+    String? search = config.searchField;
+    if (search == null || !available.contains(search)) {
+      search = target;
+    }
+
+    final display = <String>[];
+    for (final key in config.displayFields) {
+      if (available.contains(key) && !display.contains(key)) {
+        display.add(key);
+      }
+    }
+    if (target != null && !display.contains(target)) {
+      display.insert(0, target);
+    }
+    if (display.isEmpty && target != null) {
+      display.add(target);
+    }
+
+    await save(
+      _copySchema(
+        schema,
+        historySuggestion: HistorySuggestionSchema(
+          enabled: config.enabled && target != null,
+          targetField: target,
+          searchField: search,
+          displayFields: display,
+        ),
+      ),
+    );
   }
 
   static Future<void> disableField(String key) async {
@@ -540,6 +632,62 @@ class SchemaService {
     return clean.isEmpty ? 'section_${Random().nextInt(99999)}' : clean;
   }
 
+
+  static HistorySuggestionSchema _normalizeHistorySuggestion(
+    HistorySuggestionSchema config,
+    List<FieldDefinition> fields,
+  ) {
+    final available = fields
+        .where((f) => f.visible && !f.system && f.type != FieldType.category)
+        .map((f) => f.key)
+        .toSet();
+
+    var target = config.targetField;
+    if (target == null || !available.contains(target)) {
+      target = available.contains('saheb_name')
+          ? 'saheb_name'
+          : (available.isNotEmpty ? available.first : null);
+    }
+
+    var search = config.searchField;
+    if (search == null || !available.contains(search)) {
+      search = target;
+    }
+
+    final display = <String>[];
+    for (final key in config.displayFields) {
+      if (available.contains(key) && !display.contains(key)) {
+        display.add(key);
+      }
+    }
+    if (target != null && !display.contains(target)) {
+      display.insert(0, target);
+    }
+
+    return HistorySuggestionSchema(
+      enabled: config.enabled && target != null,
+      targetField: target,
+      searchField: search,
+      displayFields: display,
+    );
+  }
+
+  static bool _historySuggestionEquals(
+    HistorySuggestionSchema a,
+    HistorySuggestionSchema b,
+  ) {
+    if (a.enabled != b.enabled ||
+        a.targetField != b.targetField ||
+        a.searchField != b.searchField ||
+        a.displayFields.length != b.displayFields.length) {
+      return false;
+    }
+    for (var i = 0; i < a.displayFields.length; i++) {
+      if (a.displayFields[i] != b.displayFields[i]) return false;
+    }
+    return true;
+  }
+
   static RecordSchema _copySchema(
     RecordSchema schema, {
     List<FieldDefinition>? fields,
@@ -551,6 +699,7 @@ class SchemaService {
     List<String>? filterFields,
     int? filterColumns,
     CardSchema? card,
+    HistorySuggestionSchema? historySuggestion,
   }) {
     return RecordSchema(
       schemaVersion: schema.schemaVersion + 1,
@@ -563,6 +712,7 @@ class SchemaService {
       filterFields: filterFields ?? schema.filterFields,
       filterColumns: filterColumns ?? schema.filterColumns,
       card: card ?? schema.card,
+      historySuggestion: historySuggestion ?? schema.historySuggestion,
     );
   }
 }

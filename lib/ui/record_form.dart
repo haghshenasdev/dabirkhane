@@ -4,6 +4,7 @@ import 'dart:io';
 import 'package:dabirkhane/model/reminder.dart';
 import 'package:dabirkhane/providers/scan_service.dart';
 import 'package:dabirkhane/ui/dialogs/record_history_dialog.dart';
+import 'package:dabirkhane/ui/dialogs/share_record_dialog.dart';
 import 'package:dabirkhane/ui/dialogs/reminder_dialog.dart';
 import 'package:dabirkhane/utils/letter_file_organizer.dart';
 import 'package:share_plus/share_plus.dart';
@@ -68,6 +69,7 @@ class _RecordFormState extends State<RecordForm>
   Timer? _debounceGuy;
   Timer? _debounceOnvan;
   Timer? _debounce;
+  Timer? _historySuggestionDebounce;
 
   // ============================================================
   // Categories
@@ -1260,6 +1262,94 @@ class _RecordFormState extends State<RecordForm>
   // Share
   // ============================================================
 
+  Future<void> shareRecord() async {
+    if (!mounted) return;
+
+    // نامه جدیدی که هنوز ذخیره نشده است، مقدار نهایی دیتابیس را ندارد.
+    // برای جلوگیری از اشتراک‌گذاری اطلاعات ناقص ابتدا ذخیره می‌کنیم.
+    if (_hasUnsavedChanges) {
+      final saved = await _saveDataOnly();
+      if (!saved || !mounted) return;
+    }
+
+    final recordId = _savedRecordId ??
+        (widget.record?['Shomare_Radif'] is int
+            ? widget.record!['Shomare_Radif'] as int
+            : int.tryParse(
+                  widget.record?['Shomare_Radif']?.toString() ?? '',
+                ) ??
+                int.tryParse(c['Shomare_Radif']?.text ?? ''));
+
+    if (recordId == null) {
+      _showMessage('شماره نامه مشخص نیست.');
+      return;
+    }
+
+    final result = await showDialog<ShareRecordResult>(
+      context: context,
+      builder: (_) => ShareRecordDialog(
+        record: widget.record ?? <String, dynamic>{
+          for (final entry in c.entries) entry.key: entry.value.text,
+        },
+        categories: selectedCategories,
+      ),
+    );
+
+    if (result == null || !mounted) return;
+
+    final values = <String>[];
+    final currentRecord = await DatabaseHelper.getById(recordId);
+
+    if (currentRecord == null) {
+      _showMessage('اطلاعات نامه برای اشتراک‌گذاری پیدا نشد.');
+      return;
+    }
+
+    for (final field in result.fields) {
+      final value = field.key == '__category__'
+          ? selectedCategories.join('، ')
+          : currentRecord[field.key]?.toString().trim() ?? '';
+
+      if (value.isEmpty) continue;
+
+      values.add('${field.label}: $value');
+    }
+
+    final text = values.join('\n');
+
+    if (result.includeFiles) {
+      await _loadFiles();
+    }
+
+    final files = result.includeFiles
+        ? filesInDirectory
+            .where((file) => file.existsSync())
+            .map((file) => XFile(file.path))
+            .toList()
+        : <XFile>[];
+
+    final subject =
+        'نامه شماره ${currentRecord['Shomare_Radif'] ?? recordId}';
+
+    try {
+      if (files.isNotEmpty) {
+        await Share.shareXFiles(
+          files,
+          subject: subject,
+          text: text.isEmpty ? subject : text,
+        );
+      } else {
+        await Share.share(
+          text.isEmpty ? subject : text,
+          subject: subject,
+        );
+      }
+    } catch (e) {
+      if (!mounted) return;
+      _showMessage('خطا در اشتراک‌گذاری نامه:\n$e');
+    }
+  }
+
   Future<void> shareFiles() async {
     if (filesInDirectory.isEmpty) {
       _showMessage('فایلی برای اشتراک گذاری وجود ندارد');
@@ -1476,6 +1566,168 @@ class _RecordFormState extends State<RecordForm>
   // Saheb name
   // ============================================================
 
+  Widget _buildHistorySuggestionField(FieldDefinition definition) {
+    final config = _schema!.historySuggestion;
+    final suggestions = _dynamicSuggestions[definition.key] ?? const <String>[];
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        _glassField(
+          child: TextFormField(
+            controller: c[definition.key],
+            focusNode: focusNodes[definition.key],
+            decoration: _glassInputDecoration(
+              label: definition.label,
+              prefixIcon: Icon(_fieldIcon(definition), size: 20),
+              suffixIcon: suggestions.isNotEmpty
+                  ? IconButton(
+                      tooltip: 'بستن سابقه',
+                      icon: const Icon(Icons.close_rounded),
+                      onPressed: () {
+                        setState(() {
+                          _dynamicSuggestions[definition.key] = [];
+                        });
+                      },
+                    )
+                  : null,
+            ),
+            textDirection: TextDirection.rtl,
+            minLines: 1,
+            maxLines: definition.maxLines.clamp(1, 3).toInt(),
+            keyboardType: TextInputType.text,
+            validator: definition.required
+                ? (value) => value == null || value.trim().isEmpty
+                    ? 'این فیلد الزامی است'
+                    : null
+                : null,
+            onChanged: (value) {
+              _historySuggestionDebounce?.cancel();
+
+              if (value.trim().isEmpty) {
+                setState(() {
+                  _dynamicSuggestions[definition.key] = [];
+                });
+                return;
+              }
+
+              _historySuggestionDebounce = Timer(
+                const Duration(milliseconds: 350),
+                () async {
+                  try {
+                    final rows =
+                        await DatabaseHelper.searchDistinctField(
+                      config.searchField ?? definition.key,
+                      value.trim(),
+                    );
+
+                    if (!mounted ||
+                        _schema?.historySuggestion.targetField !=
+                            definition.key) {
+                      return;
+                    }
+
+                    setState(() {
+                      _dynamicSuggestions[definition.key] = rows;
+                    });
+                  } catch (e) {
+                    debugPrint('History suggestion error: $e');
+                  }
+                },
+              );
+            },
+            onFieldSubmitted: (_) {
+              if (suggestions.isNotEmpty) {
+                _selectHistorySuggestion(
+                  definition,
+                  suggestions.first,
+                );
+              } else {
+                _focusNextField(definition.key);
+              }
+            },
+          ),
+        ),
+        if (suggestions.isNotEmpty)
+          _glassSuggestions(
+            suggestions: suggestions,
+            icon: Icons.history_rounded,
+            onSelected: (item) {
+              _selectHistorySuggestion(definition, item);
+            },
+          ),
+        if (lastInfoText != null &&
+            lastRecord != null &&
+            config.targetField == definition.key)
+          _buildLastRecordCard(),
+      ],
+    );
+  }
+
+  Future<void> _selectHistorySuggestion(
+    FieldDefinition definition,
+    String value,
+  ) async {
+    final config = _schema!.historySuggestion;
+    final searchField = config.searchField ?? definition.key;
+
+    try {
+      final last = await DatabaseHelper.getLastRecordByField(
+        searchField,
+        value,
+      );
+
+      if (last != null) {
+        final targetValue = last[definition.key]?.toString() ?? value;
+        c[definition.key]!.text = targetValue;
+
+        if (definition.key == 'saheb_name' &&
+            c.containsKey('sh_name_reside')) {
+          c['sh_name_reside']!.text =
+              last['sh_name_reside']?.toString() ?? '';
+        }
+
+        lastRecord = last;
+        lastInfoText = _buildLastRecordInfo(last);
+      } else {
+        c[definition.key]!.text = value;
+        lastRecord = null;
+        lastInfoText = null;
+      }
+    } catch (e) {
+      c[definition.key]!.text = value;
+      debugPrint('Load last record error: $e');
+      lastRecord = null;
+      lastInfoText = null;
+    }
+
+    if (!mounted) return;
+
+    setState(() {
+      _dynamicSuggestions[definition.key] = [];
+    });
+
+  }
+
+  String _buildLastRecordInfo(Map<String, dynamic> record) {
+    final config = _schema?.historySuggestion;
+    if (config == null) return '';
+
+    final parts = <String>[];
+
+    for (final key in config.displayFields) {
+      final definition = _schema?.field(key);
+      final value = record[key]?.toString().trim() ?? '';
+
+      if (value.isEmpty) continue;
+
+      final label = definition?.label ?? fieldLabels[key] ?? key;
+      parts.add('$label: $value');
+    }
+
+    return parts.join('  |  ');
+  }
+
   Widget buildSahebNameField() {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -1504,6 +1756,7 @@ class _RecordFormState extends State<RecordForm>
             keyboardType: TextInputType.multiline,
             onChanged: (value) {
               _debounce?.cancel();
+    _historySuggestionDebounce?.cancel();
 
               if (!_sahebNameSuggestionsEnabled) {
                 if (sahebSuggestions.isNotEmpty) {
@@ -1553,10 +1806,7 @@ class _RecordFormState extends State<RecordForm>
 
                 lastRecord = last;
 
-                lastInfoText =
-                    'آخرین نامه: ${last['date'] ?? '—'} | '
-                    '${last['guy'] ?? '—'} | '
-                    '${last['onvan'] ?? '—'}';
+                lastInfoText = _buildLastRecordInfo(last);
               } else {
                 lastRecord = null;
                 lastInfoText = null;
@@ -2025,6 +2275,12 @@ class _RecordFormState extends State<RecordForm>
 
     if (field == '__category__' || definition?.type == FieldType.category) {
       return buildCategoryField(definition);
+    }
+
+    final historyConfig = _schema?.historySuggestion;
+    if (historyConfig?.enabled == true &&
+        historyConfig?.targetField == field) {
+      return _buildHistorySuggestionField(definition!);
     }
 
     if (field == 'saheb_name' && definition?.suggestions != false) {
@@ -2705,6 +2961,8 @@ class _RecordFormState extends State<RecordForm>
           centerTitle: false,
 
           actions: [
+            _buildShareButton(),
+            const SizedBox(width: 8),
             _buildHistoryButton(),
             const SizedBox(width: 8),
             _buildReminderButton(),
@@ -3866,6 +4124,13 @@ class _RecordFormState extends State<RecordForm>
     );
   }
 
+  Widget _buildShareButton() {
+    return IconButton(
+      tooltip: 'اشتراک‌گذاری نامه',
+      icon: const Icon(Icons.share_outlined),
+      onPressed: shareRecord,
+    );
+  }
   Widget _buildHistoryButton() {
     final colorScheme = Theme.of(context).colorScheme;
 

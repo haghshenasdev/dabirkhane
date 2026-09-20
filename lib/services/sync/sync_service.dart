@@ -38,6 +38,19 @@ class SyncService {
     final enabled = await AppSettings.getSyncEnabled();
     if (enabled) {
       await start();
+
+      // بازسازی اطلاعات legacy در پس‌زمینه انجام می‌شود تا
+      // دیتابیس‌های بزرگ باعث تأخیر در باز شدن فرم اصلی نشوند.
+      unawaited(() async {
+        try {
+          await DatabaseHelper.ensureSyncIdentity(
+            rebuildLegacyChanges: true,
+          );
+        } catch (e, st) {
+          debugPrint('Background sync identity repair error: $e');
+          debugPrintStack(stackTrace: st);
+        }
+      }());
     }
   }
 

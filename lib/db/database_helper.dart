@@ -42,6 +42,57 @@ class DatabaseHelper {
     return getDbPath();
   }
 
+  static Future<List<Map<String, String>>> searchRecordSuggestions({
+    required String searchField,
+    required String query,
+    required List<String> displayFields,
+    int limit = 12,
+  }) async {
+    final db = await database;
+    final columns = await _columns();
+
+    if (!columns.contains(searchField)) {
+      throw ArgumentError('فیلد جستجوی سابقه «$searchField» در دیتابیس وجود ندارد.');
+    }
+
+    final safeSearch = _quoteIdentifier(searchField);
+    final validDisplay = <String>[];
+    for (final field in displayFields) {
+      if (columns.contains(field) && !validDisplay.contains(field)) {
+        validDisplay.add(field);
+      }
+    }
+
+    if (!validDisplay.contains(searchField)) {
+      validDisplay.insert(0, searchField);
+    }
+
+    final safeColumns = validDisplay.map(_quoteIdentifier).join(', ');
+    final rows = await db.rawQuery(
+      '''
+      SELECT Shomare_Radif, $safeColumns
+      FROM daftare_andicator
+      WHERE $safeSearch IS NOT NULL
+        AND CAST($safeSearch AS TEXT) LIKE ?
+      ORDER BY Shomare_Radif DESC
+      LIMIT ?
+      ''',
+      ['%$query%', limit],
+    );
+
+    return rows.map((row) {
+      final result = <String, String>{};
+      for (final field in validDisplay) {
+        final value = row[field];
+        if (value != null && value.toString().trim().isNotEmpty) {
+          result[field] = value.toString();
+        }
+      }
+      result['Shomare_Radif'] = row['Shomare_Radif']?.toString() ?? '';
+      return result;
+    }).toList();
+  }
+
   static Future<List<String>> getDistinctFieldValues(String field) async {
     final db = await database;
     await _ensureFieldExists(field);
@@ -89,27 +140,40 @@ class DatabaseHelper {
     return searchDistinctField('saheb_name', query);
   }
 
-  static Future<Map<String, dynamic>?> getLastRecordBySahebName(
-    String name,
+  static Future<Map<String, dynamic>?> getLastRecordByField(
+    String field,
+    String value,
   ) async {
     final db = await database;
+    final columns = await _columns();
 
+    if (!columns.contains(field)) {
+      throw ArgumentError('فیلد سابقه «$field» در دیتابیس وجود ندارد.');
+    }
+
+    final safeField = _quoteIdentifier(field);
     final res = await db.rawQuery(
       '''
       SELECT *
       FROM daftare_andicator
-      WHERE saheb_name = ?
+      WHERE $safeField = ?
       ORDER BY Shomare_Radif DESC
       LIMIT 1
       ''',
-      [name],
+      [value],
     );
 
     if (res.isNotEmpty) {
-      return res.first;
+      return Map<String, dynamic>.from(res.first);
     }
 
     return null;
+  }
+
+  static Future<Map<String, dynamic>?> getLastRecordBySahebName(
+    String name,
+  ) async {
+    return getLastRecordByField('saheb_name', name);
   }
 
   static String _quoteIdentifier(String value) =>
@@ -592,27 +656,9 @@ class DatabaseHelper {
       definition: 'INTEGER NOT NULL DEFAULT 0',
     );
 
-    // ------------------------------------------------------------
-    // برای دیتابیس‌های قدیمی، sync_id را در یک UPDATE واحد مقداردهی
-    // می‌کنیم؛ نه اینکه برای هر رکورد یک UPDATE جداگانه اجرا شود.
-    //
-    // این قسمت عمداً ساده نگه داشته شده تا Migration دیتابیس‌های
-    // قدیمی سریع و قابل اعتماد باقی بماند.
-    // ------------------------------------------------------------
-
-    try {
-      await db.execute('''
-      UPDATE daftare_andicator
-      SET sync_id = 'legacy-record-' || CAST(Shomare_Radif AS TEXT)
-      WHERE sync_id IS NULL
-         OR sync_id = ''
-    ''');
-    } catch (_) {
-      // اگر دیتابیس خیلی قدیمی یا ساختار آن غیرعادی باشد،
-      // شکست این مرحله نباید مانع باز شدن برنامه شود.
-      //
-      // sync_id در ادامه توسط ensureSyncIdentity تکمیل خواهد شد.
-    }
+    // هیچ UPDATE رکوردی در Migration انجام نمی‌شود.
+    // مقداردهی sync_id برای رکوردهای قدیمی خارج از مسیر باز شدن برنامه
+    // و فقط در صورت نیاز انجام خواهد شد.
   }
 
   static Future<int> reserveMasterLetterNumber() async {
@@ -647,44 +693,69 @@ class DatabaseHelper {
     return (rows.first['maxRadif'] as num?)?.toInt();
   }
 
-  static Future<void> ensureSyncIdentity() async {
+  static Future<void> ensureSyncIdentity({
+    bool rebuildLegacyChanges = false,
+  }) async {
     final db = await database;
     await _createSyncTables(db);
     await _ensureSyncColumns(db);
+
     final state = await db.query(
       'sync_number_state',
       where: 'id = 1',
       limit: 1,
     );
+
     if (state.isEmpty && await AppSettings.getSyncRole() == 'master') {
       final next = ((await _maxLetterNumber(db)) ?? 0) + 1;
       await db.insert('sync_number_state', {'id': 1, 'next_number': next});
     }
-    final syncCountRows = await db.rawQuery(
-      'SELECT COUNT(*) AS c FROM sync_changes',
-    );
-    final syncCount = (syncCountRows.first['c'] as num?)?.toInt() ?? 0;
-    if (syncCount == 0) {
-      final records = await db.query('daftare_andicator');
-      for (final record in records) {
-        final syncId = record['sync_id']?.toString();
-        if (syncId == null || syncId.isEmpty) continue;
-        final categoriesRows = await db.rawQuery(
-          'SELECT c.name FROM categories c JOIN record_categories rc ON rc.category_id = c.id WHERE rc.record_id = ?',
-          [record['Shomare_Radif']],
-        );
-        final categories = categoriesRows
-            .map((e) => e['name']?.toString() ?? '')
-            .where((e) => e.isNotEmpty)
-            .toList();
-        await _logSyncChange(
-          db,
-          entityType: 'record',
-          entityId: syncId,
-          operation: 'upsert',
-          payload: {'record': record, 'categories': categories},
-        );
-      }
+
+    if (!rebuildLegacyChanges) return;
+
+    // این بخش فقط خارج از مسیر Startup اجرا می‌شود.
+    // یک UPDATE واحد برای شناسه‌های قدیمی بسیار سبک‌تر از UPDATE
+    // جداگانه برای هر رکورد است و Migration را درگیر نمی‌کند.
+    await db.execute('''
+      UPDATE daftare_andicator
+      SET sync_id = 'legacy-record-' || CAST(Shomare_Radif AS TEXT)
+      WHERE sync_id IS NULL OR sync_id = ''
+    ''');
+
+    final records = await db.query('daftare_andicator');
+
+    for (final record in records) {
+      final syncId = record['sync_id']?.toString();
+      if (syncId == null || syncId.isEmpty) continue;
+
+      final exists = await db.query(
+        'sync_changes',
+        columns: ['id'],
+        where: 'entity_type = ? AND entity_id = ?',
+        whereArgs: ['record', syncId],
+        limit: 1,
+      );
+
+      if (exists.isNotEmpty) continue;
+
+      final categoriesRows = await db.rawQuery(
+        'SELECT c.name FROM categories c JOIN record_categories rc '
+        'ON rc.category_id = c.id WHERE rc.record_id = ?',
+        [record['Shomare_Radif']],
+      );
+
+      final categories = categoriesRows
+          .map((e) => e['name']?.toString() ?? '')
+          .where((e) => e.isNotEmpty)
+          .toList();
+
+      await _logSyncChange(
+        db,
+        entityType: 'record',
+        entityId: syncId,
+        operation: 'upsert',
+        payload: {'record': record, 'categories': categories},
+      );
     }
   }
 
@@ -1061,6 +1132,12 @@ class DatabaseHelper {
         'sh_name_reside',
       ],
       'filterColumns': 2,
+      'historySuggestion': {
+        'enabled': true,
+        'targetField': 'saheb_name',
+        'searchField': 'saheb_name',
+        'displayFields': ['saheb_name', 'guy', 'onvan'],
+      },
     };
     final stats = {
       'enabled': true,
@@ -1325,6 +1402,42 @@ class DatabaseHelper {
     return result.map((row) => Map<String, dynamic>.from(row)).toList();
   }
 
+  static Future<Map<String, dynamic>> _normalizeRecordData(
+    DatabaseExecutor db,
+    Map<String, dynamic> source,
+  ) async {
+    final rows = await db.rawQuery('PRAGMA table_info(daftare_andicator)');
+    final actual = <String, String>{
+      for (final row in rows)
+        if (row['name'] != null)
+          row['name'].toString().toLowerCase(): row['name'].toString(),
+    };
+
+    final result = <String, dynamic>{};
+    final unknown = <String>[];
+
+    for (final entry in source.entries) {
+      if (entry.key == '__category__') continue;
+
+      final actualName = actual[entry.key.toLowerCase()];
+      if (actualName == null) {
+        unknown.add(entry.key);
+        continue;
+      }
+
+      result[actualName] = entry.value;
+    }
+
+    if (unknown.isNotEmpty) {
+      throw StateError(
+        'ساختار فرم و دیتابیس هماهنگ نیست. ستون‌های زیر در دیتابیس وجود ندارند: '
+        '${unknown.join('، ')}',
+      );
+    }
+
+    return result;
+  }
+
   // ============================================================
   // CRUD
   // ============================================================
@@ -1334,7 +1447,7 @@ class DatabaseHelper {
 
     return db.transaction((txn) async {
       await _ensureSyncColumns(txn);
-      data = Map<String, dynamic>.from(data);
+      data = await _normalizeRecordData(txn, data);
       if (!data.containsKey('Shomare_Radif') || data['Shomare_Radif'] == null) {
         final role = await AppSettings.getSyncRole();
         if (await AppSettings.getSyncEnabled()) {
@@ -1413,6 +1526,8 @@ class DatabaseHelper {
     final db = await database;
 
     return db.transaction((txn) async {
+      data = await _normalizeRecordData(txn, data);
+
       final oldResult = await txn.query(
         'daftare_andicator',
         where: 'Shomare_Radif = ?',
@@ -1544,32 +1659,100 @@ class DatabaseHelper {
     final db = await database;
 
     await db.transaction((txn) async {
+      // برای دیتابیس‌های قدیمی یا بازیابی‌شده، جدول‌های دسته‌بندی
+      // را قبل از ذخیره مجدداً تضمین می‌کنیم.
+      await _ensureCoreTables(txn);
+
+      // ابتدا دسته‌بندی‌های قبلی این رکورد حذف شوند.
       await txn.delete(
         'record_categories',
         where: 'record_id = ?',
         whereArgs: [recordId],
       );
 
-      for (final cat in categories) {
+      // دسته‌بندی‌های خالی یا تکراری را حذف می‌کنیم.
+      final normalizedCategories = categories
+          .map((e) => e.trim())
+          .where((e) => e.isNotEmpty)
+          .toSet()
+          .toList();
+
+      for (final cat in normalizedCategories) {
+        // دسته‌بندی را در صورت نبودن ایجاد می‌کنیم.
         await txn.insert('categories', {
           'name': cat,
         }, conflictAlgorithm: ConflictAlgorithm.ignore);
 
+        // شناسه دسته‌بندی را پیدا می‌کنیم.
         final idRes = await txn.query(
           'categories',
           columns: ['id'],
           where: 'name = ?',
           whereArgs: [cat],
+          limit: 1,
         );
+
+        // اگر به هر دلیلی دسته‌بندی پیدا نشد، از آن عبور می‌کنیم
+        // تا ذخیره کل نامه شکست نخورد.
+        if (idRes.isEmpty) {
+          continue;
+        }
 
         final catId = idRes.first['id'];
 
+        if (catId == null) {
+          continue;
+        }
+
+        // اتصال رکورد به دسته‌بندی
         await txn.insert('record_categories', {
-          'record_id': recordId,
+          'record_id': int.tryParse(recordId) ?? recordId,
           'category_id': catId,
         }, conflictAlgorithm: ConflictAlgorithm.ignore);
       }
     });
+
+    // تغییر دسته‌بندی نیز بخشی از وضعیت همگام‌سازی رکورد است.
+    try {
+      final recordIdInt = int.tryParse(recordId);
+      if (recordIdInt != null) {
+        final record = await db.query(
+          'daftare_andicator',
+          where: 'Shomare_Radif = ?',
+          whereArgs: [recordIdInt],
+          limit: 1,
+        );
+        if (record.isNotEmpty &&
+            (record.first['sync_id']?.toString().trim().isNotEmpty ?? false)) {
+          final categoryRows = await db.rawQuery(
+            '''
+            SELECT c.name
+            FROM categories c
+            JOIN record_categories rc ON rc.category_id = c.id
+            WHERE rc.record_id = ?
+            ''',
+            [recordIdInt],
+          );
+          await db.transaction((txn) async {
+            await _logSyncChange(
+              txn,
+              entityType: 'record',
+              entityId: record.first['sync_id']?.toString() ?? '',
+              operation: 'upsert',
+              payload: {
+                'record': record.first,
+                'categories': categoryRows
+                    .map((e) => e['name']?.toString() ?? '')
+                    .where((e) => e.isNotEmpty)
+                    .toList(),
+              },
+            );
+          });
+        }
+      }
+    } catch (_) {
+      // خطای ثبت تغییر همگام‌سازی نباید ذخیره نامه را شکست دهد.
+    }
   }
 
   static Future<List<String>> getCategoriesForRecord(String recordId) async {
@@ -1885,6 +2068,77 @@ class DatabaseHelper {
     await _ensureRecordSchemaTable(db);
     await _ensureRecordSchemaColumns(db);
     await _ensureLegacyRecordColumns(db);
+  }
+
+  static Future<Map<String, dynamic>> getDiagnostics() async {
+    final result = <String, dynamic>{};
+    result['path'] = await getDbPath();
+
+    try {
+      final db = await database;
+      result['version'] = await db.getVersion();
+
+      final integrity = await db.rawQuery('PRAGMA integrity_check');
+      result['integrity'] = integrity.isNotEmpty
+          ? integrity.first.values.first?.toString()
+          : 'unknown';
+
+      final tables = await db.rawQuery(
+        "SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name",
+      );
+      result['tables'] =
+          tables.map((e) => e['name']?.toString()).whereType<String>().toList();
+
+      final columns = await db.rawQuery('PRAGMA table_info(daftare_andicator)');
+      result['recordColumns'] =
+          columns.map((e) => e['name']?.toString()).whereType<String>().toList();
+
+      final count = await db.rawQuery(
+        'SELECT COUNT(*) AS c FROM daftare_andicator',
+      );
+      result['recordCount'] = count.isNotEmpty ? count.first['c'] : 0;
+
+      final schema = await db.query(
+        'record_schema',
+        where: 'id = 1',
+        limit: 1,
+      );
+      result['hasSchema'] = schema.isNotEmpty;
+    } catch (e) {
+      result['diagnosticError'] = e.toString();
+    }
+
+    return result;
+  }
+
+  static Future<File> backupRawDatabase(File destination) async {
+    await closeDb();
+    final source = File(await getDbPath());
+
+    if (!await source.exists()) {
+      throw StateError('فایل دیتابیس پیدا نشد.');
+    }
+
+    await source.copy(destination.path);
+    return destination;
+  }
+
+  static Future<void> replaceDatabaseFile(File source) async {
+    if (!await source.exists()) {
+      throw StateError('فایل دیتابیس انتخاب‌شده وجود ندارد.');
+    }
+
+    final target = File(await getDbPath());
+    await closeDb();
+
+    if (await target.exists()) {
+      final recoveryBackup = File(
+        '${target.path}.recovery-${DateTime.now().millisecondsSinceEpoch}.sqlite',
+      );
+      await target.copy(recoveryBackup.path);
+    }
+
+    await source.copy(target.path);
   }
 
   static Future<void> closeDb() async {
