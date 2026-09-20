@@ -257,10 +257,193 @@ class DatabaseHelper {
       },
     );
 
+    // دیتابیس‌های قدیمی ممکن است record_categories را با یک Foreign Key
+    // ناسازگار ساخته باشند. این repair بعد از باز شدن connection و خارج از
+    // transaction اجرا می‌شود تا بتواند در صورت نیاز Foreign Key را بازسازی کند.
+    await _repairRecordCategoriesForeignKey(db);
+
     print('DATABASE OPENED');
     print('========== DATABASE END ==========');
 
     return db;
+  }
+
+  // ============================================================
+  // REPAIR record_categories FOREIGN KEY
+  // ============================================================
+
+  static Future<void> _repairRecordCategoriesForeignKey(Database db) async {
+    try {
+      if (!await _tableExists(db, 'daftare_andicator')) return;
+      if (!await _tableExists(db, 'record_categories')) return;
+
+      final parentInfo = await db.rawQuery(
+        'PRAGMA table_info(daftare_andicator)',
+      );
+
+      final parentColumn = parentInfo.where((row) {
+        return row['name']?.toString().trim().toLowerCase() ==
+            'shomare_radif';
+      }).toList();
+
+      if (parentColumn.isEmpty) return;
+
+      final parentPk = parentColumn.first['pk'];
+      var parentKeyValid = parentPk == 1 || parentPk == '1';
+
+      // اگر به هر دلیل Shomare_Radif در دیتابیس موجود PRIMARY KEY نباشد،
+      // یک UNIQUE INDEX ایجاد می‌کنیم. SQLite برای FK به کلید والد UNIQUE
+      // یا PRIMARY KEY نیاز دارد.
+      if (!parentKeyValid) {
+        final indexes = await db.rawQuery(
+          'PRAGMA index_list(daftare_andicator)',
+        );
+
+        for (final index in indexes) {
+          final indexName = index['name']?.toString();
+          if (indexName == null || indexName.isEmpty) continue;
+
+          final uniqueValue = index['unique'];
+          final isUnique = uniqueValue == 1 || uniqueValue == '1';
+          if (!isUnique) continue;
+
+          final indexColumns = await db.rawQuery(
+            'PRAGMA index_info(${_sqlIdentifier(indexName)})',
+          );
+
+          if (indexColumns.length == 1 &&
+              indexColumns.first['name']
+                      ?.toString()
+                      .trim()
+                      .toLowerCase() ==
+                  'shomare_radif') {
+            parentKeyValid = true;
+            break;
+          }
+        }
+
+        if (!parentKeyValid) {
+          // اگر Shomare_Radif در دیتابیس قدیمی واقعاً UNIQUE نباشد،
+          // نمی‌توانیم بدون حذف/تغییر اطلاعات موجود UNIQUE INDEX بسازیم.
+          // این حالت معمولاً به این معنی است که جدول قدیمی با ساختار متفاوتی
+          // ساخته شده و ممکن است شماره‌های تکراری داشته باشد.
+          // در این وضعیت record_categories را بدون Foreign Key بازسازی می‌کنیم
+          // تا عملیات UPDATE/DELETE روی نامه‌ها قفل نشود و هیچ داده‌ای حذف نشود.
+          final duplicateRows = await db.rawQuery('''
+            SELECT Shomare_Radif, COUNT(*) AS cnt
+            FROM daftare_andicator
+            GROUP BY Shomare_Radif
+            HAVING COUNT(*) > 1
+            LIMIT 1
+          ''');
+
+          if (duplicateRows.isNotEmpty) {
+            print(
+              'DATABASE: Shomare_Radif has duplicate values; '
+              'a UNIQUE index cannot be created safely.',
+            );
+          } else {
+            try {
+              await db.execute('''
+                CREATE UNIQUE INDEX IF NOT EXISTS
+                  idx_daftare_andicator_shomare_radif_unique
+                ON daftare_andicator(Shomare_Radif)
+              ''');
+              parentKeyValid = true;
+            } catch (e) {
+              // اگر ساخت index به هر دلیل دیگری شکست خورد، دیتابیس را
+              // با حذف/تغییر اطلاعات موجود تعمیر نمی‌کنیم.
+              print('DATABASE: cannot create Shomare_Radif unique index: $e');
+            }
+          }
+        }
+      }
+
+      final foreignKeys = await db.rawQuery(
+        'PRAGMA foreign_key_list(record_categories)',
+      );
+
+      final hasCorrectRecordForeignKey = foreignKeys.any((row) {
+        final table = row['table']?.toString().trim().toLowerCase();
+        final from = row['from']?.toString().trim().toLowerCase();
+        final to = row['to']?.toString().trim().toLowerCase();
+        final onDelete = row['on_delete']?.toString().trim().toUpperCase();
+
+        return table == 'daftare_andicator' &&
+            from == 'record_id' &&
+            to == 'shomare_radif' &&
+            onDelete == 'CASCADE';
+      });
+
+      if (parentKeyValid && hasCorrectRecordForeignKey) {
+        return;
+      }
+
+      // FK فعلی مشکل‌دار است. جدول را با ساختار صحیح بازسازی می‌کنیم.
+      // رکوردهای معتبر قبلی حفظ می‌شوند و فقط روابط orphan حذف می‌شوند.
+      print('DATABASE: repairing record_categories foreign key...');
+
+      await db.execute('PRAGMA foreign_keys = OFF');
+
+      try {
+        final oldTable =
+            'record_categories_repair_old_${DateTime.now().millisecondsSinceEpoch}';
+
+        await db.execute(
+          'ALTER TABLE record_categories RENAME TO ${_sqlIdentifier(oldTable)}',
+        );
+
+        if (parentKeyValid) {
+          await db.execute('''
+            CREATE TABLE record_categories (
+              record_id INTEGER NOT NULL,
+              category_id INTEGER NOT NULL,
+              PRIMARY KEY (record_id, category_id),
+              FOREIGN KEY (record_id)
+                REFERENCES daftare_andicator(Shomare_Radif)
+                ON DELETE CASCADE,
+              FOREIGN KEY (category_id)
+                REFERENCES categories(id)
+                ON DELETE CASCADE
+            )
+          ''');
+        } else {
+          // Shomare_Radif در دیتابیس فعلی UNIQUE/PRIMARY KEY نیست و ممکن است
+          // شماره‌های تکراری داشته باشد. ایجاد FK در این شرایط باعث
+          // foreign key mismatch در UPDATE نامه می‌شود.
+          // ارتباط دسته‌بندی‌ها را حفظ می‌کنیم و پاکسازی orphanها را انجام
+          // نمی‌دهیم تا هیچ اطلاعاتی از کاربر حذف نشود.
+          await db.execute('''
+            CREATE TABLE record_categories (
+              record_id INTEGER NOT NULL,
+              category_id INTEGER NOT NULL,
+              PRIMARY KEY (record_id, category_id)
+            )
+          ''');
+        }
+
+        // تمام ارتباط‌های قبلی را حفظ می‌کنیم. در دیتابیس‌های قدیمی ممکن است
+        // orphan وجود داشته باشد و حذف خودکار آن‌ها باعث از دست رفتن اطلاعات
+        // دسته‌بندی می‌شود.
+        await db.execute('''
+          INSERT OR IGNORE INTO record_categories (record_id, category_id)
+          SELECT CAST(old.record_id AS INTEGER), old.category_id
+          FROM ${_sqlIdentifier(oldTable)} old
+        ''');
+
+        await db.execute(
+          'DROP TABLE ${_sqlIdentifier(oldTable)}',
+        );
+      } finally {
+        await db.execute('PRAGMA foreign_keys = ON');
+      }
+
+      print('DATABASE: record_categories foreign key repaired.');
+    } catch (e, st) {
+      print('DATABASE: record_categories FK repair failed: $e');
+      print(st);
+      rethrow;
+    }
   }
   // ============================================================
   // DATABASE SCHEMA / MIGRATION
