@@ -156,12 +156,27 @@ class SchemaService {
 
     for (final field in schema.fields) {
       if (field.system || field.type == FieldType.category) continue;
-      if (columns.contains(field.key)) continue;
+
+      // SQLite نام ستون‌ها را case-insensitive مقایسه می‌کند.
+      // بنابراین from_pywa و from_Pywa از نظر SQLite یک ستون هستند.
+      if (_hasColumnIgnoreCase(columns, field.key)) continue;
 
       final sqlType = _sqlType(field.type);
-      await db.execute(
-        'ALTER TABLE $recordTable ADD COLUMN "${_quote(field.key)}" $sqlType',
-      );
+
+      try {
+        await db.execute(
+          'ALTER TABLE $recordTable ADD COLUMN "${_quote(field.key)}" $sqlType',
+        );
+      } catch (e) {
+        // اگر SQLite اعلام کرد ستون تکراری است، یک بار دیگر Schema واقعی
+        // را بررسی می‌کنیم. این حالت برای دیتابیس‌های قدیمی با تفاوت حروف
+        // بزرگ/کوچک بسیار مهم است.
+        final afterError = await _columns(db);
+        if (_hasColumnIgnoreCase(afterError, field.key)) {
+          continue;
+        }
+        rethrow;
+      }
     }
   }
 
@@ -402,11 +417,22 @@ class SchemaService {
 
     // دسته‌بندی یک فیلد سیستمی مجازی است و داده‌های آن در جدول
     // record_categories نگهداری می‌شود، بنابراین ستون SQLite ندارد.
-    if (field.type != FieldType.category && !columns.contains(field.key)) {
+    if (field.type != FieldType.category &&
+        !_hasColumnIgnoreCase(columns, field.key)) {
       final sqlType = _sqlType(field.type);
-      await db.execute(
-        'ALTER TABLE $recordTable ADD COLUMN "${_quote(field.key)}" $sqlType',
-      );
+      try {
+        await db.execute(
+          'ALTER TABLE $recordTable ADD COLUMN "${_quote(field.key)}" $sqlType',
+        );
+      } catch (e) {
+        final afterError = await _columns(db);
+        if (_hasColumnIgnoreCase(afterError, field.key)) {
+          // ستون در دیتابیس وجود داشته ولی نام آن از نظر حروف با Schema
+          // متفاوت بوده است؛ SQLite آن را همان ستون می‌داند.
+        } else {
+          rethrow;
+        }
+      }
     } else if (field.type != FieldType.category) {
       throw StateError('ستون ${field.key} از قبل در دیتابیس وجود دارد.');
     }
@@ -592,7 +618,20 @@ class SchemaService {
 
   static Future<Set<String>> _columns(DatabaseExecutor db) async {
     final rows = await db.rawQuery('PRAGMA table_info($recordTable)');
-    return rows.map((e) => e['name']?.toString() ?? '').where((e) => e.isNotEmpty).toSet();
+    return rows
+        .map((e) => e['name']?.toString() ?? '')
+        .where((e) => e.isNotEmpty)
+        .toSet();
+  }
+
+  static bool _hasColumnIgnoreCase(
+    Set<String> columns,
+    String column,
+  ) {
+    final normalized = column.trim().toLowerCase();
+    return columns.any(
+      (name) => name.trim().toLowerCase() == normalized,
+    );
   }
 
   static String _sqlType(FieldType type) {
