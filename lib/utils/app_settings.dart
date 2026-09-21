@@ -215,6 +215,33 @@ class AppSettings {
 
     await prefs.setString(_reminderNotificationTimeKey, value);
   }
+  // تعداد روزهای پرکاربرد یادآور
+  static const String _reminderQuickDaysKey = 'reminder_quick_days';
+
+  static Future<List<int>> getReminderQuickDays() async {
+    final prefs = await SharedPreferences.getInstance();
+    final raw = prefs.getStringList(_reminderQuickDaysKey) ?? <String>[];
+    final result = <int>[];
+    for (final value in raw) {
+      final days = int.tryParse(value);
+      if (days != null && days > 0 && days <= 3650 && !result.contains(days)) {
+        result.add(days);
+      }
+    }
+    return result;
+  }
+
+  static Future<void> saveReminderQuickDay(int days) async {
+    if (days <= 0) return;
+    final current = await getReminderQuickDays();
+    current.remove(days);
+    current.insert(0, days);
+    final limited = current.take(12).map((e) => e.toString()).toList();
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setStringList(_reminderQuickDaysKey, limited);
+  }
+
+
   // -----------------------------
   // Last Backup
   // -----------------------------

@@ -2515,9 +2515,18 @@ class _RecordFormState extends State<RecordForm>
                 child: Text('پیوست‌ها',
                     style: TextStyle(fontSize: 13, fontWeight: FontWeight.w800)),
               ),
-              _compactFileAction('اسکن', Icons.document_scanner_outlined, scan),
-              _compactFileAction('انتخاب فایل', Icons.attach_file_rounded, addFileForRecord),
-              _compactFileAction('اشتراک‌گذاری', Icons.share_rounded, shareRecord),
+              _compactFileAction(
+                'اسکن',
+                Icons.document_scanner_outlined,
+                scan,
+                showLabel: true,
+              ),
+              _compactFileAction(
+                'افزودن فایل',
+                Icons.attach_file_rounded,
+                addFileForRecord,
+                showLabel: true,
+              ),
             ],
           ),
           if (filesInDirectory.isNotEmpty) ...[
@@ -2536,7 +2545,7 @@ class _RecordFormState extends State<RecordForm>
                     borderRadius: BorderRadius.circular(13),
                     onTap: () => openFile(file),
                     child: Container(
-                      width: 190,
+                      width: 205,
                       padding: const EdgeInsets.symmetric(horizontal: 7),
                       decoration: BoxDecoration(
                         color: Colors.black.withOpacity(.025),
@@ -2592,8 +2601,40 @@ class _RecordFormState extends State<RecordForm>
   Widget _compactFileAction(
     String tooltip,
     IconData icon,
-    VoidCallback onPressed,
-  ) {
+    VoidCallback onPressed, {
+    bool showLabel = false,
+  }) {
+    final colorScheme = Theme.of(context).colorScheme;
+
+    if (showLabel) {
+      return Material(
+        color: colorScheme.primary.withOpacity(.07),
+        borderRadius: BorderRadius.circular(12),
+        child: InkWell(
+          borderRadius: BorderRadius.circular(12),
+          onTap: onPressed,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 8),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(icon, size: 20, color: colorScheme.primary),
+                const SizedBox(width: 6),
+                Text(
+                  tooltip,
+                  style: TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w700,
+                    color: colorScheme.primary,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+    }
+
     return Tooltip(
       message: tooltip,
       child: IconButton(
@@ -4154,13 +4195,14 @@ class _RecordFormState extends State<RecordForm>
 
                 const SizedBox(height: 18),
 
-                Row(
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
                   children: [
-                    Expanded(child: _buildExtendOption(context, 7)),
-                    const SizedBox(width: 8),
-                    Expanded(child: _buildExtendOption(context, 15)),
-                    const SizedBox(width: 8),
-                    Expanded(child: _buildExtendOption(context, 30)),
+                    _buildExtendOption(context, 7),
+                    _buildExtendOption(context, 15),
+                    _buildExtendOption(context, 30),
+                    _buildCustomExtendOption(context),
                   ],
                 ),
               ],
@@ -4218,6 +4260,63 @@ class _RecordFormState extends State<RecordForm>
 
       _showMessage('خطا در تمدید یادآور:\n$e');
     }
+  }
+
+  Widget _buildCustomExtendOption(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+    return InkWell(
+      borderRadius: BorderRadius.circular(14),
+      onTap: () async {
+        final controller = TextEditingController();
+        final value = await showDialog<int>(
+          context: context,
+          builder: (dialogContext) => AlertDialog(
+            title: const Text('تعداد روز دلخواه', textDirection: TextDirection.rtl),
+            content: TextField(
+              controller: controller,
+              autofocus: true,
+              keyboardType: TextInputType.number,
+              textDirection: TextDirection.rtl,
+              decoration: const InputDecoration(labelText: 'تعداد روز'),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(dialogContext),
+                child: const Text('انصراف'),
+              ),
+              FilledButton(
+                onPressed: () {
+                  final days = int.tryParse(controller.text.trim());
+                  if (days != null && days > 0) {
+                    Navigator.pop(dialogContext, days);
+                  }
+                },
+                child: const Text('تأیید'),
+              ),
+            ],
+          ),
+        );
+        controller.dispose();
+        if (value == null || !mounted) return;
+        Navigator.pop(context, value);
+      },
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+        decoration: BoxDecoration(
+          color: colorScheme.secondary.withOpacity(.08),
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: colorScheme.secondary.withOpacity(.18)),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.edit_calendar_rounded, color: colorScheme.secondary),
+            const SizedBox(width: 6),
+            const Text('دلخواه', style: TextStyle(fontWeight: FontWeight.w700)),
+          ],
+        ),
+      ),
+    );
   }
 
   Widget _buildExtendOption(BuildContext context, int days) {

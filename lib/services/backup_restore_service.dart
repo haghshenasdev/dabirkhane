@@ -68,6 +68,8 @@ class BackupRestoreService {
 
   static Future<BackupResult> createBackup({
     required BackupType type,
+    int? selectedYear,
+    int? selectedMonth,
     void Function(double progress, String message)? onProgress,
   }) async {
     try {
@@ -391,9 +393,11 @@ class BackupRestoreService {
   // ============================================================
 
   static Future<BackupResult> _createPreviousMonthFilesBackup({
+    int? year,
+    int? month,
     void Function(double progress, String message)? onProgress,
   }) async {
-    final previous = _getPreviousJalaliMonth();
+    final previous = _resolveBackupMonth(year, month);
 
     onProgress?.call(0.10, 'در حال پیدا کردن فایل‌های ماه قبل...');
 
@@ -449,9 +453,11 @@ class BackupRestoreService {
   // ============================================================
 
   static Future<BackupResult> _createFullBackup({
+    int? year,
+    int? month,
     void Function(double progress, String message)? onProgress,
   }) async {
-    final previous = _getPreviousJalaliMonth();
+    final previous = _resolveBackupMonth(year, month);
 
     onProgress?.call(0.08, 'در حال آماده‌سازی دیتابیس...');
 
@@ -999,6 +1005,13 @@ class BackupRestoreService {
         '${now.year}_'
         '${now.month.toString().padLeft(2, '0')}_'
         '${now.day.toString().padLeft(2, '0')}.sqlite';
+  }
+
+  static _JalaliMonth _resolveBackupMonth(int? year, int? month) {
+    if (year != null && month != null && month >= 1 && month <= 12) {
+      return _JalaliMonth(year: year, month: month);
+    }
+    return _getPreviousJalaliMonth();
   }
 
   static _JalaliMonth _getPreviousJalaliMonth() {

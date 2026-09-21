@@ -24,6 +24,14 @@ class _BackupRestoreDialogState extends State<BackupRestoreDialog>
 
   BackupType? _selectedBackupType;
 
+  late int _selectedBackupYear;
+  late int _selectedBackupMonth;
+
+  static const List<String> _jalaliMonthNames = [
+    'فروردین', 'اردیبهشت', 'خرداد', 'تیر', 'مرداد', 'شهریور',
+    'مهر', 'آبان', 'آذر', 'دی', 'بهمن', 'اسفند',
+  ];
+
   bool _working = false;
   double _progress = 0;
   String _progressMessage = '';
@@ -65,6 +73,10 @@ class _BackupRestoreDialogState extends State<BackupRestoreDialog>
     super.initState();
 
     _tabController = TabController(length: 3, vsync: this);
+
+    final previous = _getPreviousMonth();
+    _selectedBackupYear = previous.year;
+    _selectedBackupMonth = previous.month;
 
     _loadBackupHistory();
     _loadSyncSettings();
@@ -124,6 +136,19 @@ class _BackupRestoreDialogState extends State<BackupRestoreDialog>
   // ============================================================
   // Build
   // ============================================================
+
+  ({int year, int month}) _getPreviousMonth() {
+    final now = Jalali.now();
+    if (now.month == 1) {
+      return (year: now.year - 1, month: 12);
+    }
+    return (year: now.year, month: now.month - 1);
+  }
+
+  List<int> _backupYears() {
+    final now = Jalali.now().year;
+    return List<int>.generate(12, (index) => now - index);
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -585,8 +610,12 @@ class _BackupRestoreDialogState extends State<BackupRestoreDialog>
                   title: 'نوع پشتیبان را انتخاب کنید',
                   description:
                       'برای پشتیبان‌گیری می‌توانید فقط دیتابیس، '
-                      'فایل‌های ماه قبل یا هر دو را انتخاب کنید.',
+                      'فایل‌های یک ماه دلخواه یا هر دو را انتخاب کنید.',
                 ),
+
+                const SizedBox(height: 14),
+
+                _buildBackupMonthSelector(colorScheme),
 
                 const SizedBox(height: 14),
 
@@ -618,7 +647,7 @@ class _BackupRestoreDialogState extends State<BackupRestoreDialog>
                   icon: Icons.inventory_2_rounded,
                   title: 'دیتابیس + فایل‌های ماه قبل',
                   description:
-                      'پشتیبان کامل شامل دیتابیس و فایل‌های ماه قبل در یک ZIP',
+                      'پشتیبان کامل شامل دیتابیس و فایل‌های ماه انتخاب‌شده در یک ZIP',
                 ),
 
                 const SizedBox(height: 18),
@@ -666,6 +695,65 @@ class _BackupRestoreDialogState extends State<BackupRestoreDialog>
           ),
         ),
       ],
+    );
+  }
+
+  Widget _buildBackupMonthSelector(ColorScheme colorScheme) {
+    return Container(
+      padding: const EdgeInsets.all(13),
+      decoration: BoxDecoration(
+        color: colorScheme.primary.withOpacity(.055),
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: colorScheme.primary.withOpacity(.16)),
+      ),
+      child: Row(
+        children: [
+          Icon(Icons.calendar_month_rounded, color: colorScheme.primary),
+          const SizedBox(width: 10),
+          const Expanded(
+            child: Text(
+              'ماه فایل‌ها',
+              style: TextStyle(fontWeight: FontWeight.w700),
+            ),
+          ),
+          DropdownButton<int>(
+            value: _selectedBackupYear,
+            underline: const SizedBox.shrink(),
+            items: _backupYears()
+                .map(
+                  (year) => DropdownMenuItem(
+                    value: year,
+                    child: Text(year.toString()),
+                  ),
+                )
+                .toList(),
+            onChanged: _working
+                ? null
+                : (value) {
+                    if (value == null) return;
+                    setState(() => _selectedBackupYear = value);
+                  },
+          ),
+          const SizedBox(width: 6),
+          DropdownButton<int>(
+            value: _selectedBackupMonth,
+            underline: const SizedBox.shrink(),
+            items: List.generate(
+              12,
+              (index) => DropdownMenuItem(
+                value: index + 1,
+                child: Text(_jalaliMonthNames[index]),
+              ),
+            ),
+            onChanged: _working
+                ? null
+                : (value) {
+                    if (value == null) return;
+                    setState(() => _selectedBackupMonth = value);
+                  },
+          ),
+        ],
+      ),
     );
   }
 
@@ -1258,6 +1346,8 @@ class _BackupRestoreDialogState extends State<BackupRestoreDialog>
 
     final result = await BackupRestoreService.createBackup(
       type: type,
+      selectedYear: _selectedBackupYear,
+      selectedMonth: _selectedBackupMonth,
       onProgress: (progress, message) {
         if (!mounted) return;
 

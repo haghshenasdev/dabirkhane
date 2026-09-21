@@ -7,6 +7,7 @@ import 'package:shamsi_date/shamsi_date.dart';
 import '../db/database_helper.dart';
 import '../model/field_definition.dart';
 import '../services/schema_service.dart';
+import '../services/stats_export_service.dart';
 
 class StatsPage extends StatefulWidget {
   const StatsPage({super.key});
@@ -36,6 +37,7 @@ class _StatsPageState extends State<StatsPage> {
   String ownerSubtitle = 'بر اساس فیلد انتخاب‌شده';
   String? _dateField;
   bool _statsEnabled = true;
+  bool _exporting = false;
 
   bool loading = true;
 
@@ -359,6 +361,68 @@ class _StatsPageState extends State<StatsPage> {
   // Header
   // ============================================================
 
+  Future<void> _printStats() async {
+    if (_exporting) return;
+    setState(() => _exporting = true);
+    try {
+      await StatsExportService.printStats(
+        selectedYear: selectedYear,
+        totalLetters: totalLetters,
+        thisMonthLetters: thisMonthLetters,
+        monthNames: monthNames,
+        monthlyCounts: monthlyCounts,
+        receiverTitle: receiverTitle,
+        receiverCounts: receiverCounts,
+        subjectTitle: subjectTitle,
+        subjectCounts: subjectCounts,
+        ownerTitle: ownerTitle,
+        ownerCounts: ownerCounts,
+        categoryCounts: categoryCounts,
+      );
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('خطا در چاپ گزارش:\n$e', textDirection: TextDirection.rtl),
+          ),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _exporting = false);
+    }
+  }
+
+  Future<void> _shareStatsPdf() async {
+    if (_exporting) return;
+    setState(() => _exporting = true);
+    try {
+      await StatsExportService.shareStatsPdf(
+        selectedYear: selectedYear,
+        totalLetters: totalLetters,
+        thisMonthLetters: thisMonthLetters,
+        monthNames: monthNames,
+        monthlyCounts: monthlyCounts,
+        receiverTitle: receiverTitle,
+        receiverCounts: receiverCounts,
+        subjectTitle: subjectTitle,
+        subjectCounts: subjectCounts,
+        ownerTitle: ownerTitle,
+        ownerCounts: ownerCounts,
+        categoryCounts: categoryCounts,
+      );
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('خطا در ایجاد یا اشتراک PDF:\n$e', textDirection: TextDirection.rtl),
+          ),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _exporting = false);
+    }
+  }
+
   Widget _buildHeader() {
     return _GlassContainer(
       padding: const EdgeInsets.all(22),
@@ -401,10 +465,27 @@ class _StatsPageState extends State<StatsPage> {
               ],
             ),
           ),
-          IconButton(
-            tooltip: 'بروزرسانی',
-            onPressed: refreshStats,
-            icon: Icon(Icons.refresh_rounded, color: primaryColor),
+          Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              IconButton(
+                tooltip: 'چاپ گزارش',
+                onPressed: _exporting ? null : _printStats,
+                icon: const Icon(Icons.print_rounded),
+                color: primaryColor,
+              ),
+              IconButton(
+                tooltip: 'اشتراک PDF',
+                onPressed: _exporting ? null : _shareStatsPdf,
+                icon: const Icon(Icons.picture_as_pdf_rounded),
+                color: primaryColor,
+              ),
+              IconButton(
+                tooltip: 'بروزرسانی',
+                onPressed: _exporting ? null : refreshStats,
+                icon: Icon(Icons.refresh_rounded, color: primaryColor),
+              ),
+            ],
           ),
         ],
       ),

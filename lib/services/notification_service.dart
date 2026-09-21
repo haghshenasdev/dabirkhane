@@ -56,6 +56,29 @@ class NotificationService {
         '${jalali.day.toString().padLeft(2, '0')}';
   }
 
+  String _persianNotificationDate(DateTime date) {
+    final jalali = Jalali.fromDateTime(date);
+    const months = [
+      'فروردین', 'اردیبهشت', 'خرداد', 'تیر', 'مرداد', 'شهریور',
+      'مهر', 'آبان', 'آذر', 'دی', 'بهمن', 'اسفند',
+    ];
+    const weekdays = [
+      'دوشنبه', 'سه‌شنبه', 'چهارشنبه', 'پنج‌شنبه',
+      'جمعه', 'شنبه', 'یکشنبه',
+    ];
+    final weekday = weekdays[date.weekday - 1];
+    return '$weekday ${_toPersianDigits(jalali.day.toString())} ${months[jalali.month - 1]} ${_toPersianDigits(jalali.year.toString())}';
+  }
+
+  String _toPersianDigits(String value) {
+    const en = '0123456789';
+    const fa = '۰۱۲۳۴۵۶۷۸۹';
+    for (var i = 0; i < en.length; i++) {
+      value = value.replaceAll(en[i], fa[i]);
+    }
+    return value;
+  }
+
   // ============================================================
   // Reminder Notification Time
   // ============================================================
@@ -249,6 +272,22 @@ class NotificationService {
     print('Daily reminder clicked: $jalaliDate');
 
     _pendingDailyReminderDate = jalaliDate;
+
+    // اگر برنامه از قبل باز بوده، main() دوباره اجرا نمی‌شود؛
+    // بنابراین همان لحظه صفحه فیلترشده را باز می‌کنیم.
+    Future.microtask(() {
+      final navigator = MyApp.navigatorKey.currentState;
+      if (navigator == null || !navigator.mounted) return;
+
+      navigator.pushAndRemoveUntil(
+        MaterialPageRoute(
+          builder: (_) => HomePage(initialReminderDate: jalaliDate),
+        ),
+        (route) => false,
+      );
+
+      _pendingDailyReminderDate = null;
+    });
   }
 
   // ============================================================
@@ -324,9 +363,11 @@ class NotificationService {
 
     final count = remindersForDay.length;
 
+    final persianDate = _persianNotificationDate(day);
+
     final body = count == 1
-        ? 'موعد پیگیری ۱ نامه امروز فرا رسیده است.'
-        : 'موعد پیگیری $count نامه امروز فرا رسیده است.';
+        ? 'موعد پیگیری یک نامه امروز فرا رسیده است • $persianDate'
+        : 'موعد پیگیری ${_toPersianDigits(count.toString())} نامه امروز فرا رسیده است • $persianDate';
 
     final jalaliDate = _jalaliDateString(day);
 

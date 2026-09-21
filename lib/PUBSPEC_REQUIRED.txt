@@ -1,0 +1,6 @@
+# به pubspec.yaml در بخش dependencies اضافه کنید:
+pdf: ^3.13.1
+printing: ^5.15.1
+
+# سپس:
+# flutter pub get

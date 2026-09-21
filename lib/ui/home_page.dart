@@ -100,7 +100,7 @@ class _HomePageState extends State<HomePage> {
     fromDateController.dispose();
     toDateController.dispose();
     onvanController.dispose();
-    for(final c in _dynamicFilterControllers.values)c.dispose();
+    for (final c in _dynamicFilterControllers.values) c.dispose();
     _controller.dispose();
     _searchFocusNode.dispose();
     categoryFilterController.dispose();
@@ -108,6 +108,28 @@ class _HomePageState extends State<HomePage> {
     shomareBadiFilterController.dispose();
 
     super.dispose();
+  }
+
+  InputDecoration _filterDecoration(String label, IconData icon) {
+    return InputDecoration(
+      labelText: label,
+      prefixIcon: Icon(icon),
+      filled: true,
+      fillColor: Colors.grey.shade100,
+      contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
+      border: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(14),
+        borderSide: BorderSide.none,
+      ),
+      enabledBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(14),
+        borderSide: BorderSide(color: Colors.grey.shade300),
+      ),
+      focusedBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(14),
+        borderSide: const BorderSide(color: Colors.blue, width: 1.4),
+      ),
+    );
   }
 
   // ============================================================
@@ -329,20 +351,28 @@ class _HomePageState extends State<HomePage> {
   }
 
   void _rebuildFiltered() {
-    final q = query.trim().replaceAll('\u200c', '').replaceAll('\u200d', '').toLowerCase();
+    final q = query
+        .trim()
+        .replaceAll('\u200c', '')
+        .replaceAll('\u200d', '')
+        .toLowerCase();
     final searchFields = _schema?.searchableFields ?? const <FieldDefinition>[];
 
     filtered = records.where((r) {
       if (q.isEmpty) return true;
       if (searchFields.isEmpty) {
-        return r.values.any((value) => value.toString().toLowerCase().contains(q));
+        return r.values.any(
+          (value) => value.toString().toLowerCase().contains(q),
+        );
       }
-      return searchFields.any((field) => (r[field.key] ?? '')
-          .toString()
-          .replaceAll('\u200c', '')
-          .replaceAll('\u200d', '')
-          .toLowerCase()
-          .contains(q));
+      return searchFields.any(
+        (field) => (r[field.key] ?? '')
+            .toString()
+            .replaceAll('\u200c', '')
+            .replaceAll('\u200d', '')
+            .toLowerCase()
+            .contains(q),
+      );
     }).toList();
   }
 
@@ -415,15 +445,157 @@ class _HomePageState extends State<HomePage> {
       }
     }
     for (final key in order) {
-      _dynamicFilterControllers.putIfAbsent(
-        key,
-        () => TextEditingController(),
-      );
+      _dynamicFilterControllers.putIfAbsent(key, () => TextEditingController());
     }
 
     setState(() => _schema = s);
   }
-  Map<String,String> get _dynamicFilters => {for(final e in _dynamicFilterControllers.entries) if(e.value.text.trim().isNotEmpty)e.key:e.value.text.trim()};
+
+  Map<String, String> get _dynamicFilters => {
+    for (final e in _dynamicFilterControllers.entries)
+      if (e.value.text.trim().isNotEmpty) e.key: e.value.text.trim(),
+  };
+  Widget _buildDynamicFilterField(
+    FieldDefinition field,
+    TextEditingController controller, {
+    required VoidCallback onChanged,
+  }) {
+    final decorationData = _filterDecoration(field.label, _fieldIcon(field));
+
+    if (field.type == FieldType.select) {
+      final current = controller.text.trim();
+      return DropdownButtonFormField<String>(
+        value: field.options.contains(current) ? current : null,
+        isExpanded: true,
+        decoration: decorationData,
+        items: field.options
+            .map(
+              (item) => DropdownMenuItem<String>(
+                value: item,
+                child: Text(item, textDirection: TextDirection.rtl),
+              ),
+            )
+            .toList(),
+        onChanged: (value) {
+          controller.text = value ?? '';
+          onChanged();
+        },
+      );
+    }
+
+    if (field.type == FieldType.boolean) {
+      final current = controller.text.trim();
+      return DropdownButtonFormField<String>(
+        value: const ['', '1', '0'].contains(current) ? current : '',
+        isExpanded: true,
+        decoration: decorationData,
+        items: const [
+          DropdownMenuItem(value: '', child: Text('همه')),
+          DropdownMenuItem(value: '1', child: Text('بله')),
+          DropdownMenuItem(value: '0', child: Text('خیر')),
+        ],
+        onChanged: (value) {
+          controller.text = value ?? '';
+          onChanged();
+        },
+      );
+    }
+
+    if (field.type == FieldType.multiselect) {
+      final raw = controller.text.startsWith('__multi__:')
+          ? controller.text.substring('__multi__:'.length)
+          : controller.text;
+      final selected = raw
+          .split('|')
+          .map((e) => e.trim())
+          .where((e) => e.isNotEmpty)
+          .toSet();
+
+      return InkWell(
+        borderRadius: BorderRadius.circular(14),
+        onTap: () async {
+          final temp = {...selected};
+          final result = await showDialog<Set<String>>(
+            context: context,
+            builder: (dialogContext) => StatefulBuilder(
+              builder: (context, setDialogState) {
+                return AlertDialog(
+                  title: Text(
+                    'فیلتر ${field.label}',
+                    textDirection: TextDirection.rtl,
+                  ),
+                  content: SingleChildScrollView(
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        CheckboxListTile(
+                          value: temp.isEmpty,
+                          title: const Text(
+                            'همه',
+                            textDirection: TextDirection.rtl,
+                          ),
+                          onChanged: (_) {
+                            setDialogState(() => temp.clear());
+                          },
+                        ),
+                        const Divider(),
+                        ...field.options.map(
+                          (item) => CheckboxListTile(
+                            value: temp.contains(item),
+                            title: Text(item, textDirection: TextDirection.rtl),
+                            onChanged: (value) {
+                              setDialogState(() {
+                                if (value == true) {
+                                  temp.add(item);
+                                } else {
+                                  temp.remove(item);
+                                }
+                              });
+                            },
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  actions: [
+                    TextButton(
+                      onPressed: () => Navigator.pop(dialogContext),
+                      child: const Text('انصراف'),
+                    ),
+                    FilledButton(
+                      onPressed: () => Navigator.pop(dialogContext, temp),
+                      child: const Text('اعمال فیلتر'),
+                    ),
+                  ],
+                );
+              },
+            ),
+          );
+
+          if (result == null) return;
+          controller.text = '__multi__:${result.join('|')}';
+          onChanged();
+        },
+        child: InputDecorator(
+          decoration: decorationData,
+          child: Text(
+            selected.isEmpty ? 'همه' : selected.join('، '),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            textDirection: TextDirection.rtl,
+          ),
+        ),
+      );
+    }
+
+    return TextField(
+      controller: controller,
+      textDirection: TextDirection.rtl,
+      decoration: decorationData,
+      onChanged: (_) => onChanged(),
+    );
+  }
+
   IconData _fieldIcon(FieldDefinition? field) {
     const icons = <String, IconData>{
       'text': Icons.text_fields_outlined,
@@ -486,6 +658,7 @@ class _HomePageState extends State<HomePage> {
         widget.initialReminderDate!.trim().isNotEmpty) {
       fromDateController.text = widget.initialReminderDate!;
       toDateController.text = widget.initialReminderDate!;
+      reminderFilter = 1;
     }
 
     _loadSchema();
@@ -594,7 +767,8 @@ class _HomePageState extends State<HomePage> {
                       final status = SyncService.statusNotifier.value;
                       final color = switch (status) {
                         SyncStatus.connected => Colors.green,
-                        SyncStatus.syncing || SyncStatus.connecting => Colors.orange,
+                        SyncStatus.syncing ||
+                        SyncStatus.connecting => Colors.orange,
                         _ => null,
                       };
                       return Icon(Icons.backup_rounded, color: color);
@@ -925,20 +1099,14 @@ class _HomePageState extends State<HomePage> {
                       controller: fromDateController,
                       keyboardType: TextInputType.number,
                       textDirection: TextDirection.rtl,
-                      decoration: decoration(
-                        'از تاریخ',
-                        Icons.calendar_month,
-                      ),
+                      decoration: decoration('از تاریخ', Icons.calendar_month),
                     );
 
                     final toDate = TextField(
                       controller: toDateController,
                       keyboardType: TextInputType.number,
                       textDirection: TextDirection.rtl,
-                      decoration: decoration(
-                        'تا تاریخ',
-                        Icons.event,
-                      ),
+                      decoration: decoration('تا تاریخ', Icons.event),
                     );
 
                     if (twoColumns) {
@@ -952,11 +1120,7 @@ class _HomePageState extends State<HomePage> {
                     }
 
                     return Column(
-                      children: [
-                        fromDate,
-                        const SizedBox(height: 10),
-                        toDate,
-                      ],
+                      children: [fromDate, const SizedBox(height: 10), toDate],
                     );
                   },
                 ),
@@ -977,22 +1141,20 @@ class _HomePageState extends State<HomePage> {
                       final dynamicFields = _schema!.filterFields
                           .map(_schema!.field)
                           .whereType<FieldDefinition>()
-                          .where((f) =>
-                              f.visible && f.filterable && !f.system)
+                          .where((f) => f.visible && f.filterable && !f.system)
                           .toList();
 
                       return Wrap(
                         spacing: gap,
                         runSpacing: gap,
                         children: dynamicFields.map((f) {
+                          final controller = _dynamicFilterControllers[f.key]!;
                           return SizedBox(
                             width: width,
-                            height: 56,
-                            child: TextField(
-                              controller: _dynamicFilterControllers[f.key],
-                              textDirection: TextDirection.rtl,
-                              decoration: decoration(f.label, _fieldIcon(f)),
-                              onChanged: (_) {
+                            child: _buildDynamicFilterField(
+                              f,
+                              controller,
+                              onChanged: () {
                                 _clearSelectionForFilterChange();
                                 loadMore(reset: true);
                               },
@@ -1021,10 +1183,7 @@ class _HomePageState extends State<HomePage> {
                         Icons.notifications_none_rounded,
                       ),
                       items: const [
-                        DropdownMenuItem(
-                          value: 0,
-                          child: Text('همه نامه‌ها'),
-                        ),
+                        DropdownMenuItem(value: 0, child: Text('همه نامه‌ها')),
                         DropdownMenuItem(
                           value: 1,
                           child: Text('یادآورهای موعدرسیده'),
@@ -1064,9 +1223,10 @@ class _HomePageState extends State<HomePage> {
                               return;
                             }
 
-                            final result = await DatabaseHelper.searchCategories(
-                              value.trim(),
-                            );
+                            final result =
+                                await DatabaseHelper.searchCategories(
+                                  value.trim(),
+                                );
                             if (!mounted) return;
                             setState(() => categoryFilterSuggestions = result);
                           },
@@ -1097,7 +1257,6 @@ class _HomePageState extends State<HomePage> {
                     );
                   },
                 ),
-
 
                 // ======================================================
                 // دسته‌بندی‌های انتخاب شده
@@ -1287,16 +1446,14 @@ class _HomePageState extends State<HomePage> {
 
     final titleKey = _card.titleField ?? 'guy';
     final titleField = _schema?.field(titleKey);
-    final bodyKeys = (_card.bodyFields.isNotEmpty
-            ? _card.bodyFields
-            : ['saheb_name'])
-        .where((key) => _schema?.field(key)?.visible != false)
-        .toList();
-    final footerKeys = (_card.footerFields.isNotEmpty
-            ? _card.footerFields
-            : ['date'])
-        .where((key) => _schema?.field(key)?.visible != false)
-        .toList();
+    final bodyKeys =
+        (_card.bodyFields.isNotEmpty ? _card.bodyFields : ['saheb_name'])
+            .where((key) => _schema?.field(key)?.visible != false)
+            .toList();
+    final footerKeys =
+        (_card.footerFields.isNotEmpty ? _card.footerFields : ['date'])
+            .where((key) => _schema?.field(key)?.visible != false)
+            .toList();
 
     String value(String key) {
       final raw = r[key];
@@ -1402,8 +1559,9 @@ class _HomePageState extends State<HomePage> {
                     ),
                     const SizedBox(height: 16),
                     ...bodyKeys
-                        .where((key) =>
-                            key != titleKey && key != 'Shomare_Radif')
+                        .where(
+                          (key) => key != titleKey && key != 'Shomare_Radif',
+                        )
                         .map(fieldLine),
                     if (due)
                       Text(
@@ -1420,10 +1578,12 @@ class _HomePageState extends State<HomePage> {
                       children: [
                         ...footerKeys
                             .where((key) => key != 'Shomare_Radif')
-                            .map((key) => _recordChip(
-                                  _fieldIcon(_schema?.field(key)),
-                                  value(key),
-                                )),
+                            .map(
+                              (key) => _recordChip(
+                                _fieldIcon(_schema?.field(key)),
+                                value(key),
+                              ),
+                            ),
                         _recordChip(
                           Icons.confirmation_number_outlined,
                           'ردیف ${r['Shomare_Radif'] ?? '—'}',
@@ -1647,13 +1807,17 @@ class _HomePageState extends State<HomePage> {
     if (q.isNotEmpty) {
       final fields = _schema?.searchableFields ?? const <FieldDefinition>[];
       final matches = fields.isEmpty
-          ? record.values.any((value) => value.toString().toLowerCase().contains(q))
-          : fields.any((field) => (record[field.key] ?? '')
-              .toString()
-              .replaceAll('\u200c', '')
-              .replaceAll('\u200d', '')
-              .toLowerCase()
-              .contains(q));
+          ? record.values.any(
+              (value) => value.toString().toLowerCase().contains(q),
+            )
+          : fields.any(
+              (field) => (record[field.key] ?? '')
+                  .toString()
+                  .replaceAll('\u200c', '')
+                  .replaceAll('\u200d', '')
+                  .toLowerCase()
+                  .contains(q),
+            );
       if (!matches) return false;
     }
 
@@ -1664,10 +1828,9 @@ class _HomePageState extends State<HomePage> {
     if (toDate.isNotEmpty && date.compareTo(toDate) > 0) return false;
 
     for (final entry in _dynamicFilters.entries) {
-      if (!(record[entry.key] ?? '')
-          .toString()
-          .toLowerCase()
-          .contains(entry.value.toLowerCase())) {
+      if (!(record[entry.key] ?? '').toString().toLowerCase().contains(
+        entry.value.toLowerCase(),
+      )) {
         return false;
       }
     }

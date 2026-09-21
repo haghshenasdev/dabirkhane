@@ -1531,9 +1531,43 @@ class DatabaseHelper {
       for (final entry in dynamicFilters.entries) {
         final value = entry.value.trim();
         if (value.isEmpty || !existing.contains(entry.key)) continue;
+
         final safe = _quoteIdentifier(entry.key);
-        conditions.add("CAST(COALESCE($safe, '') AS TEXT) LIKE ?");
-        args.add('%$value%');
+
+        // Select و Boolean به صورت دقیق مقایسه می‌شوند.
+        // MultiSelect با جداکننده | ذخیره شده و تمام گزینه‌های
+        // انتخاب‌شده باید در مقدار ذخیره‌شده وجود داشته باشند.
+        final isMulti = value.startsWith('__multi__:');
+        final normalizedValue =
+            isMulti ? value.substring('__multi__:'.length) : value;
+
+        if (isMulti) {
+          final selected = normalizedValue
+              .split('|')
+              .map((e) => e.trim())
+              .where((e) => e.isNotEmpty)
+              .toList();
+
+          for (final item in selected) {
+            conditions.add(
+              """
+              (
+                CAST(COALESCE($safe, '') AS TEXT) = ?
+                OR CAST(COALESCE($safe, '') AS TEXT) LIKE ?
+                OR CAST(COALESCE($safe, '') AS TEXT) LIKE ?
+                OR CAST(COALESCE($safe, '') AS TEXT) LIKE ?
+              )
+              """,
+            );
+            args.add(item);
+            args.add('$item|%');
+            args.add('%|$item');
+            args.add('%|$item|%');
+          }
+        } else {
+          conditions.add("CAST(COALESCE($safe, '') AS TEXT) = ?");
+          args.add(value);
+        }
       }
     }
 

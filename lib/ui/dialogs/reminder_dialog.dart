@@ -1,5 +1,6 @@
 import 'package:dabirkhane/model/reminder.dart';
 import 'package:dabirkhane/services/notification_service.dart';
+import 'package:dabirkhane/utils/app_settings.dart';
 import 'package:flutter/material.dart';
 import 'package:shamsi_date/shamsi_date.dart';
 
@@ -28,11 +29,13 @@ class _ReminderDialogState extends State<ReminderDialog> {
   bool _loading = true;
   bool _saving = false;
   int? _processingReminderId;
+  List<int> _quickDays = [];
 
   @override
   void initState() {
     super.initState();
     _loadReminders();
+    _loadQuickDays();
   }
 
   @override
@@ -45,6 +48,25 @@ class _ReminderDialogState extends State<ReminderDialog> {
   // ============================================================
   // Load
   // ============================================================
+  Future<void> _loadQuickDays() async {
+    try {
+      final days = await AppSettings.getReminderQuickDays();
+
+      if (!mounted) return;
+
+      setState(() {
+        _quickDays = days;
+      });
+    } catch (e) {
+      debugPrint('load reminder quick days error: $e');
+
+      if (!mounted) return;
+
+      setState(() {
+        _quickDays = [];
+      });
+    }
+  }
 
   Future<void> _loadReminders() async {
     try {
@@ -133,6 +155,9 @@ class _ReminderDialogState extends State<ReminderDialog> {
       );
 
       final reminderId = await DatabaseHelper.insertReminder(reminder);
+
+      await AppSettings.saveReminderQuickDay(days);
+      await _loadQuickDays();
 
       await NotificationService.instance.rebuildDailyReminderForDate(dueDate);
 
@@ -337,13 +362,14 @@ class _ReminderDialogState extends State<ReminderDialog> {
 
                 const SizedBox(height: 18),
 
-                Row(
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
                   children: [
-                    Expanded(child: _extendChoice(context, days: 7)),
-                    const SizedBox(width: 8),
-                    Expanded(child: _extendChoice(context, days: 15)),
-                    const SizedBox(width: 8),
-                    Expanded(child: _extendChoice(context, days: 30)),
+                    _extendChoice(context, days: 7),
+                    _extendChoice(context, days: 15),
+                    _extendChoice(context, days: 30),
+                    _extendCustomChoice(context),
                   ],
                 ),
               ],
@@ -356,6 +382,66 @@ class _ReminderDialogState extends State<ReminderDialog> {
     if (selectedDays == null) return;
 
     await _extendReminder(reminder, selectedDays);
+  }
+
+  Widget _extendCustomChoice(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+    return InkWell(
+      borderRadius: BorderRadius.circular(14),
+      onTap: () async {
+        final controller = TextEditingController();
+        final value = await showDialog<int>(
+          context: context,
+          builder: (dialogContext) => AlertDialog(
+            title: const Text(
+              'تعداد روز دلخواه',
+              textDirection: TextDirection.rtl,
+            ),
+            content: TextField(
+              controller: controller,
+              autofocus: true,
+              keyboardType: TextInputType.number,
+              textDirection: TextDirection.rtl,
+              decoration: const InputDecoration(labelText: 'تعداد روز'),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(dialogContext),
+                child: const Text('انصراف'),
+              ),
+              FilledButton(
+                onPressed: () {
+                  final days = int.tryParse(controller.text.trim());
+                  if (days != null && days > 0) {
+                    Navigator.pop(dialogContext, days);
+                  }
+                },
+                child: const Text('تأیید'),
+              ),
+            ],
+          ),
+        );
+        controller.dispose();
+        if (value == null || !mounted) return;
+        Navigator.pop(context, value);
+      },
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+        decoration: BoxDecoration(
+          color: colorScheme.secondary.withOpacity(.08),
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: colorScheme.secondary.withOpacity(.18)),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.edit_calendar_rounded, color: colorScheme.secondary),
+            const SizedBox(width: 6),
+            const Text('دلخواه', style: TextStyle(fontWeight: FontWeight.w700)),
+          ],
+        ),
+      ),
+    );
   }
 
   Widget _extendChoice(BuildContext context, {required int days}) {
@@ -703,6 +789,28 @@ class _ReminderDialogState extends State<ReminderDialog> {
                       setState(() {});
                     },
                   ),
+
+                  if (_quickDays.isNotEmpty) ...[
+                    const SizedBox(height: 10),
+                    Align(
+                      alignment: Alignment.centerRight,
+                      child: Wrap(
+                        spacing: 7,
+                        runSpacing: 7,
+                        children: _quickDays.map((days) {
+                          return ActionChip(
+                            avatar: const Icon(Icons.history_rounded, size: 16),
+                            label: Text('$days روز'),
+                            onPressed: () {
+                              setState(() {
+                                _daysController.text = days.toString();
+                              });
+                            },
+                          );
+                        }).toList(),
+                      ),
+                    ),
+                  ],
 
                   if (previewDate != null) ...[
                     const SizedBox(height: 8),
