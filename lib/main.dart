@@ -18,6 +18,7 @@ import 'utils/app_settings.dart';
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
+  // SQLite برای Windows / Linux / macOS
   if (Platform.isWindows || Platform.isLinux || Platform.isMacOS) {
     sqfliteFfiInit();
     databaseFactory = databaseFactoryFfi;
@@ -39,6 +40,10 @@ Future<void> main() async {
   );
 }
 
+// ================================================================
+// BootstrapApp
+// ================================================================
+
 class BootstrapApp extends StatefulWidget {
   const BootstrapApp({super.key});
 
@@ -55,7 +60,12 @@ class _BootstrapAppState extends State<BootstrapApp> {
   @override
   void initState() {
     super.initState();
-    _bootstrap();
+
+    // اجازه می‌دهیم اولین frame نمایش داده شود،
+    // سپس عملیات Bootstrap شروع شود.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _bootstrap();
+    });
   }
 
   Future<void> _bootstrap() async {
@@ -68,68 +78,68 @@ class _BootstrapAppState extends State<BootstrapApp> {
     });
 
     try {
-      // سرویس اسکن مستقل از دیتابیس است.
+      // ------------------------------------------------------------
+      // Scan Service
+      // ------------------------------------------------------------
       await ScanService.initialize();
 
-      // دیتابیس و Migration بخش حیاتی شروع برنامه هستند.
+      // ------------------------------------------------------------
+      // Database
+      // ------------------------------------------------------------
       await DatabaseHelper.database;
 
-      // فقط آماده‌سازی سبک sync در مسیر شروع انجام می‌شود.
-      // بازسازی صف تمام نامه‌های قدیمی در این مرحله عمداً انجام نمی‌شود.
+      // ------------------------------------------------------------
+      // Sync identity
+      // ------------------------------------------------------------
       await DatabaseHelper.ensureSyncIdentity();
 
-      // خطای سرویس Sync نباید مانع باز شدن نرم‌افزار شود.
-      try {
-        await SyncService.instance.initialize();
-      } catch (e, st) {
-        debugPrint('Sync initialization warning: $e');
-        debugPrintStack(stackTrace: st);
-      }
+      // ------------------------------------------------------------
+      // Schema
+      // ------------------------------------------------------------
+      //
+      // SchemaService باید از Cache استفاده کند.
+      //
+      var schema = await SchemaService.preload();
 
-      var schema = await SchemaService.load();
-
+      // نصب جدید
       if (schema == null) {
         await SchemaService.initializeForNewInstall();
-        schema = await SchemaService.load();
+        schema = await SchemaService.preload();
       }
 
       if (schema == null) {
         throw StateError('ساختار دبیرخانه پس از باز شدن دیتابیس ایجاد نشد.');
       }
 
-      // اگر فایل دیتابیس از نسخه قدیمی یا یک Migration ناقص آمده باشد،
-      // ستون‌های تعریف‌شده در Dynamic Schema را بدون دستکاری رکوردها
-      // دوباره با ساختار SQLite هماهنگ می‌کنیم.
-      await SchemaService.repairDatabaseColumns();
-      schema = await SchemaService.load();
+      // ------------------------------------------------------------
+      // بررسی ناسازگاری واقعی دیتابیس
+      // ------------------------------------------------------------
+      //
+      // Repair فقط در صورت وجود مشکل انجام می‌شود.
+      //
+      final schemaMatchesDb = await SchemaService.databaseColumnsMatchSchema(
+        schema,
+      );
+
+      if (!schemaMatchesDb) {
+        debugPrint('Schema/Database mismatch detected. Starting repair...');
+
+        await SchemaService.repairDatabaseColumns();
+
+        // بعد از Repair، Cache را مجدداً دریافت می‌کنیم.
+        schema = await SchemaService.preload();
+      }
 
       if (schema == null) {
-        throw StateError('ساختار دبیرخانه پس از تعمیر اولیه قابل خواندن نیست.');
+        throw StateError('ساختار دبیرخانه پس از تعمیر قابل خواندن نیست.');
       }
 
-      final configured =
-          schema.fields.any((field) => !field.system && field.visible);
-
-      // Notificationها سرویس جانبی هستند؛ خرابی آنها نباید مانع
-      // ورود کاربر به اطلاعات نامه‌ها شود.
-      try {
-        await NotificationService.instance.initialize();
-        await NotificationService.instance.cancelAll();
-
-        final backupReminderEnabled =
-            await AppSettings.getMonthlyBackupReminderEnabled();
-
-        if (backupReminderEnabled) {
-          await NotificationService.instance
-              .scheduleMonthlyBackupReminder();
-        }
-
-        await NotificationService.instance
-            .rebuildAllDailyReminderNotifications();
-      } catch (e, st) {
-        debugPrint('Notification initialization warning: $e');
-        debugPrintStack(stackTrace: st);
-      }
+      // ------------------------------------------------------------
+      // وضعیت تنظیم فرم
+      // ------------------------------------------------------------
+      final configured = schema.fields.any(
+        (field) => !field.system && field.visible,
+      );
 
       if (!mounted) return;
 
@@ -138,18 +148,11 @@ class _BootstrapAppState extends State<BootstrapApp> {
         loading = false;
       });
 
+      // ------------------------------------------------------------
+      // سرویس‌های جانبی بعد از نمایش UI
+      // ------------------------------------------------------------
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        final date =
-            NotificationService.instance.takePendingDailyReminderDate();
-
-        if (date != null) {
-          MyApp.navigatorKey.currentState?.pushAndRemoveUntil(
-            MaterialPageRoute(
-              builder: (_) => HomePage(initialReminderDate: date),
-            ),
-            (route) => false,
-          );
-        }
+        _initializeBackgroundServices();
       });
     } catch (e, st) {
       debugPrint('BOOTSTRAP ERROR: $e');
@@ -162,6 +165,52 @@ class _BootstrapAppState extends State<BootstrapApp> {
         stackTrace = st;
         loading = false;
       });
+    }
+  }
+
+  Future<void> _initializeBackgroundServices() async {
+    // ------------------------------------------------------------
+    // Sync
+    // ------------------------------------------------------------
+    try {
+      await SyncService.instance.initialize();
+    } catch (e, st) {
+      debugPrint('Sync initialization warning: $e');
+      debugPrintStack(stackTrace: st);
+    }
+
+    // ------------------------------------------------------------
+    // Notifications
+    // ------------------------------------------------------------
+    try {
+      await NotificationService.instance.initialize();
+
+      await NotificationService.instance.cancelAll();
+
+      final backupReminderEnabled =
+          await AppSettings.getMonthlyBackupReminderEnabled();
+
+      if (backupReminderEnabled) {
+        await NotificationService.instance.scheduleMonthlyBackupReminder();
+      }
+
+      await NotificationService.instance.rebuildAllDailyReminderNotifications();
+
+      if (!mounted) return;
+
+      final date = NotificationService.instance.takePendingDailyReminderDate();
+
+      if (date != null) {
+        MyApp.navigatorKey.currentState?.pushAndRemoveUntil(
+          MaterialPageRoute(
+            builder: (_) => HomePage(initialReminderDate: date),
+          ),
+          (route) => false,
+        );
+      }
+    } catch (e, st) {
+      debugPrint('Notification initialization warning: $e');
+      debugPrintStack(stackTrace: st);
     }
   }
 
@@ -185,17 +234,56 @@ class _BootstrapAppState extends State<BootstrapApp> {
           : const SchemaConfigPage(firstRun: true);
     }
 
+    return MyApp(home: home, themeProvider: theme);
+  }
+}
+
+// ================================================================
+// MyApp
+// ================================================================
+//
+// MyApp را به عنوان Widget نگه می‌داریم تا تمام کدهای قبلی پروژه
+// که MyApp را می‌شناسند و از navigatorKey استفاده می‌کنند، سالم
+// باقی بمانند.
+//
+// هیچ mounted یا عملیات Async در این کلاس نداریم.
+// ================================================================
+
+class MyApp extends StatelessWidget {
+  final Widget home;
+  final ThemeProvider themeProvider;
+
+  const MyApp({super.key, required this.home, required this.themeProvider});
+
+  static final GlobalKey<NavigatorState> navigatorKey =
+      GlobalKey<NavigatorState>();
+
+  @override
+  Widget build(BuildContext context) {
     return MaterialApp(
       debugShowCheckedModeBanner: false,
+
       title: 'دبیرخانه',
-      navigatorKey: MyApp.navigatorKey,
-      theme: theme.lightTheme,
-      darkTheme: theme.darkTheme,
-      themeMode: theme.themeMode,
+
+      navigatorKey: navigatorKey,
+
+      theme: themeProvider.lightTheme,
+      darkTheme: themeProvider.darkTheme,
+      themeMode: themeProvider.themeMode,
+
       home: home,
     );
   }
 }
+
+// ================================================================
+// Startup Loading
+// ================================================================
+//
+// فقط UI لودینگ.
+//
+// هیچ mounted یا عملیات Async در این کلاس وجود ندارد.
+// ================================================================
 
 class _StartupLoadingPage extends StatelessWidget {
   const _StartupLoadingPage();
@@ -216,7 +304,9 @@ class _StartupLoadingPage extends StatelessWidget {
                   mainAxisSize: MainAxisSize.min,
                   children: const [
                     Icon(Icons.storage_rounded, size: 54),
+
                     SizedBox(height: 18),
+
                     Text(
                       'در حال آماده‌سازی دبیرخانه',
                       style: TextStyle(
@@ -224,13 +314,17 @@ class _StartupLoadingPage extends StatelessWidget {
                         fontWeight: FontWeight.w800,
                       ),
                     ),
+
                     SizedBox(height: 10),
+
                     Text(
                       'در حال بررسی دیتابیس و ساختار فرم هستیم. '
                       'اگر مشکلی وجود داشته باشد، صفحه عیب‌یابی نمایش داده می‌شود.',
                       textAlign: TextAlign.center,
                     ),
+
                     SizedBox(height: 22),
+
                     CircularProgressIndicator(),
                   ],
                 ),
@@ -239,32 +333,6 @@ class _StartupLoadingPage extends StatelessWidget {
           ),
         ),
       ),
-    );
-  }
-}
-
-class MyApp extends StatelessWidget {
-  final bool isConfigured;
-
-  const MyApp({super.key, required this.isConfigured});
-
-  static final GlobalKey<NavigatorState> navigatorKey =
-      GlobalKey<NavigatorState>();
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = context.watch<ThemeProvider>();
-
-    return MaterialApp(
-      debugShowCheckedModeBanner: false,
-      title: 'دبیرخانه',
-      navigatorKey: navigatorKey,
-      theme: theme.lightTheme,
-      darkTheme: theme.darkTheme,
-      themeMode: theme.themeMode,
-      home: isConfigured
-          ? const HomePage()
-          : const SchemaConfigPage(firstRun: true),
     );
   }
 }

@@ -257,10 +257,8 @@ class DatabaseHelper {
       },
     );
 
-    // دیتابیس‌های قدیمی ممکن است record_categories را با یک Foreign Key
-    // ناسازگار ساخته باشند. این repair بعد از باز شدن connection و خارج از
-    // transaction اجرا می‌شود تا بتواند در صورت نیاز Foreign Key را بازسازی کند.
-    await _repairRecordCategoriesForeignKey(db);
+    // Repairهای سنگین خارج از مسیر عادی شروع برنامه اجرا نمی‌شوند.
+    // فقط در مسیر عیب‌یابی/بازیابی باید _repairRecordCategoriesForeignKey فراخوانی شود.
 
     print('DATABASE OPENED');
     print('========== DATABASE END ==========');
@@ -271,6 +269,11 @@ class DatabaseHelper {
   // ============================================================
   // REPAIR record_categories FOREIGN KEY
   // ============================================================
+
+  static Future<void> repairDatabaseIntegrity() async {
+    final db = await database;
+    await _repairRecordCategoriesForeignKey(db);
+  }
 
   static Future<void> _repairRecordCategoriesForeignKey(Database db) async {
     try {

@@ -9,10 +9,36 @@ class SchemaService {
   static const String tableName = 'record_schema';
   static const String recordTable = 'daftare_andicator';
 
-  static Future<RecordSchema?> load() async {
+  // Schema در طول عمر برنامه cache می‌شود تا فرم‌ها برای هر بار باز شدن
+  // دوباره به SQLite برای خواندن ساختار مراجعه نکنند.
+  static RecordSchema? _cachedSchema;
+  static Future<RecordSchema?>? _loadingFuture;
+
+  static RecordSchema? get cached => _cachedSchema;
+
+  static void invalidateCache() {
+    _cachedSchema = null;
+  }
+
+  static Future<RecordSchema?> preload() {
+    final cached = _cachedSchema;
+    if (cached != null) return Future.value(cached);
+    final running = _loadingFuture;
+    if (running != null) return running;
+    final future = _loadFromDatabase();
+    _loadingFuture = future;
+    return future.whenComplete(() => _loadingFuture = null);
+  }
+
+  static Future<RecordSchema?> load() => preload();
+
+  static Future<RecordSchema?> _loadFromDatabase() async {
     final db = await DatabaseHelper.database;
     final rows = await db.query(tableName, where: 'id = 1', limit: 1);
-    if (rows.isEmpty) return null;
+    if (rows.isEmpty) {
+      _cachedSchema = null;
+      return null;
+    }
 
     final schema = RecordSchema.fromDatabaseRow(
       Map<String, dynamic>.from(rows.first),
@@ -25,9 +51,11 @@ class SchemaService {
         normalized.searchJsonString != schema.searchJsonString ||
         normalized.historySuggestionJsonString != schema.historySuggestionJsonString) {
       await _saveWithExecutor(db, normalized);
+      _cachedSchema = normalized;
       return normalized;
     }
 
+    _cachedSchema = schema;
     return schema;
   }
 
@@ -147,6 +175,19 @@ class SchemaService {
     );
   }
 
+  static Future<bool> databaseColumnsMatchSchema([RecordSchema? input]) async {
+    final schema = input ?? _cachedSchema ?? await load();
+    if (schema == null) return false;
+
+    final db = await DatabaseHelper.database;
+    final columns = await _columns(db);
+    for (final field in schema.fields) {
+      if (field.system || field.type == FieldType.category) continue;
+      if (!_hasColumnIgnoreCase(columns, field.key)) return false;
+    }
+    return true;
+  }
+
   static Future<void> repairDatabaseColumns() async {
     final schema = await load();
     if (schema == null) return;
@@ -189,6 +230,7 @@ class SchemaService {
   static Future<void> save(RecordSchema schema) async {
     final db = await DatabaseHelper.database;
     await _saveWithExecutor(db, schema);
+    _cachedSchema = schema;
   }
 
   static Future<void> _saveWithExecutor(DatabaseExecutor db, RecordSchema schema) async {

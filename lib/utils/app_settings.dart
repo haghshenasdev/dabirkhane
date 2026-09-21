@@ -11,6 +11,7 @@ class AppSettings {
   static const _camScannerPath2Key = 'camscanner_path_2';
   static const _readWithoutGallerySaveKey = 'read_without_gallery_save';
   static const _autoSaveRecordFormKey = 'auto_save_record_form';
+  static const _compactFilesOnFormKey = 'compact_files_on_form';
   static const String _reminderNotificationTimeKey =
       'reminder_notification_time';
 
@@ -336,6 +337,16 @@ class AppSettings {
     final prefs = await SharedPreferences.getInstance();
 
     await prefs.setBool(_saveAndReturnAfterScanKey, value);
+  }
+
+  static Future<bool> getCompactFilesOnForm() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getBool(_compactFilesOnFormKey) ?? false;
+  }
+
+  static Future<void> setCompactFilesOnForm(bool value) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(_compactFilesOnFormKey, value);
   }
 
   static Future<bool> getAutoSaveRecordForm() async {

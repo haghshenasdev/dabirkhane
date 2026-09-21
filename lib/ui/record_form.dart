@@ -111,6 +111,7 @@ class _RecordFormState extends State<RecordForm>
   int? _savedRecordId;
   bool _autoSaveEnabled = false;
   bool _saveAndReturnAfterScan = false;
+  bool _compactFilesOnForm = false;
   bool _hasActiveReminder = false;
   Reminder? _todayReminder;
 
@@ -129,7 +130,7 @@ class _RecordFormState extends State<RecordForm>
   ];
 
   RecordSchema? _schema;
-  bool _schemaLoading = true;
+  bool _schemaLoading = false;
 
   final Map<String, List<String>> _dynamicSuggestions = {};
   final Map<String, Timer> _dynamicSuggestionTimers = {};
@@ -165,10 +166,22 @@ class _RecordFormState extends State<RecordForm>
 
     _scanSubscription = ScanService.results.listen(_onScanResult);
 
-    _loadSchema();
+    final cachedSchema = SchemaService.cached;
+    if (cachedSchema != null) {
+      _applySchema(cachedSchema);
+      if (widget.record == null) {
+        _setInitialValues();
+      } else {
+        _captureInitialState();
+      }
+    } else {
+      _loadSchema();
+    }
+
     _loadSuggestionSettings();
     _loadAutoSaveSetting();
     _loadScanSettings();
+    _loadCompactFilesSetting();
     _loadReminderStatus();
 
     if (widget.record != null) {
@@ -179,39 +192,40 @@ class _RecordFormState extends State<RecordForm>
     _initWindowCloseProtection();
   }
 
+  void _applySchema(RecordSchema schema) {
+    final labels = <String, String>{
+      for (final field in schema.fields) field.key: field.label,
+    };
+
+    final dataFields = schema.fields
+        .where((f) => f.visible && f.key != '__category__')
+        .toList()
+      ..sort((a, b) => a.order.compareTo(b.order));
+
+    for (final field in dataFields) {
+      c.putIfAbsent(
+        field.key,
+        () => TextEditingController(
+          text: widget.record?[field.key]?.toString() ?? '',
+        ),
+      );
+      focusNodes.putIfAbsent(field.key, FocusNode.new);
+    }
+
+    _schema = schema;
+    mainFields = dataFields.map((f) => f.key).toList();
+    otherFields = <String>[];
+    fieldLabels = labels;
+    _schemaLoading = false;
+  }
+
   Future<void> _loadSchema() async {
     try {
-      final schema = await SchemaService.load();
+      final schema = await SchemaService.preload();
       if (schema == null || !mounted) return;
 
-      final labels = <String, String>{
-        for (final field in schema.fields) field.key: field.label,
-      };
-
-      final dataFields = schema.fields
-          .where((f) => f.visible && f.key != '__category__')
-          .toList()
-        ..sort((a, b) => a.order.compareTo(b.order));
-
-      for (final field in dataFields) {
-        c.putIfAbsent(
-          field.key,
-          () => TextEditingController(
-            text: widget.record?[field.key]?.toString() ?? '',
-          ),
-        );
-        focusNodes.putIfAbsent(field.key, FocusNode.new);
-      }
-
-      if (!mounted) return;
-
-      setState(() {
-        _schema = schema;
-        mainFields = dataFields.map((f) => f.key).toList();
-        otherFields = <String>[];
-        fieldLabels = labels;
-        _schemaLoading = false;
-      });
+      _applySchema(schema);
+      setState(() {});
 
       if (widget.record != null) {
         _captureInitialState();
@@ -455,6 +469,12 @@ class _RecordFormState extends State<RecordForm>
     setState(() {
       _saveAndReturnAfterScan = value;
     });
+  }
+
+  Future<void> _loadCompactFilesSetting() async {
+    final value = await AppSettings.getCompactFilesOnForm();
+    if (!mounted) return;
+    setState(() => _compactFilesOnForm = value);
   }
 
   Future<void> _loadSuggestionSettings() async {
@@ -2458,6 +2478,134 @@ class _RecordFormState extends State<RecordForm>
   }
 
   // ============================================================
+  Widget _buildCompactFilesCard() {
+    final colorScheme = Theme.of(context).colorScheme;
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.all(10),
+      decoration: BoxDecoration(
+        color: Colors.white.withOpacity(.72),
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: Colors.white.withOpacity(.90)),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(.035),
+            blurRadius: 14,
+            offset: const Offset(0, 5),
+          ),
+        ],
+      ),
+      child: Column(
+        children: [
+          Row(
+            children: [
+              Container(
+                width: 34,
+                height: 34,
+                decoration: BoxDecoration(
+                  color: colorScheme.primary.withOpacity(.10),
+                  borderRadius: BorderRadius.circular(11),
+                ),
+                child: Icon(Icons.attach_file_rounded,
+                    color: colorScheme.primary, size: 19),
+              ),
+              const SizedBox(width: 9),
+              const Expanded(
+                child: Text('پیوست‌ها',
+                    style: TextStyle(fontSize: 13, fontWeight: FontWeight.w800)),
+              ),
+              _compactFileAction('اسکن', Icons.document_scanner_outlined, scan),
+              _compactFileAction('انتخاب فایل', Icons.attach_file_rounded, addFileForRecord),
+              _compactFileAction('اشتراک‌گذاری', Icons.share_rounded, shareRecord),
+            ],
+          ),
+          if (filesInDirectory.isNotEmpty) ...[
+            const SizedBox(height: 8),
+            SizedBox(
+              height: 58,
+              child: ListView.separated(
+                scrollDirection: Axis.horizontal,
+                reverse: true,
+                itemCount: filesInDirectory.length,
+                separatorBuilder: (_, __) => const SizedBox(width: 7),
+                itemBuilder: (context, index) {
+                  final file = filesInDirectory[index];
+                  final image = _isImage(file.path);
+                  return InkWell(
+                    borderRadius: BorderRadius.circular(13),
+                    onTap: () => openFile(file),
+                    child: Container(
+                      width: 190,
+                      padding: const EdgeInsets.symmetric(horizontal: 7),
+                      decoration: BoxDecoration(
+                        color: Colors.black.withOpacity(.025),
+                        borderRadius: BorderRadius.circular(13),
+                        border: Border.all(color: Colors.black.withOpacity(.055)),
+                      ),
+                      child: Row(
+                        children: [
+                          ClipRRect(
+                            borderRadius: BorderRadius.circular(9),
+                            child: SizedBox(
+                              width: 43,
+                              height: 43,
+                              child: image
+                                  ? Image.file(file, fit: BoxFit.cover,
+                                      errorBuilder: (_, __, ___) => _filePreviewIcon(file))
+                                  : _filePreviewIcon(file),
+                            ),
+                          ),
+                          const SizedBox(width: 7),
+                          Expanded(
+                            child: Text(
+                              path.basename(file.path),
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
+                              textDirection: TextDirection.rtl,
+                              style: const TextStyle(fontSize: 10.5, fontWeight: FontWeight.w600),
+                            ),
+                          ),
+                          Icon(Icons.open_in_new_rounded,
+                              size: 15, color: colorScheme.primary),
+                        ],
+                      ),
+                    ),
+                  );
+                },
+              ),
+            ),
+          ] else
+            const Padding(
+              padding: EdgeInsets.only(top: 5),
+              child: Align(
+                alignment: Alignment.centerRight,
+                child: Text('هنوز فایلی برای این نامه ثبت نشده است.',
+                    style: TextStyle(fontSize: 10.5), textDirection: TextDirection.rtl),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  Widget _compactFileAction(
+    String tooltip,
+    IconData icon,
+    VoidCallback onPressed,
+  ) {
+    return Tooltip(
+      message: tooltip,
+      child: IconButton(
+        visualDensity: VisualDensity.compact,
+        constraints: const BoxConstraints(minWidth: 34, minHeight: 34),
+        padding: EdgeInsets.zero,
+        onPressed: onPressed,
+        icon: Icon(icon, size: 18),
+      ),
+    );
+  }
+
   // FILE TAB
   // ============================================================
 
@@ -2984,6 +3132,28 @@ class _RecordFormState extends State<RecordForm>
           controller: _tabController,
           children: [_buildFormTab(), _buildFilesTab()],
         ),
+        bottomNavigationBar: AnimatedBuilder(
+          animation: _tabController,
+          builder: (context, child) {
+            if (_tabController.index != 0) return const SizedBox.shrink();
+            if (_autoSaveEnabled && _compactFilesOnForm && widget.record != null) {
+              return const SizedBox.shrink();
+            }
+            return SafeArea(
+              top: false,
+              child: Container(
+                padding: const EdgeInsets.fromLTRB(12, 8, 12, 10),
+                decoration: BoxDecoration(
+                  color: Colors.white.withOpacity(.92),
+                  border: Border(
+                    top: BorderSide(color: Colors.black.withOpacity(.06)),
+                  ),
+                ),
+                child: _buildFormButtons(),
+              ),
+            );
+          },
+        ),
       ),
     );
   }
@@ -3072,9 +3242,9 @@ class _RecordFormState extends State<RecordForm>
           padding: const EdgeInsets.fromLTRB(12, 14, 12, 24),
           children: [
             _buildTodayReminderBanner(),
+            if (_compactFilesOnForm) _buildCompactFilesCard(),
             ...sections.map(_buildDynamicSection),
-            const SizedBox(height: 2),
-            _buildFormButtons(),
+            const SizedBox(height: 12),
           ],
         ),
       ),
@@ -3217,13 +3387,14 @@ class _RecordFormState extends State<RecordForm>
 
         const SizedBox(width: 9),
 
-        Expanded(
-          child: _glassButton(
-            label: 'اسکن',
-            icon: Icons.document_scanner_outlined,
-            onPressed: scan,
+        if (!_compactFilesOnForm)
+          Expanded(
+            child: _glassButton(
+              label: 'اسکن',
+              icon: Icons.document_scanner_outlined,
+              onPressed: scan,
+            ),
           ),
-        ),
       ],
     );
   }

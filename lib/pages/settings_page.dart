@@ -321,6 +321,7 @@ class SettingsPage extends StatelessWidget {
           _sectionTitle('فرم نامه'),
 
           const AutoSaveRecordFormTile(),
+          const CompactFilesOnFormTile(),
 
           ListTile(
             leading: const Icon(Icons.dashboard_customize_outlined),
@@ -646,6 +647,47 @@ class _AutoSaveRecordFormTileState extends State<AutoSaveRecordFormTile> {
       title: const Text('ذخیره خودکار نامه'),
       subtitle: const Text(
         'هنگام خروج از فرم، تغییرات به صورت خودکار ذخیره می‌شوند',
+      ),
+      value: enabled,
+      onChanged: _setValue,
+    );
+  }
+}
+
+class CompactFilesOnFormTile extends StatefulWidget {
+  const CompactFilesOnFormTile({super.key});
+
+  @override
+  State<CompactFilesOnFormTile> createState() => _CompactFilesOnFormTileState();
+}
+
+class _CompactFilesOnFormTileState extends State<CompactFilesOnFormTile> {
+  bool enabled = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  Future<void> _load() async {
+    final value = await AppSettings.getCompactFilesOnForm();
+    if (!mounted) return;
+    setState(() => enabled = value);
+  }
+
+  Future<void> _setValue(bool value) async {
+    setState(() => enabled = value);
+    await AppSettings.setCompactFilesOnForm(value);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return SwitchListTile(
+      secondary: const Icon(Icons.attach_file_rounded),
+      title: const Text('نمایش فایل‌ها بالای فرم'),
+      subtitle: const Text(
+        'اسکن، انتخاب و اشتراک‌گذاری فایل را بالای فرم نمایش می‌دهد و دکمه اسکن پایین فرم را حذف می‌کند',
       ),
       value: enabled,
       onChanged: _setValue,
