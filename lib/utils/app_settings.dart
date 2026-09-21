@@ -242,6 +242,29 @@ class AppSettings {
   }
 
 
+  // متن‌های پرکاربرد یادآور
+  static const String _reminderQuickTextsKey = 'reminder_quick_texts';
+
+  static Future<List<String>> getReminderQuickTexts() async {
+    final prefs = await SharedPreferences.getInstance();
+    final raw = prefs.getStringList(_reminderQuickTextsKey) ?? <String>[];
+    return raw
+        .map((e) => e.trim())
+        .where((e) => e.isNotEmpty)
+        .take(12)
+        .toList();
+  }
+
+  static Future<void> saveReminderQuickText(String text) async {
+    final value = text.trim();
+    if (value.isEmpty) return;
+    final current = await getReminderQuickTexts();
+    current.removeWhere((e) => e == value);
+    current.insert(0, value);
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setStringList(_reminderQuickTextsKey, current.take(12).toList());
+  }
+
   // -----------------------------
   // Last Backup
   // -----------------------------

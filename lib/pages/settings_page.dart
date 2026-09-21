@@ -5,6 +5,7 @@ import 'package:dabirkhane/utils/CamScannerPathsTile.dart';
 import 'package:dabirkhane/utils/ScannerTypeTile.dart';
 import 'package:dabirkhane/utils/app_settings.dart';
 import 'package:dabirkhane/utils/letter_file_organizer.dart';
+import 'package:path/path.dart' as p;
 
 import '../providers/theme_provider.dart';
 import '../utils/LettersPathTile.dart';
@@ -263,177 +264,202 @@ class SettingsPage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(title: const Text('تنظیمات')),
-      body: ListView(
-        children: [
-          _sectionTitle('عمومی'),
-          SwitchListTile(
-            title: const Text('حالت تیره'),
-            subtitle: const Text('فعال / غیرفعال کردن Dark Mode'),
-            value: Theme.of(context).brightness == Brightness.dark,
-            onChanged: (value) {
-              context.read<ThemeProvider>().toggleDark(value);
-            },
-          ),
+    final cs = Theme.of(context).colorScheme;
 
-          ThemeColorTile(),
-
-          const Divider(),
-
-          _sectionTitle('فایل‌ها'),
-
-          const LettersPathTile(),
-
-          ListTile(
-            leading: const Icon(Icons.folder_copy_outlined),
-            title: const Text('مرتب‌سازی فایل‌های نامه‌ها'),
-            subtitle: const Text(
-              'دسته‌بندی فایل‌ها بر اساس سال و ماه ثبت نامه',
+    return Directionality(
+      textDirection: TextDirection.rtl,
+      child: Scaffold(
+        extendBodyBehindAppBar: true,
+        appBar: AppBar(
+          title: const Text('تنظیمات'),
+          backgroundColor: cs.surface.withOpacity(.72),
+          surfaceTintColor: Colors.transparent,
+          elevation: 0,
+        ),
+        body: DecoratedBox(
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              begin: Alignment.topRight,
+              end: Alignment.bottomLeft,
+              colors: [
+                cs.primary.withOpacity(.08),
+                cs.surface,
+                cs.secondary.withOpacity(.05),
+              ],
             ),
-            trailing: const Icon(Icons.chevron_left),
-            onTap: () {
-              organizeLetterFiles(context);
-            },
           ),
+          child: ListView(
+            padding: const EdgeInsets.fromLTRB(12, 92, 12, 28),
+            children: [
+              _sectionTitle(context, 'عمومی'),
+              SwitchListTile(
+                title: const Text('حالت تیره'),
+                subtitle: const Text('فعال / غیرفعال کردن Dark Mode'),
+                value: Theme.of(context).brightness == Brightness.dark,
+                onChanged: (value) {
+                  context.read<ThemeProvider>().toggleDark(value);
+                },
+              ),
 
-          const Divider(),
-          _sectionTitle('دیتابیس'),
-          ListTile(
-            leading: const Icon(Icons.restore),
-            title: const Text('بازیابی دیتابیس قبلی'),
-            onTap: () {
-              restoreDbBackup(context);
-            },
-          ),
-          const Divider(),
+              ThemeColorTile(),
 
-          const MonthlyBackupReminderTile(),
-          const Divider(),
-          _sectionTitle('اسکنر'),
-          const ScannerTypeTile(),
-          const Divider(),
-          const CamScannerPathsTile(),
-          const SaveAndReturnAfterScanTile(),
+              const Divider(),
 
-          const Divider(),
+              _sectionTitle(context, 'فایل‌ها'),
 
-          _sectionTitle('فرم نامه'),
+              const LettersPathTile(),
 
-          const AutoSaveRecordFormTile(),
-          const CompactFilesOnFormTile(),
+              ListTile(
+                leading: const Icon(Icons.folder_copy_outlined),
+                title: const Text('مرتب‌سازی فایل‌های نامه‌ها'),
+                subtitle: const Text(
+                  'دسته‌بندی فایل‌ها بر اساس سال و ماه ثبت نامه',
+                ),
+                trailing: const Icon(Icons.chevron_left),
+                onTap: () {
+                  organizeLetterFiles(context);
+                },
+              ),
 
-          ListTile(
-            leading: const Icon(Icons.dashboard_customize_outlined),
-            title: const Text('ساختار و فیلدهای دبیرخانه'),
-            subtitle: const Text('مدیریت فیلدها، چینش فرم، جستجو و آمار'),
-            trailing: const Icon(Icons.chevron_left),
-            onTap: () async {
-              final changed = await Navigator.of(context).push<bool>(
-                MaterialPageRoute(builder: (_) => const SchemaConfigPage()),
-              );
-              if (changed == true && context.mounted) {
-                Navigator.of(context).pop(true);
-              }
-            },
-          ),
+              const Divider(),
+              _sectionTitle(context, 'دیتابیس'),
+              ListTile(
+                leading: const Icon(Icons.restore),
+                title: const Text('بازیابی دیتابیس قبلی'),
+                onTap: () {
+                  restoreDbBackup(context);
+                },
+              ),
+              const Divider(),
 
-          const Divider(),
+              const MonthlyBackupReminderTile(),
+              const Divider(),
+              _sectionTitle(context, 'اسکنر'),
+              const ScannerTypeTile(),
+              const Divider(),
+              const CamScannerPathsTile(),
+              const SaveAndReturnAfterScanTile(),
 
-          _sectionTitle('پیشنهاد تکمیل فرم'),
+              const Divider(),
 
-          const FormSuggestionsSettings(),
+              _sectionTitle(context, 'فرم نامه'),
 
-          const Divider(),
-          const ReminderNotificationTimeTile(),
+              const AutoSaveRecordFormTile(),
+              const CompactFilesOnFormTile(),
 
-          ListTile(
-            leading: const Icon(Icons.notifications_active_outlined),
-            title: const Text('تست اعلان‌ها'),
-            subtitle: const Text('بررسی و عیب‌یابی سرویس اعلان'),
-            onTap: () async {
-              showDialog(
-                context: context,
-                barrierDismissible: false,
-                builder: (_) {
-                  return const AlertDialog(
-                    content: SizedBox(
-                      height: 80,
-                      child: Center(
-                        child: Column(
-                          mainAxisSize: MainAxisSize.min,
+              ListTile(
+                leading: const Icon(Icons.dashboard_customize_outlined),
+                title: const Text('ساختار و فیلدهای دبیرخانه'),
+                subtitle: const Text('مدیریت فیلدها، چینش فرم، جستجو و آمار'),
+                trailing: const Icon(Icons.chevron_left),
+                onTap: () async {
+                  final changed = await Navigator.of(context).push<bool>(
+                    MaterialPageRoute(builder: (_) => const SchemaConfigPage()),
+                  );
+                  if (changed == true && context.mounted) {
+                    Navigator.of(context).pop(true);
+                  }
+                },
+              ),
+
+              const Divider(),
+
+              _sectionTitle(context, 'پیشنهاد تکمیل فرم'),
+
+              const FormSuggestionsSettings(),
+
+              const Divider(),
+              const ReminderNotificationTimeTile(),
+
+              ListTile(
+                leading: const Icon(Icons.notifications_active_outlined),
+                title: const Text('تست اعلان‌ها'),
+                subtitle: const Text('بررسی و عیب‌یابی سرویس اعلان'),
+                onTap: () async {
+                  showDialog(
+                    context: context,
+                    barrierDismissible: false,
+                    builder: (_) {
+                      return const AlertDialog(
+                        content: SizedBox(
+                          height: 80,
+                          child: Center(
+                            child: Column(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                CircularProgressIndicator(),
+                                SizedBox(height: 16),
+                                Text('در حال بررسی اعلان‌ها...'),
+                              ],
+                            ),
+                          ),
+                        ),
+                      );
+                    },
+                  );
+
+                  final result = await NotificationService.instance
+                      .debugInitialize();
+
+                  if (!context.mounted) return;
+
+                  Navigator.of(context).pop();
+
+                  showDialog(
+                    context: context,
+                    builder: (_) {
+                      return AlertDialog(
+                        title: const Row(
                           children: [
-                            CircularProgressIndicator(),
-                            SizedBox(height: 16),
-                            Text('در حال بررسی اعلان‌ها...'),
+                            Icon(Icons.bug_report_outlined),
+                            SizedBox(width: 8),
+                            Text('نتیجه تست اعلان'),
                           ],
                         ),
-                      ),
-                    ),
+                        content: SingleChildScrollView(
+                          child: SelectableText(result),
+                        ),
+                        actions: [
+                          TextButton(
+                            onPressed: () {
+                              Navigator.of(context).pop();
+                            },
+                            child: const Text('بستن'),
+                          ),
+                        ],
+                      );
+                    },
                   );
                 },
-              );
+              ),
 
-              final result = await NotificationService.instance
-                  .debugInitialize();
+              const Divider(),
 
-              if (!context.mounted) return;
-
-              Navigator.of(context).pop();
-
-              showDialog(
-                context: context,
-                builder: (_) {
-                  return AlertDialog(
-                    title: const Row(
-                      children: [
-                        Icon(Icons.bug_report_outlined),
-                        SizedBox(width: 8),
-                        Text('نتیجه تست اعلان'),
-                      ],
+              _sectionTitle(context, 'درباره برنامه'),
+              ListTile(
+                leading: const Icon(Icons.info_outline),
+                title: const Text('نسخه برنامه'),
+                subtitle: const Text('1.0.0'),
+              ),
+              ListTile(
+                leading: const Icon(Icons.code),
+                title: const Text('توسعه‌دهنده'),
+                subtitle: GestureDetector(
+                  onTap: () => openDeveloperSite(context),
+                  child: Text(
+                    'MH-DEV | محمد مهدی حق شناس'
+                    '\n'
+                    'https://haghshenasdev.github.io/',
+                    style: TextStyle(
+                      color: cs.primary,
+                      decoration: TextDecoration.underline,
                     ),
-                    content: SingleChildScrollView(
-                      child: SelectableText(result),
-                    ),
-                    actions: [
-                      TextButton(
-                        onPressed: () {
-                          Navigator.of(context).pop();
-                        },
-                        child: const Text('بستن'),
-                      ),
-                    ],
-                  );
-                },
-              );
-            },
-          ),
-
-          const Divider(),
-
-          _sectionTitle('درباره برنامه'),
-          ListTile(
-            leading: const Icon(Icons.info_outline),
-            title: const Text('نسخه برنامه'),
-            subtitle: const Text('1.0.0'),
-          ),
-          ListTile(
-            leading: const Icon(Icons.code),
-            title: const Text('توسعه‌دهنده'),
-            subtitle: GestureDetector(
-              onTap: () => openDeveloperSite(context),
-              child: const Text(
-                'MH-DEV | محمد مهدی حق شناس'
-                '\n'
-                'https://haghshenasdev.github.io/',
-                style: TextStyle(
-                  color: Colors.blue,
-                  decoration: TextDecoration.underline,
+                  ),
                 ),
               ),
-            ),
+            ],
           ),
-        ],
+        ),
       ),
     );
   }
@@ -462,15 +488,15 @@ class SettingsPage extends StatelessWidget {
     }
   }
 
-  Widget _sectionTitle(String title) {
+  Widget _sectionTitle(BuildContext context, String title) {
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 24, 16, 8),
       child: Text(
         title,
-        style: const TextStyle(
+        style: TextStyle(
           fontSize: 14,
           fontWeight: FontWeight.bold,
-          color: Colors.blueGrey,
+          color: Theme.of(context).colorScheme.primary,
         ),
         textDirection: TextDirection.rtl,
       ),

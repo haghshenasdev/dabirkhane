@@ -25,7 +25,7 @@ class _BackupRestoreDialogState extends State<BackupRestoreDialog>
   BackupType? _selectedBackupType;
 
   late int _selectedBackupYear;
-  late int _selectedBackupMonth;
+  final Set<String> _selectedBackupMonthKeys = <String>{};
 
   static const List<String> _jalaliMonthNames = [
     'فروردین', 'اردیبهشت', 'خرداد', 'تیر', 'مرداد', 'شهریور',
@@ -76,7 +76,7 @@ class _BackupRestoreDialogState extends State<BackupRestoreDialog>
 
     final previous = _getPreviousMonth();
     _selectedBackupYear = previous.year;
-    _selectedBackupMonth = previous.month;
+    _selectedBackupMonthKeys.add('${previous.year}/${previous.month}');
 
     _loadBackupHistory();
     _loadSyncSettings();
@@ -148,6 +148,43 @@ class _BackupRestoreDialogState extends State<BackupRestoreDialog>
   List<int> _backupYears() {
     final now = Jalali.now().year;
     return List<int>.generate(12, (index) => now - index);
+  }
+
+  String _monthKey(int year, int month) => '$year/$month';
+
+  bool _isMonthSelected(int year, int month) =>
+      _selectedBackupMonthKeys.contains(_monthKey(year, month));
+
+  void _toggleBackupMonth(int year, int month) {
+    final key = _monthKey(year, month);
+    setState(() {
+      if (_selectedBackupMonthKeys.contains(key)) {
+        if (_selectedBackupMonthKeys.length > 1) {
+          _selectedBackupMonthKeys.remove(key);
+        }
+      } else {
+        _selectedBackupMonthKeys.add(key);
+      }
+    });
+  }
+
+  List<BackupMonth> get _selectedBackupMonths {
+    final result = <BackupMonth>[];
+    for (final key in _selectedBackupMonthKeys) {
+      final parts = key.split('/');
+      if (parts.length != 2) continue;
+      final year = int.tryParse(parts[0]);
+      final month = int.tryParse(parts[1]);
+      if (year != null && month != null) {
+        result.add(BackupMonth(year: year, month: month));
+      }
+    }
+    result.sort((a, b) {
+      final ay = a.year * 100 + a.month;
+      final by = b.year * 100 + b.month;
+      return ay.compareTo(by);
+    });
+    return result;
   }
 
   @override
@@ -699,59 +736,81 @@ class _BackupRestoreDialogState extends State<BackupRestoreDialog>
   }
 
   Widget _buildBackupMonthSelector(ColorScheme colorScheme) {
+    final selectedMonths = _selectedBackupMonths;
+
     return Container(
-      padding: const EdgeInsets.all(13),
+      padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
         color: colorScheme.primary.withOpacity(.055),
-        borderRadius: BorderRadius.circular(18),
+        borderRadius: BorderRadius.circular(20),
         border: Border.all(color: colorScheme.primary.withOpacity(.16)),
       ),
-      child: Row(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Icon(Icons.calendar_month_rounded, color: colorScheme.primary),
-          const SizedBox(width: 10),
-          const Expanded(
-            child: Text(
-              'ماه فایل‌ها',
-              style: TextStyle(fontWeight: FontWeight.w700),
-            ),
-          ),
-          DropdownButton<int>(
-            value: _selectedBackupYear,
-            underline: const SizedBox.shrink(),
-            items: _backupYears()
-                .map(
-                  (year) => DropdownMenuItem(
-                    value: year,
-                    child: Text(year.toString()),
-                  ),
-                )
-                .toList(),
-            onChanged: _working
-                ? null
-                : (value) {
-                    if (value == null) return;
-                    setState(() => _selectedBackupYear = value);
-                  },
-          ),
-          const SizedBox(width: 6),
-          DropdownButton<int>(
-            value: _selectedBackupMonth,
-            underline: const SizedBox.shrink(),
-            items: List.generate(
-              12,
-              (index) => DropdownMenuItem(
-                value: index + 1,
-                child: Text(_jalaliMonthNames[index]),
+          Row(
+            children: [
+              Icon(Icons.calendar_month_rounded, color: colorScheme.primary),
+              const SizedBox(width: 10),
+              const Expanded(
+                child: Text('ماه فایل‌ها', style: TextStyle(fontWeight: FontWeight.w800)),
               ),
-            ),
-            onChanged: _working
-                ? null
-                : (value) {
-                    if (value == null) return;
-                    setState(() => _selectedBackupMonth = value);
-                  },
+              DropdownButton<int>(
+                value: _selectedBackupYear,
+                underline: const SizedBox.shrink(),
+                items: _backupYears().map((year) => DropdownMenuItem(
+                  value: year,
+                  child: Text(year.toString()),
+                )).toList(),
+                onChanged: _working ? null : (value) {
+                  if (value != null) setState(() => _selectedBackupYear = value);
+                },
+              ),
+            ],
           ),
+          const SizedBox(height: 8),
+          Text(
+            'یک یا چند ماه را انتخاب کنید. برای انتخاب ماه‌های سال‌های دیگر، سال را تغییر دهید؛ انتخاب‌های قبلی باقی می‌مانند.',
+            style: TextStyle(fontSize: 11.5, color: colorScheme.onSurfaceVariant),
+          ),
+          const SizedBox(height: 12),
+          Wrap(
+            spacing: 7,
+            runSpacing: 7,
+            children: List.generate(12, (index) {
+              final month = index + 1;
+              final selected = _isMonthSelected(_selectedBackupYear, month);
+              return FilterChip(
+                selected: selected,
+                label: Text(_jalaliMonthNames[index]),
+                avatar: selected ? const Icon(Icons.check_rounded, size: 16) : null,
+                onSelected: _working
+                    ? null
+                    : (_) => _toggleBackupMonth(_selectedBackupYear, month),
+              );
+            }),
+          ),
+          const SizedBox(height: 12),
+          Row(
+            children: [
+              Icon(Icons.checklist_rounded, size: 18, color: colorScheme.primary),
+              const SizedBox(width: 7),
+              Text('ماه‌های انتخاب‌شده: ${selectedMonths.length}', style: const TextStyle(fontWeight: FontWeight.w700)),
+            ],
+          ),
+          if (selectedMonths.isNotEmpty) ...[
+            const SizedBox(height: 8),
+            Wrap(
+              spacing: 6,
+              runSpacing: 6,
+              children: selectedMonths.map((m) => InputChip(
+                label: Text('${m.year}/${m.month}'),
+                onDeleted: _working || selectedMonths.length == 1
+                    ? null
+                    : () => _toggleBackupMonth(m.year, m.month),
+              )).toList(),
+            ),
+          ],
         ],
       ),
     );
@@ -1347,7 +1406,8 @@ class _BackupRestoreDialogState extends State<BackupRestoreDialog>
     final result = await BackupRestoreService.createBackup(
       type: type,
       selectedYear: _selectedBackupYear,
-      selectedMonth: _selectedBackupMonth,
+      selectedMonth: _selectedBackupMonths.first.month,
+      selectedMonths: _selectedBackupMonths,
       onProgress: (progress, message) {
         if (!mounted) return;
 

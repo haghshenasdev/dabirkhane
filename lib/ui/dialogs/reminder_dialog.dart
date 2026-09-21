@@ -30,12 +30,14 @@ class _ReminderDialogState extends State<ReminderDialog> {
   bool _saving = false;
   int? _processingReminderId;
   List<int> _quickDays = [];
+  List<String> _quickTexts = [];
 
   @override
   void initState() {
     super.initState();
     _loadReminders();
     _loadQuickDays();
+    _loadQuickTexts();
   }
 
   @override
@@ -65,6 +67,17 @@ class _ReminderDialogState extends State<ReminderDialog> {
       setState(() {
         _quickDays = [];
       });
+    }
+  }
+
+  Future<void> _loadQuickTexts() async {
+    try {
+      final texts = await AppSettings.getReminderQuickTexts();
+      if (!mounted) return;
+      setState(() => _quickTexts = texts);
+    } catch (e) {
+      debugPrint('load reminder quick texts error: $e');
+      if (mounted) setState(() => _quickTexts = []);
     }
   }
 
@@ -110,8 +123,15 @@ class _ReminderDialogState extends State<ReminderDialog> {
 
   String _formatJalali(DateTime date) {
     final jalali = Jalali.fromDateTime(date);
-
-    return '${jalali.year}/${jalali.month.toString().padLeft(2, '0')}/${jalali.day.toString().padLeft(2, '0')}';
+    const months = [
+      'فروردین', 'اردیبهشت', 'خرداد', 'تیر', 'مرداد', 'شهریور',
+      'مهر', 'آبان', 'آذر', 'دی', 'بهمن', 'اسفند',
+    ];
+    const weekdays = [
+      'دوشنبه', 'سه‌شنبه', 'چهارشنبه', 'پنج‌شنبه',
+      'جمعه', 'شنبه', 'یکشنبه',
+    ];
+    return '${weekdays[date.weekday - 1]} ${jalali.day} ${months[jalali.month - 1]} ${jalali.year}';
   }
 
   bool _isDue(Reminder reminder) {
@@ -157,7 +177,9 @@ class _ReminderDialogState extends State<ReminderDialog> {
       final reminderId = await DatabaseHelper.insertReminder(reminder);
 
       await AppSettings.saveReminderQuickDay(days);
+      await AppSettings.saveReminderQuickText(text);
       await _loadQuickDays();
+      await _loadQuickTexts();
 
       await NotificationService.instance.rebuildDailyReminderForDate(dueDate);
 
@@ -848,6 +870,33 @@ class _ReminderDialogState extends State<ReminderDialog> {
                       ),
                     ),
                   ),
+
+                  if (_quickTexts.isNotEmpty) ...[
+                    const SizedBox(height: 10),
+                    Text(
+                      'متن‌های پرکاربرد',
+                      style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w700,
+                        color: colorScheme.onSurfaceVariant,
+                      ),
+                    ),
+                    const SizedBox(height: 7),
+                    Wrap(
+                      spacing: 7,
+                      runSpacing: 7,
+                      children: _quickTexts.map((text) => ActionChip(
+                        avatar: const Icon(Icons.history_rounded, size: 15),
+                        label: ConstrainedBox(
+                          constraints: const BoxConstraints(maxWidth: 360),
+                          child: Text(text, overflow: TextOverflow.ellipsis),
+                        ),
+                        onPressed: () {
+                          setState(() => _textController.text = text);
+                        },
+                      )).toList(),
+                    ),
+                  ],
 
                   const SizedBox(height: 16),
 

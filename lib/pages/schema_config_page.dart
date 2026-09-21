@@ -1,4 +1,9 @@
+import 'dart:io';
+import 'dart:ui';
+
 import 'package:dabirkhane/model/field_definition.dart';
+import 'package:dabirkhane/services/backup_restore_service.dart';
+import 'package:file_picker/file_picker.dart';
 import 'package:dabirkhane/services/schema_service.dart';
 import 'package:flutter/material.dart';
 
@@ -160,6 +165,56 @@ class _SchemaConfigPageState extends State<SchemaConfigPage>
     );
   }
 
+  Future<void> _restoreExistingDatabase() async {
+    if (saving) return;
+
+    final selected = await FilePicker.platform.pickFiles(
+      dialogTitle: 'انتخاب پشتیبان دیتابیس قبلی',
+      type: FileType.custom,
+      allowedExtensions: ['sqlite', 'db', 'backup', 'zip'],
+      allowMultiple: false,
+    );
+
+    if (selected == null || selected.files.single.path == null || !mounted) return;
+
+    final file = File(selected.files.single.path!);
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('بازیابی دیتابیس قبلی'),
+        content: const Text(
+          'داده‌های فعلی با فایل انتخاب‌شده جایگزین می‌شوند. قبل از جایگزینی، نسخه فعلی نگه‌داری می‌شود. ادامه می‌دهید؟',
+          textDirection: TextDirection.rtl,
+          textAlign: TextAlign.right,
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('انصراف')),
+          FilledButton(onPressed: () => Navigator.pop(context, true), child: const Text('بازیابی')),
+        ],
+      ),
+    ) ?? false;
+
+    if (!confirmed || !mounted) return;
+
+    setState(() => saving = true);
+    try {
+      final result = await BackupRestoreService.restoreBackup(file);
+      if (!mounted) return;
+      if (!result.success) {
+        _message(result.message);
+        return;
+      }
+
+      await _load();
+      if (!mounted) return;
+      _message('دیتابیس قبلی با موفقیت بازیابی شد. ساختار آن بارگذاری شد.');
+    } catch (e) {
+      if (mounted) _message('خطا در بازیابی دیتابیس: $e');
+    } finally {
+      if (mounted) setState(() => saving = false);
+    }
+  }
+
   Future<void> _finish() async {
     if (schema == null || saving) return;
 
@@ -222,10 +277,16 @@ class _SchemaConfigPageState extends State<SchemaConfigPage>
       return const Scaffold(body: Center(child: CircularProgressIndicator()));
     }
 
+    final colorScheme = Theme.of(context).colorScheme;
+
     return Directionality(
       textDirection: TextDirection.rtl,
       child: Scaffold(
+        extendBodyBehindAppBar: true,
         appBar: AppBar(
+          backgroundColor: colorScheme.surface.withOpacity(.72),
+          surfaceTintColor: Colors.transparent,
+          elevation: 0,
           title: Text(
             widget.firstRun ? 'راه‌اندازی دبیرخانه' : 'ساختار دبیرخانه',
           ),
@@ -245,9 +306,26 @@ class _SchemaConfigPageState extends State<SchemaConfigPage>
             ],
           ),
         ),
-        body: TabBarView(
-          controller: tabs,
+        body: Stack(
           children: [
+            Positioned.fill(
+              child: DecoratedBox(
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    begin: Alignment.topRight,
+                    end: Alignment.bottomLeft,
+                    colors: [
+                      colorScheme.primary.withOpacity(.10),
+                      colorScheme.surface,
+                      colorScheme.secondary.withOpacity(.06),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+            TabBarView(
+              controller: tabs,
+              children: [
             _FieldsTab(
               schema: schema!,
               onAdd: _addField,
@@ -276,6 +354,17 @@ class _SchemaConfigPageState extends State<SchemaConfigPage>
                 });
               },
             ),
+              ],
+            ),
+            if (widget.firstRun)
+              Positioned(
+                left: 16,
+                right: 16,
+                bottom: 92,
+                child: _FirstRunRecoveryCard(
+                  onPressed: _restoreExistingDatabase,
+                ),
+              ),
           ],
         ),
         bottomNavigationBar: SafeArea(
@@ -299,6 +388,50 @@ class _SchemaConfigPageState extends State<SchemaConfigPage>
                     : 'ذخیره و بازگشت',
               ),
             ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _FirstRunRecoveryCard extends StatelessWidget {
+  final VoidCallback onPressed;
+
+  const _FirstRunRecoveryCard({required this.onPressed});
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(22),
+      child: BackdropFilter(
+        filter: ImageFilter.blur(sigmaX: 18, sigmaY: 18),
+        child: Container(
+          padding: const EdgeInsets.all(14),
+          decoration: BoxDecoration(
+            color: cs.surface.withOpacity(.84),
+            borderRadius: BorderRadius.circular(22),
+            border: Border.all(color: cs.primary.withOpacity(.18)),
+            boxShadow: [BoxShadow(color: cs.shadow.withOpacity(.12), blurRadius: 24, offset: const Offset(0, 8))],
+          ),
+          child: Row(
+            children: [
+              Icon(Icons.restore_rounded, color: cs.primary),
+              const SizedBox(width: 10),
+              const Expanded(
+                child: Text(
+                  'اگر قبلاً دبیرخانه داشته‌اید، می‌توانید همین حالا دیتابیس قبلی را بازیابی کنید.',
+                  style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600),
+                ),
+              ),
+              const SizedBox(width: 8),
+              FilledButton.tonalIcon(
+                onPressed: onPressed,
+                icon: const Icon(Icons.folder_open_rounded, size: 18),
+                label: const Text('بازیابی'),
+              ),
+            ],
           ),
         ),
       ),
