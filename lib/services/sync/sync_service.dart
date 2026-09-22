@@ -9,6 +9,7 @@ import 'package:path/path.dart' as path;
 import '../../db/database_helper.dart';
 import '../../utils/app_settings.dart';
 import '../sync_models.dart';
+import 'sync_discovery_service.dart';
 
 class SyncService {
   SyncService._();
@@ -37,6 +38,7 @@ class SyncService {
 
     final enabled = await AppSettings.getSyncEnabled();
     if (enabled) {
+      await SyncDiscoveryService.instance.start();
       await start();
 
       // بازسازی اطلاعات legacy در پس‌زمینه انجام می‌شود تا
@@ -56,6 +58,8 @@ class SyncService {
 
   Future<void> start() async {
     if (!_running) _running = true;
+    await SyncDiscoveryService.instance.start();
+
     if (_server == null) {
       final port = await AppSettings.getSyncPort();
       try {
@@ -96,6 +100,7 @@ class SyncService {
   Future<void> stop() async {
     _timer?.cancel();
     _timer = null;
+    await SyncDiscoveryService.instance.stop();
     await _server?.close(force: true);
     _server = null;
     _setStatus(SyncStatus.disconnected);
@@ -109,9 +114,22 @@ class SyncService {
       return;
     }
 
-    final host = await AppSettings.getSyncPeerHost();
+    var host = await AppSettings.getSyncPeerHost();
     final role = await AppSettings.getSyncRole();
     final key = await AppSettings.getSyncKey();
+
+    // Client devices can now find the master automatically. The pairing key
+    // is still required for authentication; discovery only replaces manual IP entry.
+    if ((host == null || host.isEmpty) && role == 'client') {
+      final peers = await SyncDiscoveryService.instance.discover();
+      if (peers.isNotEmpty) {
+        final peer = peers.first;
+        host = peer.host;
+        await AppSettings.setSyncPeerHost(peer.host);
+        await AppSettings.setSyncPeerPort(peer.port);
+      }
+    }
+
     if ((host == null || host.isEmpty) && role == 'master') {
       return;
     }

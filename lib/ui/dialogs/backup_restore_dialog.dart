@@ -2,6 +2,7 @@ import 'dart:io';
 import 'dart:ui';
 import 'package:flutter/services.dart';
 import 'package:dabirkhane/services/sync/sync_service.dart';
+import 'package:dabirkhane/services/sync/sync_discovery_service.dart';
 import 'package:dabirkhane/services/sync_models.dart';
 
 import 'package:dabirkhane/services/backup_restore_service.dart';
@@ -77,6 +78,8 @@ class _BackupRestoreDialogState extends State<BackupRestoreDialog>
       TextEditingController();
   final TextEditingController _syncNameController = TextEditingController();
   String _localHost = '127.0.0.1';
+  bool _discoveringSyncPeers = false;
+  List<SyncPeer> _discoveredSyncPeers = const [];
   final TextEditingController _syncPairingController = TextEditingController();
 
   @override
@@ -1201,6 +1204,30 @@ class _BackupRestoreDialogState extends State<BackupRestoreDialog>
     await _loadSyncSettings();
   }
 
+  Future<void> _discoverSyncPeers() async {
+    if (_discoveringSyncPeers) return;
+    setState(() => _discoveringSyncPeers = true);
+    try {
+      final peers = await SyncDiscoveryService.instance.discover(
+        timeout: const Duration(seconds: 3),
+      );
+      if (!mounted) return;
+      setState(() {
+        _discoveredSyncPeers = peers;
+      });
+      if (peers.isEmpty) {
+        await _showResult(
+          title: 'دستگاهی پیدا نشد',
+          message:
+              'دستگاه مادر در شبکه پیدا نشد. هر دو دستگاه باید به یک شبکه Wi-Fi متصل باشند و جداسازی کاربران شبکه (AP/Client Isolation) خاموش باشد.',
+          success: false,
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _discoveringSyncPeers = false);
+    }
+  }
+
   Future<void> _applyPairingCode() async {
     final value = _syncPairingController.text.trim();
     final parts = value.split('|');
@@ -1342,6 +1369,53 @@ class _BackupRestoreDialogState extends State<BackupRestoreDialog>
                           setState(() => _syncRole = v ?? 'client'),
                     ),
                     const SizedBox(height: 10),
+                    if (_syncRole == 'client') ...[
+                      Align(
+                        alignment: Alignment.centerRight,
+                        child: FilledButton.tonalIcon(
+                          onPressed: _discoveringSyncPeers ? null : _discoverSyncPeers,
+                          icon: _discoveringSyncPeers
+                              ? const SizedBox(
+                                  width: 18,
+                                  height: 18,
+                                  child: CircularProgressIndicator(strokeWidth: 2),
+                                )
+                              : const Icon(Icons.wifi_find_rounded),
+                          label: Text(
+                            _discoveringSyncPeers
+                                ? 'در حال جستجوی دستگاه مادر...'
+                                : 'پیدا کردن خودکار دستگاه مادر',
+                          ),
+                        ),
+                      ),
+                      if (_discoveredSyncPeers.isNotEmpty) ...[
+                        const SizedBox(height: 8),
+                        ..._discoveredSyncPeers.map(
+                          (peer) => Card(
+                            child: ListTile(
+                              leading: const Icon(Icons.computer_rounded),
+                              title: Text(peer.deviceName),
+                              subtitle: Text('${peer.host}:${peer.port}'),
+                              trailing: FilledButton(
+                                onPressed: () async {
+                                  await AppSettings.setSyncPeerHost(peer.host);
+                                  await AppSettings.setSyncPeerPort(peer.port);
+                                  await _loadSyncSettings();
+                                  if (!mounted) return;
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    const SnackBar(
+                                      content: Text('دستگاه مادر انتخاب شد؛ اکنون کد جفت‌سازی را اعمال کنید.'),
+                                    ),
+                                  );
+                                },
+                                child: const Text('انتخاب'),
+                              ),
+                            ),
+                          ),
+                        ),
+                      ],
+                      const SizedBox(height: 8),
+                    ],
                     if (_syncRole == 'master') ...[
                       _buildKeyCard(colorScheme),
                       const SizedBox(height: 10),

@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:crypto/crypto.dart';
 
 import '../../utils/app_settings.dart';
+import 'sync_discovery_service.dart';
 
 class SyncNetworkClient {
   SyncNetworkClient._();
@@ -12,8 +13,16 @@ class SyncNetworkClient {
     final enabled = await AppSettings.getSyncEnabled();
     if (!enabled || role != 'client') return null;
 
-    final host = await AppSettings.getSyncPeerHost();
+    var host = await AppSettings.getSyncPeerHost();
     final key = await AppSettings.getSyncKey();
+    if (host == null || host.isEmpty) {
+      final peers = await SyncDiscoveryService.instance.discover();
+      if (peers.isNotEmpty) {
+        host = peers.first.host;
+        await AppSettings.setSyncPeerHost(host);
+        await AppSettings.setSyncPeerPort(peers.first.port);
+      }
+    }
     if (host == null || host.isEmpty || key.isEmpty) return null;
 
     final port = await AppSettings.getSyncPeerPort();
