@@ -2064,8 +2064,8 @@ class _RecordFormState extends State<RecordForm>
       margin: const EdgeInsets.only(top: 5),
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(18),
-        color: Colors.white.withOpacity(.82),
-        border: Border.all(color: Colors.white.withOpacity(.9)),
+        color: Theme.of(context).colorScheme.surface.withOpacity(.82),
+        border: Border.all(color: Theme.of(context).colorScheme.onSurface.withOpacity(.12)),
         boxShadow: [
           BoxShadow(
             color: Colors.black.withOpacity(.055),
@@ -2141,8 +2141,8 @@ class _RecordFormState extends State<RecordForm>
       margin: const EdgeInsets.only(top: 3, bottom: 8),
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(18),
-        color: Colors.white.withOpacity(.84),
-        border: Border.all(color: Colors.white.withOpacity(.9)),
+        color: Theme.of(context).colorScheme.surface.withOpacity(.84),
+        border: Border.all(color: Theme.of(context).colorScheme.onSurface.withOpacity(.12)),
         boxShadow: [
           BoxShadow(
             color: Colors.black.withOpacity(.065),
@@ -2485,9 +2485,9 @@ class _RecordFormState extends State<RecordForm>
       margin: const EdgeInsets.only(bottom: 12),
       padding: const EdgeInsets.all(10),
       decoration: BoxDecoration(
-        color: Colors.white.withOpacity(.72),
+        color: Theme.of(context).colorScheme.surface.withOpacity(.72),
         borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: Colors.white.withOpacity(.90)),
+        border: Border.all(color: Theme.of(context).colorScheme.onSurface.withOpacity(.12)),
         boxShadow: [
           BoxShadow(
             color: Colors.black.withOpacity(.035),
@@ -2652,7 +2652,7 @@ class _RecordFormState extends State<RecordForm>
 
   Widget _buildFilesTab() {
     return Container(
-      color: const Color(0xffEEF3F8),
+      color: Theme.of(context).scaffoldBackgroundColor,
       child: Column(
         children: [
           Padding(
@@ -3097,7 +3097,7 @@ class _RecordFormState extends State<RecordForm>
     return Tooltip(
       message: tooltip,
       child: Material(
-        color: Colors.white.withOpacity(.82),
+        color: Theme.of(context).colorScheme.surface.withOpacity(.82),
         shape: const CircleBorder(),
         child: InkWell(
           customBorder: const CircleBorder(),
@@ -3134,12 +3134,12 @@ class _RecordFormState extends State<RecordForm>
         Navigator.of(context).pop({'id': _savedRecordId, 'scanned': false});
       },
       child: Scaffold(
-        backgroundColor: const Color(0xffEEF3F8),
+        backgroundColor: Theme.of(context).scaffoldBackgroundColor,
 
         appBar: AppBar(
           elevation: 0,
           scrolledUnderElevation: 0,
-          backgroundColor: Colors.white.withOpacity(.82),
+          backgroundColor: Theme.of(context).colorScheme.surface.withOpacity(.82),
           surfaceTintColor: Colors.transparent,
 
           title: Text(
@@ -3185,7 +3185,7 @@ class _RecordFormState extends State<RecordForm>
               child: Container(
                 padding: const EdgeInsets.fromLTRB(12, 8, 12, 10),
                 decoration: BoxDecoration(
-                  color: Colors.white.withOpacity(.92),
+                  color: Theme.of(context).colorScheme.surface.withOpacity(.92),
                   border: Border(
                     top: BorderSide(color: Colors.black.withOpacity(.06)),
                   ),
@@ -3209,9 +3209,9 @@ class _RecordFormState extends State<RecordForm>
     return Container(
       height: 50,
       decoration: BoxDecoration(
-        color: Colors.white.withOpacity(.62),
+        color: Theme.of(context).colorScheme.surface.withOpacity(.62),
         borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: Colors.white.withOpacity(.85)),
+        border: Border.all(color: Theme.of(context).colorScheme.onSurface.withOpacity(.12)),
         boxShadow: [
           BoxShadow(
             color: Colors.black.withOpacity(.045),
@@ -3276,7 +3276,7 @@ class _RecordFormState extends State<RecordForm>
     final sections = [...schema.sections]..sort((a, b) => a.order.compareTo(b.order));
 
     return Container(
-      color: const Color(0xffEEF3F8),
+      color: Theme.of(context).scaffoldBackgroundColor,
       child: Form(
         key: _formKey,
         child: ListView(
@@ -3360,8 +3360,8 @@ class _RecordFormState extends State<RecordForm>
       margin: const EdgeInsets.only(top: 4, bottom: 16),
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(22),
-        color: Colors.white.withOpacity(.52),
-        border: Border.all(color: Colors.white.withOpacity(.82)),
+        color: Theme.of(context).colorScheme.surface.withOpacity(.52),
+        border: Border.all(color: Theme.of(context).colorScheme.surface.withOpacity(.82)),
         boxShadow: [
           BoxShadow(
             color: Colors.black.withOpacity(.035),
@@ -3463,7 +3463,7 @@ class _RecordFormState extends State<RecordForm>
       floatingLabelBehavior: FloatingLabelBehavior.auto,
 
       filled: true,
-      fillColor: Colors.white.withOpacity(.68),
+      fillColor: Theme.of(context).colorScheme.surface.withOpacity(.68),
 
       contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
 
@@ -3525,7 +3525,7 @@ class _RecordFormState extends State<RecordForm>
       margin: margin,
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(17),
-        color: Colors.white.withOpacity(.38),
+        color: Theme.of(context).colorScheme.surface.withOpacity(.38),
         boxShadow: [
           BoxShadow(
             color: Colors.black.withOpacity(.035),
@@ -3564,12 +3564,12 @@ class _RecordFormState extends State<RecordForm>
 
             color: primary
                 ? colorScheme.primary.withOpacity(.88)
-                : Colors.white.withOpacity(.58),
+                : Theme.of(context).colorScheme.surface.withOpacity(.58),
 
             border: Border.all(
               color: primary
                   ? colorScheme.primary.withOpacity(.32)
-                  : Colors.white.withOpacity(.82),
+                  : Theme.of(context).colorScheme.surface.withOpacity(.82),
             ),
 
             boxShadow: [
@@ -3626,8 +3626,8 @@ class _RecordFormState extends State<RecordForm>
             height: 50,
             decoration: BoxDecoration(
               borderRadius: BorderRadius.circular(17),
-              color: Colors.white.withOpacity(.58),
-              border: Border.all(color: Colors.white.withOpacity(.82)),
+              color: Theme.of(context).colorScheme.surface.withOpacity(.58),
+              border: Border.all(color: Theme.of(context).colorScheme.surface.withOpacity(.82)),
               boxShadow: [
                 BoxShadow(
                   color: Colors.black.withOpacity(.035),
@@ -3656,9 +3656,9 @@ class _RecordFormState extends State<RecordForm>
     return Container(
       padding: padding,
       decoration: BoxDecoration(
-        color: Colors.white.withOpacity(opacity),
+        color: Theme.of(context).colorScheme.surface.withOpacity(opacity),
         borderRadius: BorderRadius.circular(radius),
-        border: Border.all(color: Colors.white.withOpacity(.86), width: 1),
+        border: Border.all(color: Theme.of(context).colorScheme.surface.withOpacity(.86), width: 1),
         boxShadow: [
           BoxShadow(
             color: Colors.black.withOpacity(.045),

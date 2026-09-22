@@ -282,9 +282,8 @@ class _SchemaConfigPageState extends State<SchemaConfigPage>
     return Directionality(
       textDirection: TextDirection.rtl,
       child: Scaffold(
-        extendBodyBehindAppBar: true,
         appBar: AppBar(
-          backgroundColor: colorScheme.surface.withOpacity(.72),
+          backgroundColor: colorScheme.surface.withOpacity(.94),
           surfaceTintColor: Colors.transparent,
           elevation: 0,
           title: Text(
@@ -309,23 +308,11 @@ class _SchemaConfigPageState extends State<SchemaConfigPage>
         body: Stack(
           children: [
             Positioned.fill(
-              child: DecoratedBox(
-                decoration: BoxDecoration(
-                  gradient: LinearGradient(
-                    begin: Alignment.topRight,
-                    end: Alignment.bottomLeft,
-                    colors: [
-                      colorScheme.primary.withOpacity(.10),
-                      colorScheme.surface,
-                      colorScheme.secondary.withOpacity(.06),
-                    ],
-                  ),
-                ),
-              ),
-            ),
-            TabBarView(
-              controller: tabs,
-              children: [
+              child: ColoredBox(
+                color: Theme.of(context).scaffoldBackgroundColor,
+                child: TabBarView(
+                  controller: tabs,
+                  children: [
             _FieldsTab(
               schema: schema!,
               onAdd: _addField,
@@ -354,7 +341,9 @@ class _SchemaConfigPageState extends State<SchemaConfigPage>
                 });
               },
             ),
-              ],
+                  ],
+                ),
+              ),
             ),
             if (widget.firstRun)
               Positioned(

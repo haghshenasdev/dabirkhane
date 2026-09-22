@@ -269,27 +269,16 @@ class SettingsPage extends StatelessWidget {
     return Directionality(
       textDirection: TextDirection.rtl,
       child: Scaffold(
-        extendBodyBehindAppBar: true,
         appBar: AppBar(
           title: const Text('تنظیمات'),
-          backgroundColor: cs.surface.withOpacity(.72),
+          backgroundColor: cs.surface.withOpacity(.94),
           surfaceTintColor: Colors.transparent,
           elevation: 0,
         ),
-        body: DecoratedBox(
-          decoration: BoxDecoration(
-            gradient: LinearGradient(
-              begin: Alignment.topRight,
-              end: Alignment.bottomLeft,
-              colors: [
-                cs.primary.withOpacity(.08),
-                cs.surface,
-                cs.secondary.withOpacity(.05),
-              ],
-            ),
-          ),
+        body: ColoredBox(
+          color: Theme.of(context).scaffoldBackgroundColor,
           child: ListView(
-            padding: const EdgeInsets.fromLTRB(12, 92, 12, 28),
+            padding: const EdgeInsets.fromLTRB(14, 18, 14, 28),
             children: [
               _sectionTitle(context, 'عمومی'),
               SwitchListTile(

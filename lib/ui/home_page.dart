@@ -111,11 +111,12 @@ class _HomePageState extends State<HomePage> {
   }
 
   InputDecoration _filterDecoration(String label, IconData icon) {
+    final cs = Theme.of(context).colorScheme;
     return InputDecoration(
       labelText: label,
       prefixIcon: Icon(icon),
       filled: true,
-      fillColor: Colors.grey.shade100,
+      fillColor: cs.surfaceContainerHighest,
       contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
       border: OutlineInputBorder(
         borderRadius: BorderRadius.circular(14),
@@ -123,11 +124,11 @@ class _HomePageState extends State<HomePage> {
       ),
       enabledBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(14),
-        borderSide: BorderSide(color: Colors.grey.shade300),
+        borderSide: BorderSide(color: cs.outlineVariant),
       ),
       focusedBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(14),
-        borderSide: const BorderSide(color: Colors.blue, width: 1.4),
+        borderSide: BorderSide(color: cs.primary, width: 1.4),
       ),
     );
   }
@@ -688,17 +689,18 @@ class _HomePageState extends State<HomePage> {
   @override
   Widget build(BuildContext context) {
     final width = MediaQuery.of(context).size.width;
+    final cs = Theme.of(context).colorScheme;
 
     final bool desktop = width > 1100;
     final bool tablet = width > 700;
 
     return Scaffold(
-      backgroundColor: const Color(0xffEEF3F8),
+      backgroundColor: Theme.of(context).scaffoldBackgroundColor,
 
       appBar: AppBar(
         elevation: 0,
-        backgroundColor: Colors.white,
-        surfaceTintColor: Colors.white,
+        backgroundColor: cs.surface,
+        surfaceTintColor: Colors.transparent,
 
         title: selectionMode
             ? Text(
@@ -815,8 +817,8 @@ class _HomePageState extends State<HomePage> {
       floatingActionButton: selectionMode
           ? null
           : FloatingActionButton.extended(
-              backgroundColor: Colors.blue,
-              foregroundColor: Colors.white,
+              backgroundColor: cs.primary,
+              foregroundColor: cs.onPrimary,
               icon: const Icon(Icons.add),
               label: const Text("ثبت نامه"),
               onPressed: () async {
@@ -880,7 +882,7 @@ class _HomePageState extends State<HomePage> {
                     padding: const EdgeInsets.all(18),
 
                     decoration: BoxDecoration(
-                      color: Colors.white,
+                      color: cs.surface,
                       borderRadius: BorderRadius.circular(20),
                       boxShadow: [
                         BoxShadow(
@@ -905,7 +907,7 @@ class _HomePageState extends State<HomePage> {
                                   hintText: "جستجوی نامه...",
                                   prefixIcon: const Icon(Icons.search),
                                   filled: true,
-                                  fillColor: Colors.grey.shade100,
+                                  fillColor: cs.surfaceContainerHighest,
 
                                   border: OutlineInputBorder(
                                     borderRadius: BorderRadius.circular(14),
@@ -1029,12 +1031,13 @@ class _HomePageState extends State<HomePage> {
   }
 
   Widget buildAdvancedFilter() {
+    final cs = Theme.of(context).colorScheme;
     InputDecoration decoration(String label, IconData icon) {
       return InputDecoration(
         labelText: label,
         prefixIcon: Icon(icon),
         filled: true,
-        fillColor: Colors.grey.shade100,
+        fillColor: cs.surfaceContainerHighest,
         contentPadding: const EdgeInsets.symmetric(
           horizontal: 14,
           vertical: 14,
@@ -1045,11 +1048,11 @@ class _HomePageState extends State<HomePage> {
         ),
         enabledBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(14),
-          borderSide: BorderSide(color: Colors.grey.shade300),
+          borderSide: BorderSide(color: cs.outlineVariant),
         ),
         focusedBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(14),
-          borderSide: const BorderSide(color: Colors.blue, width: 1.4),
+          borderSide: BorderSide(color: cs.primary, width: 1.4),
         ),
       );
     }
@@ -1067,9 +1070,9 @@ class _HomePageState extends State<HomePage> {
 
     return Container(
       decoration: BoxDecoration(
-        color: Colors.grey.shade50,
+        color: cs.surfaceContainerLow,
+        border: Border.all(color: cs.outlineVariant),
         borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: Colors.grey.shade200),
       ),
 
       child: Column(
@@ -1276,7 +1279,7 @@ class _HomePageState extends State<HomePage> {
                           return Chip(
                             label: Text(cat),
 
-                            backgroundColor: Colors.blue.shade50,
+                            backgroundColor: cs.primaryContainer,
 
                             deleteIcon: const Icon(Icons.close),
 
@@ -1307,9 +1310,9 @@ class _HomePageState extends State<HomePage> {
                     margin: const EdgeInsets.only(top: 10),
 
                     decoration: BoxDecoration(
-                      color: Colors.white,
+                      color: cs.surface,
                       borderRadius: BorderRadius.circular(14),
-                      border: Border.all(color: Colors.grey.shade300),
+                      border: Border.all(color: cs.outlineVariant),
                     ),
 
                     child: Column(
@@ -1324,9 +1327,9 @@ class _HomePageState extends State<HomePage> {
                           ListTile(
                             dense: true,
 
-                            leading: const Icon(
+                            leading: Icon(
                               Icons.label_outline,
-                              color: Colors.blue,
+                              color: cs.primary,
                             ),
 
                             title: Text(
@@ -1340,7 +1343,7 @@ class _HomePageState extends State<HomePage> {
                           ),
 
                           if (i < categoryFilterSuggestions.length - 1)
-                            Divider(height: 1, color: Colors.grey.shade300),
+                            Divider(height: 1, color: cs.outlineVariant),
                         ],
                       ],
                     ),
@@ -1352,7 +1355,7 @@ class _HomePageState extends State<HomePage> {
           // ==========================================================
           // جداکننده
           // ==========================================================
-          Divider(height: 1, color: Colors.grey.shade300),
+          Divider(height: 1, color: cs.outlineVariant),
 
           // ==========================================================
           // دکمه‌ها
@@ -1440,6 +1443,7 @@ class _HomePageState extends State<HomePage> {
   }
 
   Widget buildRecordCard(Map<String, dynamic> r, int i) {
+    final cs = Theme.of(context).colorScheme;
     final id = _getRecordId(r);
     final selected = _isRecordSelected(id);
     final due = id != null && dueReminderRecordIds.contains(id);
@@ -1469,7 +1473,7 @@ class _HomePageState extends State<HomePage> {
         child: Row(
           textDirection: TextDirection.rtl,
           children: [
-            Icon(_fieldIcon(field), size: 17, color: Colors.blueGrey),
+            Icon(_fieldIcon(field), size: 17, color: cs.onSurfaceVariant),
             const SizedBox(width: 8),
             Expanded(
               child: Text(
@@ -1508,10 +1512,10 @@ class _HomePageState extends State<HomePage> {
             decoration: BoxDecoration(
               borderRadius: BorderRadius.circular(22),
               color: selected
-                  ? Colors.blue.withOpacity(.10)
-                  : Colors.white.withOpacity(.72),
+                  ? cs.primaryContainer.withOpacity(.55)
+                  : cs.surfaceContainerLow,
               border: Border.all(
-                color: selected ? Colors.blue : Colors.white,
+                color: selected ? cs.primary : cs.outlineVariant,
                 width: selected ? 2 : 1.2,
               ),
               boxShadow: [
@@ -1547,12 +1551,12 @@ class _HomePageState extends State<HomePage> {
                           width: 42,
                           height: 42,
                           decoration: BoxDecoration(
-                            color: Colors.blue.withOpacity(.10),
+                            color: cs.primaryContainer,
                             borderRadius: BorderRadius.circular(14),
                           ),
                           child: Icon(
                             _cardSchemaIcon(_card.icon),
-                            color: Colors.blue,
+                            color: cs.primary,
                           ),
                         ),
                       ],
@@ -1600,7 +1604,7 @@ class _HomePageState extends State<HomePage> {
                       selected
                           ? Icons.check_circle
                           : Icons.radio_button_unchecked,
-                      color: selected ? Colors.blue : Colors.grey,
+                      color: selected ? cs.primary : cs.onSurfaceVariant,
                       size: 28,
                     ),
                   ),
@@ -1613,11 +1617,12 @@ class _HomePageState extends State<HomePage> {
   }
 
   Widget _recordChip(IconData icon, String text) {
+    final cs = Theme.of(context).colorScheme;
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
 
       decoration: BoxDecoration(
-        color: Colors.grey.shade100,
+        color: cs.surfaceContainerHighest,
         borderRadius: BorderRadius.circular(20),
       ),
 
@@ -1625,13 +1630,17 @@ class _HomePageState extends State<HomePage> {
         mainAxisSize: MainAxisSize.min,
 
         children: [
-          Icon(icon, size: 16, color: Colors.blueGrey),
+          Icon(icon, size: 16, color: cs.onSurfaceVariant),
 
           const SizedBox(width: 6),
 
           Text(
             text,
-            style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w500),
+            style: TextStyle(
+              fontSize: 13,
+              fontWeight: FontWeight.w500,
+              color: cs.onSurface,
+            ),
           ),
         ],
       ),
@@ -1932,6 +1941,7 @@ class _HomePageState extends State<HomePage> {
   }
 
   Widget _buildDueReminderBanner() {
+    final cs = Theme.of(context).colorScheme;
     final bool reminderFilterActive = reminderFilter == 1;
 
     return Material(
@@ -1943,11 +1953,16 @@ class _HomePageState extends State<HomePage> {
         padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
 
         decoration: BoxDecoration(
-          color: Colors.orange.shade50,
+          color: Theme.of(context).brightness == Brightness.dark
+              ? Colors.orange.shade900.withOpacity(.22)
+              : Colors.orange.shade50,
+          border: Border.all(
+            color: Theme.of(context).brightness == Brightness.dark
+                ? Colors.orange.shade700
+                : Colors.orange.shade200,
+          ),
 
           borderRadius: BorderRadius.circular(18),
-
-          border: Border.all(color: Colors.orange.shade200),
         ),
 
         child: Row(
@@ -1959,7 +1974,9 @@ class _HomePageState extends State<HomePage> {
               height: 42,
 
               decoration: BoxDecoration(
-                color: Colors.orange.shade100,
+                color: Theme.of(context).brightness == Brightness.dark
+                    ? Colors.orange.shade900.withOpacity(.45)
+                    : Colors.orange.shade100,
 
                 borderRadius: BorderRadius.circular(14),
               ),
@@ -2041,7 +2058,7 @@ class _HomePageState extends State<HomePage> {
 
                   side: BorderSide(color: Colors.orange.shade300),
 
-                  backgroundColor: Colors.white.withOpacity(0.65),
+                  backgroundColor: cs.surface.withOpacity(0.65),
 
                   padding: const EdgeInsets.symmetric(
                     horizontal: 12,

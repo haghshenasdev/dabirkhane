@@ -28,8 +28,18 @@ class _BackupRestoreDialogState extends State<BackupRestoreDialog>
   final Set<String> _selectedBackupMonthKeys = <String>{};
 
   static const List<String> _jalaliMonthNames = [
-    'فروردین', 'اردیبهشت', 'خرداد', 'تیر', 'مرداد', 'شهریور',
-    'مهر', 'آبان', 'آذر', 'دی', 'بهمن', 'اسفند',
+    'فروردین',
+    'اردیبهشت',
+    'خرداد',
+    'تیر',
+    'مرداد',
+    'شهریور',
+    'مهر',
+    'آبان',
+    'آذر',
+    'دی',
+    'بهمن',
+    'اسفند',
   ];
 
   bool _working = false;
@@ -63,7 +73,8 @@ class _BackupRestoreDialogState extends State<BackupRestoreDialog>
   DateTime? _syncLastSuccess;
   final TextEditingController _syncHostController = TextEditingController();
   final TextEditingController _syncPortController = TextEditingController();
-  final TextEditingController _syncLocalPortController = TextEditingController();
+  final TextEditingController _syncLocalPortController =
+      TextEditingController();
   final TextEditingController _syncNameController = TextEditingController();
   String _localHost = '127.0.0.1';
   final TextEditingController _syncPairingController = TextEditingController();
@@ -672,8 +683,9 @@ class _BackupRestoreDialogState extends State<BackupRestoreDialog>
                   colorScheme,
                   type: BackupType.previousMonthFiles,
                   icon: Icons.folder_zip_rounded,
-                  title: 'فقط فایل‌های ماه قبل',
-                  description: 'فایل‌های نامه‌های ماه قبل به صورت ZIP',
+                  title: 'فقط فایل‌های ماه‌های انتخاب‌شده',
+                  description:
+                      'فایل‌های نامه‌های ماه‌های انتخاب‌شده به صورت ZIP',
                 ),
 
                 const SizedBox(height: 10),
@@ -682,9 +694,9 @@ class _BackupRestoreDialogState extends State<BackupRestoreDialog>
                   colorScheme,
                   type: BackupType.full,
                   icon: Icons.inventory_2_rounded,
-                  title: 'دیتابیس + فایل‌های ماه قبل',
+                  title: 'دیتابیس + فایل‌های ماه‌های انتخاب‌شده',
                   description:
-                      'پشتیبان کامل شامل دیتابیس و فایل‌های ماه انتخاب‌شده در یک ZIP',
+                      'پشتیبان کامل شامل دیتابیس و فایل‌های ماه‌های انتخاب‌شده در یک ZIP',
                 ),
 
                 const SizedBox(height: 18),
@@ -739,81 +751,299 @@ class _BackupRestoreDialogState extends State<BackupRestoreDialog>
     final selectedMonths = _selectedBackupMonths;
 
     return Container(
-      padding: const EdgeInsets.all(14),
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
       decoration: BoxDecoration(
         color: colorScheme.primary.withOpacity(.055),
         borderRadius: BorderRadius.circular(20),
         border: Border.all(color: colorScheme.primary.withOpacity(.16)),
       ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
+      child: Row(
         children: [
-          Row(
-            children: [
-              Icon(Icons.calendar_month_rounded, color: colorScheme.primary),
-              const SizedBox(width: 10),
-              const Expanded(
-                child: Text('ماه فایل‌ها', style: TextStyle(fontWeight: FontWeight.w800)),
-              ),
-              DropdownButton<int>(
-                value: _selectedBackupYear,
-                underline: const SizedBox.shrink(),
-                items: _backupYears().map((year) => DropdownMenuItem(
-                  value: year,
-                  child: Text(year.toString()),
-                )).toList(),
-                onChanged: _working ? null : (value) {
-                  if (value != null) setState(() => _selectedBackupYear = value);
-                },
-              ),
-            ],
-          ),
-          const SizedBox(height: 8),
-          Text(
-            'یک یا چند ماه را انتخاب کنید. برای انتخاب ماه‌های سال‌های دیگر، سال را تغییر دهید؛ انتخاب‌های قبلی باقی می‌مانند.',
-            style: TextStyle(fontSize: 11.5, color: colorScheme.onSurfaceVariant),
-          ),
-          const SizedBox(height: 12),
-          Wrap(
-            spacing: 7,
-            runSpacing: 7,
-            children: List.generate(12, (index) {
-              final month = index + 1;
-              final selected = _isMonthSelected(_selectedBackupYear, month);
-              return FilterChip(
-                selected: selected,
-                label: Text(_jalaliMonthNames[index]),
-                avatar: selected ? const Icon(Icons.check_rounded, size: 16) : null,
-                onSelected: _working
-                    ? null
-                    : (_) => _toggleBackupMonth(_selectedBackupYear, month),
-              );
-            }),
-          ),
-          const SizedBox(height: 12),
-          Row(
-            children: [
-              Icon(Icons.checklist_rounded, size: 18, color: colorScheme.primary),
-              const SizedBox(width: 7),
-              Text('ماه‌های انتخاب‌شده: ${selectedMonths.length}', style: const TextStyle(fontWeight: FontWeight.w700)),
-            ],
-          ),
-          if (selectedMonths.isNotEmpty) ...[
-            const SizedBox(height: 8),
-            Wrap(
-              spacing: 6,
-              runSpacing: 6,
-              children: selectedMonths.map((m) => InputChip(
-                label: Text('${m.year}/${m.month}'),
-                onDeleted: _working || selectedMonths.length == 1
-                    ? null
-                    : () => _toggleBackupMonth(m.year, m.month),
-              )).toList(),
+          Container(
+            width: 40,
+            height: 40,
+            decoration: BoxDecoration(
+              color: colorScheme.primary.withOpacity(.11),
+              borderRadius: BorderRadius.circular(13),
             ),
-          ],
+            child: Icon(
+              Icons.calendar_month_rounded,
+              color: colorScheme.primary,
+              size: 21,
+            ),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'ماه فایل‌ها',
+                  style: TextStyle(fontWeight: FontWeight.w800),
+                ),
+                const SizedBox(height: 3),
+                Text(
+                  selectedMonths.length == 1
+                      ? 'انتخاب شده: ${selectedMonths.first.year}/${selectedMonths.first.month} (${_jalaliMonthNames[selectedMonths.first.month - 1]})'
+                      : '${selectedMonths.length} ماه انتخاب شده',
+                  style: TextStyle(
+                    fontSize: 11.5,
+                    color: colorScheme.onSurfaceVariant,
+                  ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 8),
+          OutlinedButton.icon(
+            onPressed: _working ? null : _openBackupMonthDialog,
+            icon: const Icon(Icons.checklist_rounded, size: 18),
+            label: const Text('انتخاب ماه‌ها'),
+          ),
         ],
       ),
     );
+  }
+
+  Future<void> _openBackupMonthDialog() async {
+    final tempSelected = <String>{..._selectedBackupMonthKeys};
+    var tempYear = _selectedBackupYear;
+
+    final result = await showDialog<Set<String>>(
+      context: context,
+      barrierDismissible: true,
+      builder: (dialogContext) {
+        final dialogColorScheme = Theme.of(dialogContext).colorScheme;
+
+        return Directionality(
+          textDirection: TextDirection.rtl,
+          child: StatefulBuilder(
+            builder: (context, setDialogState) {
+              final currentCount = tempSelected.length;
+
+              return AlertDialog(
+                titlePadding: const EdgeInsets.fromLTRB(22, 20, 22, 8),
+                contentPadding: const EdgeInsets.fromLTRB(20, 8, 20, 8),
+                actionsPadding: const EdgeInsets.fromLTRB(20, 8, 20, 16),
+
+                title: Row(
+                  children: [
+                    Icon(
+                      Icons.calendar_month_rounded,
+                      color: dialogColorScheme.primary,
+                    ),
+                    const SizedBox(width: 10),
+
+                    const Expanded(child: Text('انتخاب ماه‌های پشتیبان')),
+
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 9,
+                        vertical: 5,
+                      ),
+                      decoration: BoxDecoration(
+                        color: dialogColorScheme.primary.withOpacity(.10),
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      child: Text(
+                        '$currentCount ماه',
+                        style: TextStyle(
+                          color: dialogColorScheme.primary,
+                          fontSize: 11,
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+
+                content: SizedBox(
+                  width: 520,
+                  height: 430,
+                  child: Column(
+                    children: [
+                      Row(
+                        children: [
+                          const Expanded(
+                            child: Text(
+                              'ماه‌های موردنظر را تیک بزنید. '
+                              'انتخاب‌ها بین سال‌ها حفظ می‌شوند.',
+                              style: TextStyle(fontSize: 12),
+                            ),
+                          ),
+
+                          const SizedBox(width: 10),
+
+                          DropdownButtonHideUnderline(
+                            child: DropdownButton<int>(
+                              value: _backupYears().contains(tempYear)
+                                  ? tempYear
+                                  : _backupYears().first,
+                              items: _backupYears()
+                                  .map(
+                                    (year) => DropdownMenuItem<int>(
+                                      value: year,
+                                      child: Text('$year'),
+                                    ),
+                                  )
+                                  .toList(),
+                              onChanged: (value) {
+                                if (value == null) return;
+
+                                setDialogState(() {
+                                  tempYear = value;
+                                });
+                              },
+                            ),
+                          ),
+                        ],
+                      ),
+
+                      const SizedBox(height: 10),
+
+                      // ارتفاع مشخص به جای Expanded
+                      SizedBox(
+                        height: 350,
+                        child: GridView.builder(
+                          padding: const EdgeInsets.only(top: 2, bottom: 4),
+                          physics: const ClampingScrollPhysics(),
+
+                          gridDelegate:
+                              const SliverGridDelegateWithFixedCrossAxisCount(
+                                crossAxisCount: 2,
+                                crossAxisSpacing: 8,
+                                mainAxisSpacing: 8,
+                                childAspectRatio: 3.8,
+                              ),
+
+                          itemCount: 12,
+
+                          itemBuilder: (_, index) {
+                            final month = index + 1;
+                            final key = _monthKey(tempYear, month);
+                            final selected = tempSelected.contains(key);
+
+                            void toggleMonth() {
+                              setDialogState(() {
+                                if (selected) {
+                                  // حداقل یک ماه باید باقی بماند.
+                                  if (tempSelected.length > 1) {
+                                    tempSelected.remove(key);
+                                  }
+                                } else {
+                                  tempSelected.add(key);
+                                }
+                              });
+                            }
+
+                            return Material(
+                              color: Colors.transparent,
+                              child: InkWell(
+                                borderRadius: BorderRadius.circular(14),
+                                onTap: toggleMonth,
+                                child: Container(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 8,
+                                  ),
+                                  decoration: BoxDecoration(
+                                    color: selected
+                                        ? dialogColorScheme.primary.withOpacity(
+                                            .12,
+                                          )
+                                        : dialogColorScheme
+                                              .surfaceContainerHighest
+                                              .withOpacity(.35),
+                                    borderRadius: BorderRadius.circular(14),
+                                    border: Border.all(
+                                      color: selected
+                                          ? dialogColorScheme.primary
+                                                .withOpacity(.45)
+                                          : dialogColorScheme.outlineVariant
+                                                .withOpacity(.30),
+                                    ),
+                                  ),
+                                  child: Row(
+                                    children: [
+                                      IgnorePointer(
+                                        child: Checkbox(
+                                          value: selected,
+                                          onChanged: (_) {},
+                                          visualDensity: VisualDensity.compact,
+                                        ),
+                                      ),
+
+                                      const SizedBox(width: 4),
+
+                                      Expanded(
+                                        child: Text(
+                                          _jalaliMonthNames[index],
+                                          overflow: TextOverflow.ellipsis,
+                                          style: TextStyle(
+                                            fontSize: 12,
+                                            fontWeight: selected
+                                                ? FontWeight.w800
+                                                : FontWeight.w600,
+                                            color: selected
+                                                ? dialogColorScheme.primary
+                                                : dialogColorScheme.onSurface,
+                                          ),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ),
+                            );
+                          },
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+
+                actions: [
+                  TextButton(
+                    onPressed: () {
+                      Navigator.of(dialogContext).pop();
+                    },
+                    child: const Text('انصراف'),
+                  ),
+
+                  FilledButton.icon(
+                    onPressed: tempSelected.isEmpty
+                        ? null
+                        : () {
+                            Navigator.of(
+                              dialogContext,
+                            ).pop(Set<String>.from(tempSelected));
+                          },
+                    icon: const Icon(Icons.done_rounded, size: 18),
+                    label: const Text('اعمال انتخاب'),
+                  ),
+                ],
+              );
+            },
+          ),
+        );
+      },
+    );
+
+    if (result == null || !mounted) return;
+
+    setState(() {
+      _selectedBackupMonthKeys
+        ..clear()
+        ..addAll(result);
+
+      final previous = _getPreviousMonth();
+
+      _selectedBackupYear =
+          result.any((key) => key == _monthKey(previous.year, previous.month))
+          ? previous.year
+          : int.parse(result.first.split('/').first);
+    });
   }
 
   Widget _buildBackupOption(
@@ -937,7 +1167,10 @@ class _BackupRestoreDialogState extends State<BackupRestoreDialog>
 
   Future<String> _findLocalHost() async {
     try {
-      final interfaces = await NetworkInterface.list(type: InternetAddressType.IPv4, includeLoopback: false);
+      final interfaces = await NetworkInterface.list(
+        type: InternetAddressType.IPv4,
+        includeLoopback: false,
+      );
       for (final i in interfaces) {
         for (final a in i.addresses) {
           if (!a.isLoopback && a.address.isNotEmpty) return a.address;
@@ -948,11 +1181,15 @@ class _BackupRestoreDialogState extends State<BackupRestoreDialog>
   }
 
   Future<void> _saveSyncSettings() async {
-    final port = int.tryParse(_syncLocalPortController.text.trim()) ?? _syncPort;
-    final peerPort = int.tryParse(_syncPortController.text.trim()) ?? _syncPeerPort;
+    final port =
+        int.tryParse(_syncLocalPortController.text.trim()) ?? _syncPort;
+    final peerPort =
+        int.tryParse(_syncPortController.text.trim()) ?? _syncPeerPort;
     await AppSettings.setSyncEnabled(_syncEnabled);
     await AppSettings.setSyncRole(_syncRole);
-    await AppSettings.setSyncDeviceName(_syncDeviceName.trim().isEmpty ? 'دبیرخانه' : _syncDeviceName.trim());
+    await AppSettings.setSyncDeviceName(
+      _syncDeviceName.trim().isEmpty ? 'دبیرخانه' : _syncDeviceName.trim(),
+    );
     await AppSettings.setSyncPort(port.clamp(1024, 65535).toInt());
     await AppSettings.setSyncPeerPort(peerPort.clamp(1024, 65535).toInt());
     await AppSettings.setSyncPeerHost(_syncHostController.text.trim());
@@ -968,14 +1205,22 @@ class _BackupRestoreDialogState extends State<BackupRestoreDialog>
     final value = _syncPairingController.text.trim();
     final parts = value.split('|');
     if (parts.length < 4 || parts[0] != 'DABIRKHANE-SYNC') {
-      await _showResult(title: 'کد نامعتبر', message: 'کد اتصال دبیرخانه معتبر نیست.', success: false);
+      await _showResult(
+        title: 'کد نامعتبر',
+        message: 'کد اتصال دبیرخانه معتبر نیست.',
+        success: false,
+      );
       return;
     }
     final host = parts[1];
     final port = int.tryParse(parts[2]);
     final key = parts.sublist(3).join('|');
     if (host.isEmpty || port == null || key.isEmpty) {
-      await _showResult(title: 'کد نامعتبر', message: 'اطلاعات اتصال ناقص است.', success: false);
+      await _showResult(
+        title: 'کد نامعتبر',
+        message: 'اطلاعات اتصال ناقص است.',
+        success: false,
+      );
       return;
     }
     await AppSettings.setSyncPeerHost(host);
@@ -1012,53 +1257,206 @@ class _BackupRestoreDialogState extends State<BackupRestoreDialog>
                 padding: const EdgeInsets.fromLTRB(18, 18, 18, 12),
                 child: Column(
                   children: [
-                    _buildSectionIntro(colorScheme, icon: Icons.sync_rounded, title: 'هماهنگ‌سازی امن بین دو دبیرخانه', description: 'هر دستگاه دیتابیس محلی خودش را دارد و فقط تغییرات و فایل‌های جدید بین دو دستگاه جابه‌جا می‌شوند.'),
+                    _buildSectionIntro(
+                      colorScheme,
+                      icon: Icons.sync_rounded,
+                      title: 'هماهنگ‌سازی امن بین دو دبیرخانه',
+                      description:
+                          'هر دستگاه دیتابیس محلی خودش را دارد و فقط تغییرات و فایل‌های جدید بین دو دستگاه جابه‌جا می‌شوند.',
+                    ),
                     const SizedBox(height: 12),
                     Container(
                       padding: const EdgeInsets.all(14),
-                      decoration: BoxDecoration(color: statusColor.withOpacity(.08), borderRadius: BorderRadius.circular(17), border: Border.all(color: statusColor.withOpacity(.22))),
-                      child: Row(children: [Icon(Icons.circle, size: 12, color: statusColor), const SizedBox(width: 9), Expanded(child: Text(statusText, style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w800))), if (status == SyncStatus.syncing || status == SyncStatus.connecting) const SizedBox(width: 14, child: CircularProgressIndicator(strokeWidth: 2))]),
+                      decoration: BoxDecoration(
+                        color: statusColor.withOpacity(.08),
+                        borderRadius: BorderRadius.circular(17),
+                        border: Border.all(color: statusColor.withOpacity(.22)),
+                      ),
+                      child: Row(
+                        children: [
+                          Icon(Icons.circle, size: 12, color: statusColor),
+                          const SizedBox(width: 9),
+                          Expanded(
+                            child: Text(
+                              statusText,
+                              style: const TextStyle(
+                                fontSize: 12.5,
+                                fontWeight: FontWeight.w800,
+                              ),
+                            ),
+                          ),
+                          if (status == SyncStatus.syncing ||
+                              status == SyncStatus.connecting)
+                            const SizedBox(
+                              width: 14,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            ),
+                        ],
+                      ),
                     ),
                     const SizedBox(height: 12),
                     SwitchListTile.adaptive(
-                      contentPadding: const EdgeInsets.symmetric(horizontal: 12),
-                      title: const Text('فعال‌سازی هماهنگ‌سازی', style: TextStyle(fontWeight: FontWeight.w800, fontSize: 13)),
-                      subtitle: const Text('ارتباط فقط با کلید امنیتی ثبت‌شده پذیرفته می‌شود.', style: TextStyle(fontSize: 11)),
+                      contentPadding: const EdgeInsets.symmetric(
+                        horizontal: 12,
+                      ),
+                      title: const Text(
+                        'فعال‌سازی هماهنگ‌سازی',
+                        style: TextStyle(
+                          fontWeight: FontWeight.w800,
+                          fontSize: 13,
+                        ),
+                      ),
+                      subtitle: const Text(
+                        'ارتباط فقط با کلید امنیتی ثبت‌شده پذیرفته می‌شود.',
+                        style: TextStyle(fontSize: 11),
+                      ),
                       value: _syncEnabled,
                       onChanged: (v) => setState(() => _syncEnabled = v),
                     ),
                     const SizedBox(height: 6),
-                    _syncField(label: 'نام این دستگاه', value: _syncDeviceName, onChanged: (v) => _syncDeviceName = v, colorScheme: colorScheme, controller: _syncNameController),
+                    _syncField(
+                      label: 'نام این دستگاه',
+                      value: _syncDeviceName,
+                      onChanged: (v) => _syncDeviceName = v,
+                      colorScheme: colorScheme,
+                      controller: _syncNameController,
+                    ),
                     const SizedBox(height: 10),
                     DropdownButtonFormField<String>(
                       value: _syncRole,
-                      decoration: const InputDecoration(labelText: 'نقش دستگاه', border: OutlineInputBorder()),
-                      items: const [DropdownMenuItem(value: 'master', child: Text('اصلی / مادر — مرجع شماره نامه')), DropdownMenuItem(value: 'client', child: Text('دستگاه دوم / متصل'))],
-                      onChanged: (v) => setState(() => _syncRole = v ?? 'client'),
+                      decoration: const InputDecoration(
+                        labelText: 'نقش دستگاه',
+                        border: OutlineInputBorder(),
+                      ),
+                      items: const [
+                        DropdownMenuItem(
+                          value: 'master',
+                          child: Text('اصلی / مادر — مرجع شماره نامه'),
+                        ),
+                        DropdownMenuItem(
+                          value: 'client',
+                          child: Text('دستگاه دوم / متصل'),
+                        ),
+                      ],
+                      onChanged: (v) =>
+                          setState(() => _syncRole = v ?? 'client'),
                     ),
                     const SizedBox(height: 10),
                     if (_syncRole == 'master') ...[
                       _buildKeyCard(colorScheme),
                       const SizedBox(height: 10),
-                      _syncField(label: 'پورت این دستگاه', value: _syncPort.toString(), onChanged: (v) => _syncLocalPortController.text = v, colorScheme: colorScheme, controller: _syncLocalPortController),
+                      _syncField(
+                        label: 'پورت این دستگاه',
+                        value: _syncPort.toString(),
+                        onChanged: (v) => _syncLocalPortController.text = v,
+                        colorScheme: colorScheme,
+                        controller: _syncLocalPortController,
+                      ),
                     ] else ...[
-                      _syncField(label: 'IP یا نام دستگاه مادر', value: _syncHostController.text, onChanged: (v) => _syncHostController.text = v, colorScheme: colorScheme, controller: _syncHostController),
+                      _syncField(
+                        label: 'IP یا نام دستگاه مادر',
+                        value: _syncHostController.text,
+                        onChanged: (v) => _syncHostController.text = v,
+                        colorScheme: colorScheme,
+                        controller: _syncHostController,
+                      ),
                       const SizedBox(height: 10),
-                      _syncField(label: 'پورت مادر', value: _syncPeerPort.toString(), onChanged: (v) => _syncPortController.text = v, colorScheme: colorScheme, controller: _syncPortController),
+                      _syncField(
+                        label: 'پورت مادر',
+                        value: _syncPeerPort.toString(),
+                        onChanged: (v) => _syncPortController.text = v,
+                        colorScheme: colorScheme,
+                        controller: _syncPortController,
+                      ),
                       const SizedBox(height: 10),
-                      TextField(controller: _syncPairingController, maxLines: 3, decoration: InputDecoration(labelText: 'کد جفت‌سازی مادر', hintText: 'DABIRKHANE-SYNC|IP|PORT|KEY', border: const OutlineInputBorder(), suffixIcon: IconButton(icon: const Icon(Icons.paste_rounded), onPressed: () async { final d = await Clipboard.getData('text/plain'); if (d?.text != null) _syncPairingController.text = d!.text!; })),),
+                      TextField(
+                        controller: _syncPairingController,
+                        maxLines: 3,
+                        decoration: InputDecoration(
+                          labelText: 'کد جفت‌سازی مادر',
+                          hintText: 'DABIRKHANE-SYNC|IP|PORT|KEY',
+                          border: const OutlineInputBorder(),
+                          suffixIcon: IconButton(
+                            icon: const Icon(Icons.paste_rounded),
+                            onPressed: () async {
+                              final d = await Clipboard.getData('text/plain');
+                              if (d?.text != null)
+                                _syncPairingController.text = d!.text!;
+                            },
+                          ),
+                        ),
+                      ),
                       const SizedBox(height: 8),
-                      Align(alignment: Alignment.centerRight, child: TextButton.icon(onPressed: _applyPairingCode, icon: const Icon(Icons.link_rounded), label: const Text('اعمال کد و اتصال'))),
+                      Align(
+                        alignment: Alignment.centerRight,
+                        child: TextButton.icon(
+                          onPressed: _applyPairingCode,
+                          icon: const Icon(Icons.link_rounded),
+                          label: const Text('اعمال کد و اتصال'),
+                        ),
+                      ),
                     ],
-                    if (_syncLastSuccess != null) Padding(padding: const EdgeInsets.only(top: 8), child: Align(alignment: Alignment.centerRight, child: Text('آخرین هماهنگی موفق: ${_syncLastSuccess!.toLocal()}', style: TextStyle(fontSize: 11, color: colorScheme.onSurfaceVariant)))),
+                    if (_syncLastSuccess != null)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 8),
+                        child: Align(
+                          alignment: Alignment.centerRight,
+                          child: Text(
+                            'آخرین هماهنگی موفق: ${_syncLastSuccess!.toLocal()}',
+                            style: TextStyle(
+                              fontSize: 11,
+                              color: colorScheme.onSurfaceVariant,
+                            ),
+                          ),
+                        ),
+                      ),
                   ],
                 ),
               ),
             ),
             Container(
               padding: const EdgeInsets.fromLTRB(18, 10, 18, 18),
-              decoration: BoxDecoration(border: Border(top: BorderSide(color: colorScheme.outlineVariant.withOpacity(.30)))),
-              child: Row(children: [Expanded(child: OutlinedButton.icon(onPressed: () async { await Clipboard.setData(ClipboardData(text: _pairingText())); await _showResult(title: 'کد اتصال', message: 'کد اتصال کپی شد. آن را در دستگاه دوم وارد کنید.', success: true); }, icon: const Icon(Icons.copy_rounded), label: const Text('کپی کد اتصال'))), const SizedBox(width: 10), Expanded(child: FilledButton.icon(onPressed: _working ? null : () async { await _saveSyncSettings(); await SyncService.instance.syncNow(); }, icon: const Icon(Icons.sync_rounded), label: const Text('ذخیره و هماهنگ‌سازی')))]),
+              decoration: BoxDecoration(
+                border: Border(
+                  top: BorderSide(
+                    color: colorScheme.outlineVariant.withOpacity(.30),
+                  ),
+                ),
+              ),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: OutlinedButton.icon(
+                      onPressed: () async {
+                        await Clipboard.setData(
+                          ClipboardData(text: _pairingText()),
+                        );
+                        await _showResult(
+                          title: 'کد اتصال',
+                          message:
+                              'کد اتصال کپی شد. آن را در دستگاه دوم وارد کنید.',
+                          success: true,
+                        );
+                      },
+                      icon: const Icon(Icons.copy_rounded),
+                      label: const Text('کپی کد اتصال'),
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: FilledButton.icon(
+                      onPressed: _working
+                          ? null
+                          : () async {
+                              await _saveSyncSettings();
+                              await SyncService.instance.syncNow();
+                            },
+                      icon: const Icon(Icons.sync_rounded),
+                      label: const Text('ذخیره و هماهنگ‌سازی'),
+                    ),
+                  ),
+                ],
+              ),
             ),
           ],
         );
@@ -1066,15 +1464,60 @@ class _BackupRestoreDialogState extends State<BackupRestoreDialog>
     );
   }
 
-  Widget _syncField({required String label, required String value, required ValueChanged<String> onChanged, required ColorScheme colorScheme, required TextEditingController controller}) {
-    return TextField(controller: controller, onChanged: onChanged, decoration: InputDecoration(labelText: label, border: const OutlineInputBorder(), isDense: true));
+  Widget _syncField({
+    required String label,
+    required String value,
+    required ValueChanged<String> onChanged,
+    required ColorScheme colorScheme,
+    required TextEditingController controller,
+  }) {
+    return TextField(
+      controller: controller,
+      onChanged: onChanged,
+      decoration: InputDecoration(
+        labelText: label,
+        border: const OutlineInputBorder(),
+        isDense: true,
+      ),
+    );
   }
 
   Widget _buildKeyCard(ColorScheme colorScheme) {
     return Container(
       padding: const EdgeInsets.all(13),
-      decoration: BoxDecoration(color: colorScheme.primary.withOpacity(.06), borderRadius: BorderRadius.circular(17), border: Border.all(color: colorScheme.primary.withOpacity(.18))),
-      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [const Text('کلید امنیتی این دستگاه', style: TextStyle(fontWeight: FontWeight.w800, fontSize: 12.5)), const SizedBox(height: 7), SelectableText(_syncKey, style: const TextStyle(fontSize: 11.5, fontFamily: 'monospace')), const SizedBox(height: 7), Text('کد کامل اتصال برای دستگاه دوم:', style: TextStyle(fontSize: 10.5, color: colorScheme.onSurfaceVariant)), const SizedBox(height: 3), SelectableText(_pairingText(), style: const TextStyle(fontSize: 10.5, fontFamily: 'monospace'))]));
+      decoration: BoxDecoration(
+        color: colorScheme.primary.withOpacity(.06),
+        borderRadius: BorderRadius.circular(17),
+        border: Border.all(color: colorScheme.primary.withOpacity(.18)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            'کلید امنیتی این دستگاه',
+            style: TextStyle(fontWeight: FontWeight.w800, fontSize: 12.5),
+          ),
+          const SizedBox(height: 7),
+          SelectableText(
+            _syncKey,
+            style: const TextStyle(fontSize: 11.5, fontFamily: 'monospace'),
+          ),
+          const SizedBox(height: 7),
+          Text(
+            'کد کامل اتصال برای دستگاه دوم:',
+            style: TextStyle(
+              fontSize: 10.5,
+              color: colorScheme.onSurfaceVariant,
+            ),
+          ),
+          const SizedBox(height: 3),
+          SelectableText(
+            _pairingText(),
+            style: const TextStyle(fontSize: 10.5, fontFamily: 'monospace'),
+          ),
+        ],
+      ),
+    );
   }
 
   // ============================================================
