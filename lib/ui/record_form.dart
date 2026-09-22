@@ -120,13 +120,23 @@ class _RecordFormState extends State<RecordForm>
   // ============================================================
 
   List<String> mainFields = [
-    'Shomare_Radif', 'date', 'saheb_name', 'guy',
-    'sh_name_reside', 'onvan', 'comment', 'shomare_badi',
+    'Shomare_Radif',
+    'date',
+    'saheb_name',
+    'guy',
+    'sh_name_reside',
+    'onvan',
+    'comment',
+    'shomare_badi',
   ];
 
   List<String> otherFields = [
-    't_name_ersali', 't_name_reside', 'wordmost2', 'from_pywa',
-    'adres_name', 'goshashte',
+    't_name_ersali',
+    't_name_reside',
+    'wordmost2',
+    'from_pywa',
+    'adres_name',
+    'goshashte',
   ];
 
   RecordSchema? _schema;
@@ -197,10 +207,11 @@ class _RecordFormState extends State<RecordForm>
       for (final field in schema.fields) field.key: field.label,
     };
 
-    final dataFields = schema.fields
-        .where((f) => f.visible && f.key != '__category__')
-        .toList()
-      ..sort((a, b) => a.order.compareTo(b.order));
+    final dataFields =
+        schema.fields
+            .where((f) => f.visible && f.key != '__category__')
+            .toList()
+          ..sort((a, b) => a.order.compareTo(b.order));
 
     for (final field in dataFields) {
       c.putIfAbsent(
@@ -1292,13 +1303,12 @@ class _RecordFormState extends State<RecordForm>
       if (!saved || !mounted) return;
     }
 
-    final recordId = _savedRecordId ??
+    final recordId =
+        _savedRecordId ??
         (widget.record?['Shomare_Radif'] is int
             ? widget.record!['Shomare_Radif'] as int
-            : int.tryParse(
-                  widget.record?['Shomare_Radif']?.toString() ?? '',
-                ) ??
-                int.tryParse(c['Shomare_Radif']?.text ?? ''));
+            : int.tryParse(widget.record?['Shomare_Radif']?.toString() ?? '') ??
+                  int.tryParse(c['Shomare_Radif']?.text ?? ''));
 
     if (recordId == null) {
       _showMessage('شماره نامه مشخص نیست.');
@@ -1308,9 +1318,11 @@ class _RecordFormState extends State<RecordForm>
     final result = await showDialog<ShareRecordResult>(
       context: context,
       builder: (_) => ShareRecordDialog(
-        record: widget.record ?? <String, dynamic>{
-          for (final entry in c.entries) entry.key: entry.value.text,
-        },
+        record:
+            widget.record ??
+            <String, dynamic>{
+              for (final entry in c.entries) entry.key: entry.value.text,
+            },
         categories: selectedCategories,
       ),
     );
@@ -1343,13 +1355,12 @@ class _RecordFormState extends State<RecordForm>
 
     final files = result.includeFiles
         ? filesInDirectory
-            .where((file) => file.existsSync())
-            .map((file) => XFile(file.path))
-            .toList()
+              .where((file) => file.existsSync())
+              .map((file) => XFile(file.path))
+              .toList()
         : <XFile>[];
 
-    final subject =
-        'نامه شماره ${currentRecord['Shomare_Radif'] ?? recordId}';
+    final subject = 'نامه شماره ${currentRecord['Shomare_Radif'] ?? recordId}';
 
     try {
       if (files.isNotEmpty) {
@@ -1359,10 +1370,7 @@ class _RecordFormState extends State<RecordForm>
           text: text.isEmpty ? subject : text,
         );
       } else {
-        await Share.share(
-          text.isEmpty ? subject : text,
-          subject: subject,
-        );
+        await Share.share(text.isEmpty ? subject : text, subject: subject);
       }
     } catch (e) {
       if (!mounted) return;
@@ -1618,8 +1626,8 @@ class _RecordFormState extends State<RecordForm>
             keyboardType: TextInputType.text,
             validator: definition.required
                 ? (value) => value == null || value.trim().isEmpty
-                    ? 'این فیلد الزامی است'
-                    : null
+                      ? 'این فیلد الزامی است'
+                      : null
                 : null,
             onChanged: (value) {
               _historySuggestionDebounce?.cancel();
@@ -1635,8 +1643,7 @@ class _RecordFormState extends State<RecordForm>
                 const Duration(milliseconds: 350),
                 () async {
                   try {
-                    final rows =
-                        await DatabaseHelper.searchDistinctField(
+                    final rows = await DatabaseHelper.searchDistinctField(
                       config.searchField ?? definition.key,
                       value.trim(),
                     );
@@ -1658,10 +1665,7 @@ class _RecordFormState extends State<RecordForm>
             },
             onFieldSubmitted: (_) {
               if (suggestions.isNotEmpty) {
-                _selectHistorySuggestion(
-                  definition,
-                  suggestions.first,
-                );
+                _selectHistorySuggestion(definition, suggestions.first);
               } else {
                 _focusNextField(definition.key);
               }
@@ -1701,10 +1705,8 @@ class _RecordFormState extends State<RecordForm>
         final targetValue = last[definition.key]?.toString() ?? value;
         c[definition.key]!.text = targetValue;
 
-        if (definition.key == 'saheb_name' &&
-            c.containsKey('sh_name_reside')) {
-          c['sh_name_reside']!.text =
-              last['sh_name_reside']?.toString() ?? '';
+        if (definition.key == 'saheb_name' && c.containsKey('sh_name_reside')) {
+          c['sh_name_reside']!.text = last['sh_name_reside']?.toString() ?? '';
         }
 
         lastRecord = last;
@@ -1726,7 +1728,6 @@ class _RecordFormState extends State<RecordForm>
     setState(() {
       _dynamicSuggestions[definition.key] = [];
     });
-
   }
 
   String _buildLastRecordInfo(Map<String, dynamic> record) {
@@ -1758,7 +1759,10 @@ class _RecordFormState extends State<RecordForm>
             controller: c['saheb_name'],
             decoration: _glassInputDecoration(
               label: 'صاحب نامه',
-              prefixIcon: Icon(_fieldIcon(_schema?.field('saheb_name')), size: 20),
+              prefixIcon: Icon(
+                _fieldIcon(_schema?.field('saheb_name')),
+                size: 20,
+              ),
               suffixIcon: sahebSuggestions.isNotEmpty
                   ? IconButton(
                       icon: const Icon(Icons.close_rounded),
@@ -1776,7 +1780,7 @@ class _RecordFormState extends State<RecordForm>
             keyboardType: TextInputType.multiline,
             onChanged: (value) {
               _debounce?.cancel();
-    _historySuggestionDebounce?.cancel();
+              _historySuggestionDebounce?.cancel();
 
               if (!_sahebNameSuggestionsEnabled) {
                 if (sahebSuggestions.isNotEmpty) {
@@ -2065,7 +2069,9 @@ class _RecordFormState extends State<RecordForm>
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(18),
         color: Theme.of(context).colorScheme.surface.withOpacity(.82),
-        border: Border.all(color: Theme.of(context).colorScheme.onSurface.withOpacity(.12)),
+        border: Border.all(
+          color: Theme.of(context).colorScheme.onSurface.withOpacity(.12),
+        ),
         boxShadow: [
           BoxShadow(
             color: Colors.black.withOpacity(.055),
@@ -2142,7 +2148,9 @@ class _RecordFormState extends State<RecordForm>
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(18),
         color: Theme.of(context).colorScheme.surface.withOpacity(.84),
-        border: Border.all(color: Theme.of(context).colorScheme.onSurface.withOpacity(.12)),
+        border: Border.all(
+          color: Theme.of(context).colorScheme.onSurface.withOpacity(.12),
+        ),
         boxShadow: [
           BoxShadow(
             color: Colors.black.withOpacity(.065),
@@ -2298,8 +2306,7 @@ class _RecordFormState extends State<RecordForm>
     }
 
     final historyConfig = _schema?.historySuggestion;
-    if (historyConfig?.enabled == true &&
-        historyConfig?.targetField == field) {
+    if (historyConfig?.enabled == true && historyConfig?.targetField == field) {
       return _buildHistorySuggestionField(definition!);
     }
 
@@ -2329,19 +2336,22 @@ class _RecordFormState extends State<RecordForm>
       return _buildDynamicAutocompleteField(definition!);
     }
 
-    final isMultiline = definition?.type == FieldType.multiline || field == 'comment' || field == 'adres_name';
+    final isMultiline =
+        definition?.type == FieldType.multiline ||
+        field == 'comment' ||
+        field == 'adres_name';
     final maxLines = definition?.maxLines ?? (isMultiline ? 4 : 3);
     final keyboardType = definition?.type == FieldType.number
         ? TextInputType.number
         : definition?.type == FieldType.phone
-            ? TextInputType.phone
-            : definition?.type == FieldType.email
-                ? TextInputType.emailAddress
-                : definition?.type == FieldType.url
-                    ? TextInputType.url
-                    : isMultiline
-                        ? TextInputType.multiline
-                        : TextInputType.text;
+        ? TextInputType.phone
+        : definition?.type == FieldType.email
+        ? TextInputType.emailAddress
+        : definition?.type == FieldType.url
+        ? TextInputType.url
+        : isMultiline
+        ? TextInputType.multiline
+        : TextInputType.text;
 
     return _glassField(
       child: TextFormField(
@@ -2357,7 +2367,9 @@ class _RecordFormState extends State<RecordForm>
         ),
         textDirection: TextDirection.rtl,
         validator: definition?.required == true
-            ? (value) => (value == null || value.trim().isEmpty) ? 'این فیلد الزامی است' : null
+            ? (value) => (value == null || value.trim().isEmpty)
+                  ? 'این فیلد الزامی است'
+                  : null
             : null,
         onFieldSubmitted: (_) => _focusNextField(field),
       ),
@@ -2380,7 +2392,10 @@ class _RecordFormState extends State<RecordForm>
         controller: c[field],
         focusNode: focusNodes[field],
         keyboardType: TextInputType.number,
-        inputFormatters: [FilteringTextInputFormatter.digitsOnly, JalaliDateFormatter()],
+        inputFormatters: [
+          FilteringTextInputFormatter.digitsOnly,
+          JalaliDateFormatter(),
+        ],
         decoration: _glassInputDecoration(
           label: definition?.label ?? fieldLabels[field] ?? field,
           hint: '1405/01/15',
@@ -2388,8 +2403,11 @@ class _RecordFormState extends State<RecordForm>
         ),
         textDirection: TextDirection.rtl,
         validator: (value) {
-          if (definition?.required == true && (value == null || value.trim().isEmpty)) return 'این فیلد الزامی است';
-          if (value != null && value.trim().isNotEmpty && value.length != 10) return 'تاریخ معتبر وارد کنید';
+          if (definition?.required == true &&
+              (value == null || value.trim().isEmpty))
+            return 'این فیلد الزامی است';
+          if (value != null && value.trim().isNotEmpty && value.length != 10)
+            return 'تاریخ معتبر وارد کنید';
           return null;
         },
         onFieldSubmitted: (_) => _focusNextField(field),
@@ -2400,17 +2418,35 @@ class _RecordFormState extends State<RecordForm>
   Widget _buildSelectField(FieldDefinition definition) {
     return _glassField(
       child: DropdownButtonFormField<String>(
-        value: definition.options.contains(c[definition.key]?.text) ? c[definition.key]?.text : null,
-        decoration: _glassInputDecoration(label: definition.label, prefixIcon: Icon(_fieldIcon(definition), size: 20)),
-        items: definition.options.map((item) => DropdownMenuItem(value: item, child: Text(item, textDirection: TextDirection.rtl))).toList(),
+        value: definition.options.contains(c[definition.key]?.text)
+            ? c[definition.key]?.text
+            : null,
+        decoration: _glassInputDecoration(
+          label: definition.label,
+          prefixIcon: Icon(_fieldIcon(definition), size: 20),
+        ),
+        items: definition.options
+            .map(
+              (item) => DropdownMenuItem(
+                value: item,
+                child: Text(item, textDirection: TextDirection.rtl),
+              ),
+            )
+            .toList(),
         onChanged: (value) => c[definition.key]?.text = value ?? '',
-        validator: definition.required ? (value) => value == null || value.isEmpty ? 'این فیلد الزامی است' : null : null,
+        validator: definition.required
+            ? (value) =>
+                  value == null || value.isEmpty ? 'این فیلد الزامی است' : null
+            : null,
       ),
     );
   }
 
   Widget _buildMultiSelectField(FieldDefinition definition) {
-    final selected = (c[definition.key]?.text ?? '').split('|').where((e) => e.isNotEmpty).toSet();
+    final selected = (c[definition.key]?.text ?? '')
+        .split('|')
+        .where((e) => e.isNotEmpty)
+        .toSet();
     return _glassField(
       child: InkWell(
         onTap: () async {
@@ -2420,19 +2456,48 @@ class _RecordFormState extends State<RecordForm>
             builder: (dialogContext) => StatefulBuilder(
               builder: (context, setState) => AlertDialog(
                 title: Text(definition.label, textDirection: TextDirection.rtl),
-                content: SingleChildScrollView(child: Column(children: definition.options.map((item) => CheckboxListTile(
-                  value: temp.contains(item), title: Text(item, textDirection: TextDirection.rtl),
-                  onChanged: (v) => setState(() => v == true ? temp.add(item) : temp.remove(item)),
-                )).toList())),
-                actions: [TextButton(onPressed: () => Navigator.pop(dialogContext), child: const Text('انصراف')), FilledButton(onPressed: () => Navigator.pop(dialogContext, temp), child: const Text('تأیید'))],
+                content: SingleChildScrollView(
+                  child: Column(
+                    children: definition.options
+                        .map(
+                          (item) => CheckboxListTile(
+                            value: temp.contains(item),
+                            title: Text(item, textDirection: TextDirection.rtl),
+                            onChanged: (v) => setState(
+                              () => v == true
+                                  ? temp.add(item)
+                                  : temp.remove(item),
+                            ),
+                          ),
+                        )
+                        .toList(),
+                  ),
+                ),
+                actions: [
+                  TextButton(
+                    onPressed: () => Navigator.pop(dialogContext),
+                    child: const Text('انصراف'),
+                  ),
+                  FilledButton(
+                    onPressed: () => Navigator.pop(dialogContext, temp),
+                    child: const Text('تأیید'),
+                  ),
+                ],
               ),
             ),
           );
-          if (result != null) setState(() => c[definition.key]!.text = result.join('|'));
+          if (result != null)
+            setState(() => c[definition.key]!.text = result.join('|'));
         },
         child: InputDecorator(
-          decoration: _glassInputDecoration(label: definition.label, prefixIcon: Icon(_fieldIcon(definition), size: 20)),
-          child: Text(selected.isEmpty ? 'انتخاب کنید' : selected.join('، '), textDirection: TextDirection.rtl),
+          decoration: _glassInputDecoration(
+            label: definition.label,
+            prefixIcon: Icon(_fieldIcon(definition), size: 20),
+          ),
+          child: Text(
+            selected.isEmpty ? 'انتخاب کنید' : selected.join('، '),
+            textDirection: TextDirection.rtl,
+          ),
         ),
       ),
     );
@@ -2445,7 +2510,8 @@ class _RecordFormState extends State<RecordForm>
         title: Text(definition.label, textDirection: TextDirection.rtl),
         secondary: Icon(_fieldIcon(definition)),
         value: value,
-        onChanged: (v) => setState(() => c[definition.key]!.text = v ? '1' : '0'),
+        onChanged: (v) =>
+            setState(() => c[definition.key]!.text = v ? '1' : '0'),
         contentPadding: const EdgeInsets.symmetric(horizontal: 12),
       ),
     );
@@ -2463,14 +2529,24 @@ class _RecordFormState extends State<RecordForm>
           if (mounted) setState(() => _dynamicSuggestions[definition.key] = []);
           return;
         }
-        _dynamicSuggestionTimers[definition.key] = Timer(const Duration(milliseconds: 350), () async {
-          try {
-            final result = await DatabaseHelper.searchDistinctField(definition.key, value.trim());
-            if (mounted) setState(() => _dynamicSuggestions[definition.key] = result);
-          } catch (_) {}
-        });
+        _dynamicSuggestionTimers[definition.key] = Timer(
+          const Duration(milliseconds: 350),
+          () async {
+            try {
+              final result = await DatabaseHelper.searchDistinctField(
+                definition.key,
+                value.trim(),
+              );
+              if (mounted)
+                setState(() => _dynamicSuggestions[definition.key] = result);
+            } catch (_) {}
+          },
+        );
       },
-      onSelected: (item) => setState(() { c[definition.key]!.text = item; _dynamicSuggestions[definition.key] = []; }),
+      onSelected: (item) => setState(() {
+        c[definition.key]!.text = item;
+        _dynamicSuggestions[definition.key] = [];
+      }),
       focusNode: focusNodes[definition.key]!,
       nextFocus: null,
       icon: _fieldIcon(definition),
@@ -2487,7 +2563,9 @@ class _RecordFormState extends State<RecordForm>
       decoration: BoxDecoration(
         color: Theme.of(context).colorScheme.surface.withOpacity(.72),
         borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: Theme.of(context).colorScheme.onSurface.withOpacity(.12)),
+        border: Border.all(
+          color: Theme.of(context).colorScheme.onSurface.withOpacity(.12),
+        ),
         boxShadow: [
           BoxShadow(
             color: Colors.black.withOpacity(.035),
@@ -2507,13 +2585,18 @@ class _RecordFormState extends State<RecordForm>
                   color: colorScheme.primary.withOpacity(.10),
                   borderRadius: BorderRadius.circular(11),
                 ),
-                child: Icon(Icons.attach_file_rounded,
-                    color: colorScheme.primary, size: 19),
+                child: Icon(
+                  Icons.attach_file_rounded,
+                  color: colorScheme.primary,
+                  size: 19,
+                ),
               ),
               const SizedBox(width: 9),
               const Expanded(
-                child: Text('پیوست‌ها',
-                    style: TextStyle(fontSize: 13, fontWeight: FontWeight.w800)),
+                child: Text(
+                  'پیوست‌ها',
+                  style: TextStyle(fontSize: 13, fontWeight: FontWeight.w800),
+                ),
               ),
               _compactFileAction(
                 'اسکن',
@@ -2521,6 +2604,7 @@ class _RecordFormState extends State<RecordForm>
                 scan,
                 showLabel: true,
               ),
+              const SizedBox(width: 9),
               _compactFileAction(
                 'افزودن فایل',
                 Icons.attach_file_rounded,
@@ -2550,7 +2634,9 @@ class _RecordFormState extends State<RecordForm>
                       decoration: BoxDecoration(
                         color: Colors.black.withOpacity(.025),
                         borderRadius: BorderRadius.circular(13),
-                        border: Border.all(color: Colors.black.withOpacity(.055)),
+                        border: Border.all(
+                          color: Colors.black.withOpacity(.055),
+                        ),
                       ),
                       child: Row(
                         children: [
@@ -2560,8 +2646,12 @@ class _RecordFormState extends State<RecordForm>
                               width: 43,
                               height: 43,
                               child: image
-                                  ? Image.file(file, fit: BoxFit.cover,
-                                      errorBuilder: (_, __, ___) => _filePreviewIcon(file))
+                                  ? Image.file(
+                                      file,
+                                      fit: BoxFit.cover,
+                                      errorBuilder: (_, __, ___) =>
+                                          _filePreviewIcon(file),
+                                    )
                                   : _filePreviewIcon(file),
                             ),
                           ),
@@ -2572,11 +2662,17 @@ class _RecordFormState extends State<RecordForm>
                               maxLines: 2,
                               overflow: TextOverflow.ellipsis,
                               textDirection: TextDirection.rtl,
-                              style: const TextStyle(fontSize: 10.5, fontWeight: FontWeight.w600),
+                              style: const TextStyle(
+                                fontSize: 10.5,
+                                fontWeight: FontWeight.w600,
+                              ),
                             ),
                           ),
-                          Icon(Icons.open_in_new_rounded,
-                              size: 15, color: colorScheme.primary),
+                          Icon(
+                            Icons.open_in_new_rounded,
+                            size: 15,
+                            color: colorScheme.primary,
+                          ),
                         ],
                       ),
                     ),
@@ -2589,8 +2685,11 @@ class _RecordFormState extends State<RecordForm>
               padding: EdgeInsets.only(top: 5),
               child: Align(
                 alignment: Alignment.centerRight,
-                child: Text('هنوز فایلی برای این نامه ثبت نشده است.',
-                    style: TextStyle(fontSize: 10.5), textDirection: TextDirection.rtl),
+                child: Text(
+                  'هنوز فایلی برای این نامه ثبت نشده است.',
+                  style: TextStyle(fontSize: 10.5),
+                  textDirection: TextDirection.rtl,
+                ),
               ),
             ),
         ],
@@ -3139,7 +3238,9 @@ class _RecordFormState extends State<RecordForm>
         appBar: AppBar(
           elevation: 0,
           scrolledUnderElevation: 0,
-          backgroundColor: Theme.of(context).colorScheme.surface.withOpacity(.82),
+          backgroundColor: Theme.of(
+            context,
+          ).colorScheme.surface.withOpacity(.82),
           surfaceTintColor: Colors.transparent,
 
           title: Text(
@@ -3177,7 +3278,9 @@ class _RecordFormState extends State<RecordForm>
           animation: _tabController,
           builder: (context, child) {
             if (_tabController.index != 0) return const SizedBox.shrink();
-            if (_autoSaveEnabled && _compactFilesOnForm && widget.record != null) {
+            if (_autoSaveEnabled &&
+                _compactFilesOnForm &&
+                widget.record != null) {
               return const SizedBox.shrink();
             }
             return SafeArea(
@@ -3211,7 +3314,9 @@ class _RecordFormState extends State<RecordForm>
       decoration: BoxDecoration(
         color: Theme.of(context).colorScheme.surface.withOpacity(.62),
         borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: Theme.of(context).colorScheme.onSurface.withOpacity(.12)),
+        border: Border.all(
+          color: Theme.of(context).colorScheme.onSurface.withOpacity(.12),
+        ),
         boxShadow: [
           BoxShadow(
             color: Colors.black.withOpacity(.045),
@@ -3270,10 +3375,13 @@ class _RecordFormState extends State<RecordForm>
 
     final schema = _schema;
     if (schema == null) {
-      return const Center(child: Text('ساختار فرم یافت نشد', textDirection: TextDirection.rtl));
+      return const Center(
+        child: Text('ساختار فرم یافت نشد', textDirection: TextDirection.rtl),
+      );
     }
 
-    final sections = [...schema.sections]..sort((a, b) => a.order.compareTo(b.order));
+    final sections = [...schema.sections]
+      ..sort((a, b) => a.order.compareTo(b.order));
 
     return Container(
       color: Theme.of(context).scaffoldBackgroundColor,
@@ -3340,10 +3448,7 @@ class _RecordFormState extends State<RecordForm>
 
     final content = Column(
       children: [
-        for (final row in rows) ...[
-          buildRow(row),
-          const SizedBox(height: 8),
-        ],
+        for (final row in rows) ...[buildRow(row), const SizedBox(height: 8)],
       ],
     );
 
@@ -3361,7 +3466,9 @@ class _RecordFormState extends State<RecordForm>
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(22),
         color: Theme.of(context).colorScheme.surface.withOpacity(.52),
-        border: Border.all(color: Theme.of(context).colorScheme.surface.withOpacity(.82)),
+        border: Border.all(
+          color: Theme.of(context).colorScheme.surface.withOpacity(.82),
+        ),
         boxShadow: [
           BoxShadow(
             color: Colors.black.withOpacity(.035),
@@ -3375,7 +3482,10 @@ class _RecordFormState extends State<RecordForm>
         child: Theme(
           data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
           child: ExpansionTile(
-            tilePadding: const EdgeInsets.symmetric(horizontal: 18, vertical: 2),
+            tilePadding: const EdgeInsets.symmetric(
+              horizontal: 18,
+              vertical: 2,
+            ),
             childrenPadding: const EdgeInsets.fromLTRB(14, 0, 14, 14),
             leading: Container(
               width: 38,
@@ -3384,7 +3494,11 @@ class _RecordFormState extends State<RecordForm>
                 borderRadius: BorderRadius.circular(12),
                 color: colorScheme.primary.withOpacity(.09),
               ),
-              child: Icon(Icons.tune_rounded, color: colorScheme.primary, size: 20),
+              child: Icon(
+                Icons.tune_rounded,
+                color: colorScheme.primary,
+                size: 20,
+              ),
             ),
             title: Text(
               section.title,
@@ -3627,7 +3741,9 @@ class _RecordFormState extends State<RecordForm>
             decoration: BoxDecoration(
               borderRadius: BorderRadius.circular(17),
               color: Theme.of(context).colorScheme.surface.withOpacity(.58),
-              border: Border.all(color: Theme.of(context).colorScheme.surface.withOpacity(.82)),
+              border: Border.all(
+                color: Theme.of(context).colorScheme.surface.withOpacity(.82),
+              ),
               boxShadow: [
                 BoxShadow(
                   color: Colors.black.withOpacity(.035),
@@ -3658,7 +3774,10 @@ class _RecordFormState extends State<RecordForm>
       decoration: BoxDecoration(
         color: Theme.of(context).colorScheme.surface.withOpacity(opacity),
         borderRadius: BorderRadius.circular(radius),
-        border: Border.all(color: Theme.of(context).colorScheme.surface.withOpacity(.86), width: 1),
+        border: Border.all(
+          color: Theme.of(context).colorScheme.surface.withOpacity(.86),
+          width: 1,
+        ),
         boxShadow: [
           BoxShadow(
             color: Colors.black.withOpacity(.045),
@@ -4271,7 +4390,10 @@ class _RecordFormState extends State<RecordForm>
         final value = await showDialog<int>(
           context: context,
           builder: (dialogContext) => AlertDialog(
-            title: const Text('تعداد روز دلخواه', textDirection: TextDirection.rtl),
+            title: const Text(
+              'تعداد روز دلخواه',
+              textDirection: TextDirection.rtl,
+            ),
             content: TextField(
               controller: controller,
               autofocus: true,
@@ -4401,6 +4523,7 @@ class _RecordFormState extends State<RecordForm>
       onPressed: shareRecord,
     );
   }
+
   Widget _buildHistoryButton() {
     final colorScheme = Theme.of(context).colorScheme;
 
