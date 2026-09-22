@@ -114,6 +114,7 @@ class _RecordFormState extends State<RecordForm>
   bool _compactFilesOnForm = false;
   bool _hasActiveReminder = false;
   Reminder? _todayReminder;
+  double _textFieldFontSize = 14.0;
 
   // ============================================================
   // Fields
@@ -192,6 +193,7 @@ class _RecordFormState extends State<RecordForm>
     _loadAutoSaveSetting();
     _loadScanSettings();
     _loadCompactFilesSetting();
+    _loadTextFieldFontSize();
     _loadReminderStatus();
 
     if (widget.record != null) {
@@ -486,6 +488,12 @@ class _RecordFormState extends State<RecordForm>
     final value = await AppSettings.getCompactFilesOnForm();
     if (!mounted) return;
     setState(() => _compactFilesOnForm = value);
+  }
+
+  Future<void> _loadTextFieldFontSize() async {
+    final value = await AppSettings.getRecordFormTextFieldFontSize();
+    if (!mounted) return;
+    setState(() => _textFieldFontSize = value);
   }
 
   Future<void> _loadSuggestionSettings() async {
@@ -1013,12 +1021,22 @@ class _RecordFormState extends State<RecordForm>
         }
       }
 
-      matchedFiles.sort((a, b) => a.path.compareTo(b.path));
+      // جدیدترین فایل (عکس/اسکن) همیشه اول نمایش داده شود.
+      final filesWithTime = <MapEntry<File, DateTime>>[];
+      for (final file in matchedFiles) {
+        try {
+          filesWithTime.add(MapEntry(file, await file.lastModified()));
+        } catch (_) {
+          filesWithTime.add(MapEntry(file, DateTime.fromMillisecondsSinceEpoch(0)));
+        }
+      }
+
+      filesWithTime.sort((a, b) => b.value.compareTo(a.value));
 
       if (!mounted) return;
 
       setState(() {
-        filesInDirectory = List<File>.from(matchedFiles);
+        filesInDirectory = filesWithTime.map((e) => e.key).toList();
       });
     } catch (e) {
       debugPrint('Error while loading files: $e');
@@ -1348,6 +1366,16 @@ class _RecordFormState extends State<RecordForm>
     }
 
     final text = values.join('\n');
+    final shareText = text.isEmpty ? 'نامه شماره ${currentRecord['Shomare_Radif'] ?? recordId}' : text;
+
+    // متن اشتراک‌گذاری را همیشه در کلیپ‌بورد هم قرار می‌دهیم تا
+    // اگر مقصد اشتراک‌گذاری همزمان متن و فایل را پشتیبانی نکرد،
+    // کاربر بتواند متن را جداگانه Paste کند.
+    await Clipboard.setData(ClipboardData(text: shareText));
+
+    if (mounted) {
+      _showMessage('متن اشتراک‌گذاری در کلیپ‌بورد کپی شد.');
+    }
 
     if (result.includeFiles) {
       await _loadFiles();
@@ -1367,10 +1395,10 @@ class _RecordFormState extends State<RecordForm>
         await Share.shareXFiles(
           files,
           subject: subject,
-          text: text.isEmpty ? subject : text,
+          text: shareText,
         );
       } else {
-        await Share.share(text.isEmpty ? subject : text, subject: subject);
+        await Share.share(shareText, subject: subject);
       }
     } catch (e) {
       if (!mounted) return;
@@ -1544,6 +1572,7 @@ class _RecordFormState extends State<RecordForm>
       children: [
         _glassField(
           child: TextFormField(
+            style: _textFieldStyle,
             controller: c[field],
             focusNode: focusNode,
             decoration: _glassInputDecoration(
@@ -1603,6 +1632,7 @@ class _RecordFormState extends State<RecordForm>
       children: [
         _glassField(
           child: TextFormField(
+            style: _textFieldStyle,
             controller: c[definition.key],
             focusNode: focusNodes[definition.key],
             decoration: _glassInputDecoration(
@@ -1755,6 +1785,7 @@ class _RecordFormState extends State<RecordForm>
       children: [
         _glassField(
           child: TextFormField(
+            style: _textFieldStyle,
             focusNode: _firstFieldFocus,
             controller: c['saheb_name'],
             decoration: _glassInputDecoration(
@@ -1922,6 +1953,7 @@ class _RecordFormState extends State<RecordForm>
         _glassField(
           margin: EdgeInsets.zero,
           child: TextFormField(
+            style: _textFieldStyle,
             controller: categoryController,
             focusNode: categoryFocus,
             decoration: _glassInputDecoration(
@@ -2355,6 +2387,7 @@ class _RecordFormState extends State<RecordForm>
 
     return _glassField(
       child: TextFormField(
+            style: _textFieldStyle,
         controller: c[field],
         focusNode: focusNodes[field],
         minLines: 1,
@@ -2389,6 +2422,7 @@ class _RecordFormState extends State<RecordForm>
   Widget _buildDynamicDateField(String field, FieldDefinition? definition) {
     return _glassField(
       child: TextFormField(
+            style: _textFieldStyle,
         controller: c[field],
         focusNode: focusNodes[field],
         keyboardType: TextInputType.number,
@@ -3277,7 +3311,6 @@ class _RecordFormState extends State<RecordForm>
         bottomNavigationBar: AnimatedBuilder(
           animation: _tabController,
           builder: (context, child) {
-            if (_tabController.index != 0) return const SizedBox.shrink();
             if (_autoSaveEnabled &&
                 _compactFilesOnForm &&
                 widget.record != null) {
@@ -3557,6 +3590,15 @@ class _RecordFormState extends State<RecordForm>
   // ============================================================
   // Glass field
   // ============================================================
+  TextStyle get _textFieldStyle {
+    final cs = Theme.of(context).colorScheme;
+    return TextStyle(
+      fontSize: _textFieldFontSize,
+      color: cs.onSurface,
+      height: 1.45,
+    );
+  }
+
   InputDecoration _glassInputDecoration({
     required String label,
     String? hint,
@@ -3577,7 +3619,9 @@ class _RecordFormState extends State<RecordForm>
       floatingLabelBehavior: FloatingLabelBehavior.auto,
 
       filled: true,
-      fillColor: Theme.of(context).colorScheme.surface.withOpacity(.68),
+      fillColor: Theme.of(context).brightness == Brightness.dark
+          ? colorScheme.surfaceContainerHighest.withOpacity(.72)
+          : Colors.white,
 
       contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
 

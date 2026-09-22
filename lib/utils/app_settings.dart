@@ -12,6 +12,7 @@ class AppSettings {
   static const _readWithoutGallerySaveKey = 'read_without_gallery_save';
   static const _autoSaveRecordFormKey = 'auto_save_record_form';
   static const _compactFilesOnFormKey = 'compact_files_on_form';
+  static const _recordFormTextFieldFontSizeKey = 'record_form_text_field_font_size';
   static const String _reminderNotificationTimeKey =
       'reminder_notification_time';
 
@@ -404,6 +405,17 @@ class AppSettings {
 
     return prefs.getBool(_autoSaveRecordFormKey) ?? false;
   }
+
+  static Future<double> getRecordFormTextFieldFontSize() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getDouble(_recordFormTextFieldFontSizeKey) ?? 14.0;
+  }
+
+  static Future<void> setRecordFormTextFieldFontSize(double value) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setDouble(_recordFormTextFieldFontSizeKey, value.clamp(10.0, 24.0));
+  }
+
 
   static Future<void> setAutoSaveRecordForm(bool value) async {
     final prefs = await SharedPreferences.getInstance();

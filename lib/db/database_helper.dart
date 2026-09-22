@@ -1389,6 +1389,9 @@ class DatabaseHelper {
     String? shomareBadi,
     // وضعیت یادآور
     int reminderFilter = 0,
+    // اگر اعلان روزانه روی یک تاریخ مشخص باز شده باشد،
+    // فقط Reminderهای همان روز را برگردان.
+    DateTime? reminderDate,
     Map<String, String>? dynamicFilters,
   }) async {
     final db = await database;
@@ -1475,6 +1478,31 @@ class DatabaseHelper {
 
       args.add(ReminderStatus.pending);
       args.add(DateTime.now().toIso8601String());
+    }
+
+    // فیلتر دقیق روز یادآور؛ برای باز شدن نامه‌ها از طریق Notification.
+    if (reminderDate != null) {
+      final dayStart = DateTime(
+        reminderDate.year,
+        reminderDate.month,
+        reminderDate.day,
+      );
+      final dayEnd = dayStart.add(const Duration(days: 1));
+
+      conditions.add('''
+    EXISTS (
+      SELECT 1
+      FROM reminders r
+      WHERE r.record_id = daftare_andicator.Shomare_Radif
+        AND r.status = ?
+        AND r.due_date >= ?
+        AND r.due_date < ?
+    )
+  ''');
+
+      args.add(ReminderStatus.pending);
+      args.add(dayStart.toIso8601String());
+      args.add(dayEnd.toIso8601String());
     }
 
     // ------------------------------------------------------------

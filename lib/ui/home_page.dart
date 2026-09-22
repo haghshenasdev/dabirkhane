@@ -34,6 +34,7 @@ class _HomePageState extends State<HomePage> {
   final ScrollController _scrollController = ScrollController();
 
   int reminderFilter = 0;
+  DateTime? _initialReminderDateFilter;
 
   Set<int> dueReminderRecordIds = {};
 
@@ -292,6 +293,7 @@ class _HomePageState extends State<HomePage> {
         shomareBadi: shomareBadi,
         categories: selectedCategories,
         reminderFilter: reminderFilter,
+        reminderDate: _initialReminderDateFilter,
         dynamicFilters: _dynamicFilters,
       );
 
@@ -651,14 +653,35 @@ class _HomePageState extends State<HomePage> {
     }
   }
 
+  DateTime? _parseJalaliDate(String value) {
+    final parts = value.split('/');
+    if (parts.length != 3) return null;
+
+    final year = int.tryParse(parts[0]);
+    final month = int.tryParse(parts[1]);
+    final day = int.tryParse(parts[2]);
+
+    if (year == null || month == null || day == null) return null;
+
+    try {
+      final gregorian = Jalali(year, month, day).toGregorian();
+      return DateTime(gregorian.year, gregorian.month, gregorian.day);
+    } catch (_) {
+      return null;
+    }
+  }
+
   @override
   void initState() {
     super.initState();
 
     if (widget.initialReminderDate != null &&
         widget.initialReminderDate!.trim().isNotEmpty) {
-      fromDateController.text = widget.initialReminderDate!;
-      toDateController.text = widget.initialReminderDate!;
+      _initialReminderDateFilter = _parseJalaliDate(
+        widget.initialReminderDate!.trim(),
+      );
+      // اینجا عمداً فیلتر تاریخ خود نامه را تنظیم نمی‌کنیم؛
+      // تاریخ اعلان مربوط به due_date یادآور است، نه ستون date نامه.
       reminderFilter = 1;
     }
 
@@ -1203,7 +1226,10 @@ class _HomePageState extends State<HomePage> {
                       onChanged: (value) {
                         if (value == null) return;
                         _clearSelectionForFilterChange();
-                        setState(() => reminderFilter = value);
+                        setState(() {
+                          reminderFilter = value;
+                          _initialReminderDateFilter = null;
+                        });
                         loadMore(reset: true);
                       },
                     );
@@ -1405,6 +1431,7 @@ class _HomePageState extends State<HomePage> {
                       shomareBadiFilterController.clear();
 
                       reminderFilter = 0;
+                      _initialReminderDateFilter = null;
 
                       query = "";
 
@@ -1864,6 +1891,8 @@ class _HomePageState extends State<HomePage> {
         shomareBadi: shomareBadiFilterController.text.trim(),
         dynamicFilters: _dynamicFilters,
         categories: List<String>.from(selectedCategoryFilters),
+        reminderFilter: reminderFilter,
+        reminderDate: _initialReminderDateFilter,
       );
 
       if (!mounted) return;
@@ -2001,6 +2030,7 @@ class _HomePageState extends State<HomePage> {
 
                         setState(() {
                           reminderFilter = 1;
+                          _initialReminderDateFilter = null;
                         });
 
                         loadMore(reset: true);
@@ -2044,6 +2074,7 @@ class _HomePageState extends State<HomePage> {
 
                   setState(() {
                     reminderFilter = 0;
+                    _initialReminderDateFilter = null;
                   });
 
                   loadMore(reset: true);

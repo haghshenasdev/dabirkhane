@@ -335,6 +335,7 @@ class SettingsPage extends StatelessWidget {
 
               const AutoSaveRecordFormTile(),
               const CompactFilesOnFormTile(),
+              const RecordFormTextFieldFontSizeTile(),
 
               ListTile(
                 leading: const Icon(Icons.dashboard_customize_outlined),
@@ -706,6 +707,53 @@ class _CompactFilesOnFormTileState extends State<CompactFilesOnFormTile> {
       ),
       value: enabled,
       onChanged: _setValue,
+    );
+  }
+}
+
+class RecordFormTextFieldFontSizeTile extends StatefulWidget {
+  const RecordFormTextFieldFontSizeTile({super.key});
+
+  @override
+  State<RecordFormTextFieldFontSizeTile> createState() =>
+      _RecordFormTextFieldFontSizeTileState();
+}
+
+class _RecordFormTextFieldFontSizeTileState
+    extends State<RecordFormTextFieldFontSizeTile> {
+  double size = 14.0;
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  Future<void> _load() async {
+    final value = await AppSettings.getRecordFormTextFieldFontSize();
+    if (!mounted) return;
+    setState(() => size = value);
+  }
+
+  Future<void> _setValue(double value) async {
+    setState(() => size = value);
+    await AppSettings.setRecordFormTextFieldFontSize(value);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return ListTile(
+      leading: const Icon(Icons.format_size_rounded),
+      title: Text('اندازه متن کادرهای فرم: ${size.toStringAsFixed(0)}'),
+      subtitle: Slider(
+        value: size,
+        min: 10,
+        max: 24,
+        divisions: 14,
+        label: size.toStringAsFixed(0),
+        onChanged: _setValue,
+      ),
+      contentPadding: const EdgeInsets.symmetric(horizontal: 16),
     );
   }
 }
