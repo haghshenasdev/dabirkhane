@@ -4,3 +4,6 @@ printing: ^5.15.1
 
 # سپس:
 # flutter pub get
+
+qr_flutter: ^4.1.0
+mobile_scanner: ^7.0.0

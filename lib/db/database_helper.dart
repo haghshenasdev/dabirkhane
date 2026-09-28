@@ -1724,22 +1724,47 @@ class DatabaseHelper {
               data['Shomare_Radif'] = next;
             }
           } else {
-            for (var attempt = 0; attempt < 20; attempt++) {
-              final masterNumber =
-                  await SyncNetworkClient.requestNextLetterNumber();
-              if (masterNumber == null) break;
-              final exists = await txn.query(
-                'daftare_andicator',
-                columns: ['Shomare_Radif'],
-                where: 'Shomare_Radif = ?',
-                whereArgs: [masterNumber],
-                limit: 1,
-              );
-              if (exists.isEmpty) {
-                data['Shomare_Radif'] = masterNumber;
-                break;
+            int? masterNumber;
+            Object? lastNumberError;
+
+            for (var attempt = 0; attempt < 3 && masterNumber == null; attempt++) {
+              try {
+                masterNumber =
+                    await SyncNetworkClient.requestNextLetterNumber();
+              } catch (e) {
+                lastNumberError = e;
+              }
+
+              if (masterNumber == null) {
+                await Future<void>.delayed(
+                  Duration(milliseconds: 250 * (attempt + 1)),
+                );
               }
             }
+
+            if (masterNumber == null) {
+              throw StateError(
+                'دستگاه مادر برای شماره‌دهی در دسترس نیست. '
+                'نامه ذخیره نشد تا شماره محلی و شماره مادر با هم قاطی نشوند.'
+                '${lastNumberError == null ? '' : ' $lastNumberError'}',
+              );
+            }
+
+            final exists = await txn.query(
+              'daftare_andicator',
+              columns: ['Shomare_Radif'],
+              where: 'Shomare_Radif = ?',
+              whereArgs: [masterNumber],
+              limit: 1,
+            );
+
+            if (exists.isNotEmpty) {
+              throw StateError(
+                'شماره $masterNumber قبلاً در این دستگاه وجود دارد.',
+              );
+            }
+
+            data['Shomare_Radif'] = masterNumber;
           }
         }
       }

@@ -36,6 +36,9 @@ class AppSettings {
   static const _syncPullCursorKey = 'sync_peer_pull_cursor';
   static const _syncPushCursorKey = 'sync_peer_push_cursor';
   static const _syncLastSuccessKey = 'sync_last_success';
+  static const _syncReceiveOldFilesKey = 'sync_receive_old_files';
+  static const _syncFilesSinceKey = 'sync_files_since';
+
 
   static Future<bool> getSyncEnabled() async {
     final prefs = await SharedPreferences.getInstance();
@@ -49,7 +52,7 @@ class AppSettings {
 
   static Future<String> getSyncRole() async {
     final prefs = await SharedPreferences.getInstance();
-    return prefs.getString(_syncRoleKey) ?? 'client';
+    return prefs.getString(_syncRoleKey) ?? (Platform.isWindows ? 'master' : 'client');
   }
 
   static Future<void> setSyncRole(String value) async {
@@ -146,6 +149,28 @@ class AppSettings {
   static Future<void> setSyncPeerPushCursor(int value) async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setInt(_syncPushCursorKey, value);
+  }
+
+
+  static Future<bool> getSyncReceiveOldFiles() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getBool(_syncReceiveOldFilesKey) ?? false;
+  }
+
+  static Future<void> setSyncReceiveOldFiles(bool value) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(_syncReceiveOldFilesKey, value);
+  }
+
+  static Future<DateTime?> getSyncFilesSince() async {
+    final prefs = await SharedPreferences.getInstance();
+    final value = prefs.getString(_syncFilesSinceKey);
+    return value == null ? null : DateTime.tryParse(value);
+  }
+
+  static Future<void> setSyncFilesSince(DateTime value) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_syncFilesSinceKey, value.toUtc().toIso8601String());
   }
 
   static Future<DateTime?> getSyncLastSuccess() async {

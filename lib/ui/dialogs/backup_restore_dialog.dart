@@ -1,6 +1,8 @@
 import 'dart:io';
 import 'dart:ui';
 import 'package:flutter/services.dart';
+import 'package:qr_flutter/qr_flutter.dart';
+import 'package:mobile_scanner/mobile_scanner.dart';
 import 'package:dabirkhane/services/sync/sync_service.dart';
 import 'package:dabirkhane/services/sync/sync_discovery_service.dart';
 import 'package:dabirkhane/services/sync_models.dart';
@@ -72,6 +74,8 @@ class _BackupRestoreDialogState extends State<BackupRestoreDialog>
   int _syncPeerPort = 39421;
   int _syncPort = 39421;
   DateTime? _syncLastSuccess;
+  bool _syncReceiveOldFiles = false;
+  DateTime? _syncFilesSince;
   final TextEditingController _syncHostController = TextEditingController();
   final TextEditingController _syncPortController = TextEditingController();
   final TextEditingController _syncLocalPortController =
@@ -1146,6 +1150,8 @@ class _BackupRestoreDialogState extends State<BackupRestoreDialog>
     final peerPort = await AppSettings.getSyncPeerPort();
     final port = await AppSettings.getSyncPort();
     final last = await AppSettings.getSyncLastSuccess();
+    final receiveOldFiles = await AppSettings.getSyncReceiveOldFiles();
+    final filesSince = await AppSettings.getSyncFilesSince();
     if (!mounted) return;
     _syncHostController.text = host ?? '';
     _syncPortController.text = peerPort.toString();
@@ -1162,6 +1168,8 @@ class _BackupRestoreDialogState extends State<BackupRestoreDialog>
       _syncPeerPort = peerPort;
       _syncPort = port;
       _syncLastSuccess = last;
+      _syncReceiveOldFiles = receiveOldFiles;
+      _syncFilesSince = filesSince;
       _localHost = localHost;
     });
   }
@@ -1173,14 +1181,35 @@ class _BackupRestoreDialogState extends State<BackupRestoreDialog>
       final interfaces = await NetworkInterface.list(
         type: InternetAddressType.IPv4,
         includeLoopback: false,
+        includeLinkLocal: false,
       );
+
+      final addresses = <String>[];
       for (final i in interfaces) {
         for (final a in i.addresses) {
-          if (!a.isLoopback && a.address.isNotEmpty) return a.address;
+          if (!a.isLoopback && a.address.isNotEmpty) {
+            addresses.add(a.address);
+          }
         }
       }
-    } catch (_) {}
-    return '127.0.0.1';
+
+      bool isPrivateIpv4(String value) {
+        final p = value.split('.').map(int.tryParse).toList();
+        if (p.length != 4 || p.any((e) => e == null)) return false;
+        final a = p[0]!;
+        final b = p[1]!;
+        return a == 10 ||
+            (a == 192 && b == 168) ||
+            (a == 172 && b >= 16 && b <= 31);
+      }
+
+      return addresses.firstWhere(
+        isPrivateIpv4,
+        orElse: () => addresses.isNotEmpty ? addresses.first : '127.0.0.1',
+      );
+    } catch (_) {
+      return '127.0.0.1';
+    }
   }
 
   Future<void> _saveSyncSettings() async {
@@ -1196,6 +1225,19 @@ class _BackupRestoreDialogState extends State<BackupRestoreDialog>
     await AppSettings.setSyncPort(port.clamp(1024, 65535).toInt());
     await AppSettings.setSyncPeerPort(peerPort.clamp(1024, 65535).toInt());
     await AppSettings.setSyncPeerHost(_syncHostController.text.trim());
+
+    final oldReceiveSetting = await AppSettings.getSyncReceiveOldFiles();
+    await AppSettings.setSyncReceiveOldFiles(_syncReceiveOldFiles);
+
+    // وقتی دریافت فایل‌های قدیمی خاموش است، زمان فعال‌سازی/تغییر این گزینه
+    // مرز شروع دریافت فایل‌هاست.
+    if (!_syncReceiveOldFiles && oldReceiveSetting != _syncReceiveOldFiles) {
+      await AppSettings.setSyncFilesSince(DateTime.now());
+    } else if (!_syncReceiveOldFiles &&
+        await AppSettings.getSyncFilesSince() == null) {
+      await AppSettings.setSyncFilesSince(DateTime.now());
+    }
+
     if (_syncEnabled) {
       await SyncService.instance.start();
     } else {
@@ -1253,10 +1295,268 @@ class _BackupRestoreDialogState extends State<BackupRestoreDialog>
     await AppSettings.setSyncPeerHost(host);
     await AppSettings.setSyncPeerPort(port);
     await AppSettings.setSyncKey(key);
+    await AppSettings.setSyncRole('client');
     await AppSettings.setSyncEnabled(true);
     await _loadSyncSettings();
     await SyncService.instance.start();
     await SyncService.instance.syncNow();
+  }
+
+  Future<void> _showPairingQr() async {
+    final code = _pairingText();
+
+    if (!mounted) return;
+
+    await showDialog<void>(
+      context: context,
+      builder: (dialogContext) {
+        return Directionality(
+          textDirection: TextDirection.rtl,
+          child: AlertDialog(
+            title: const Row(
+              children: [
+                Icon(Icons.qr_code_2_rounded),
+                SizedBox(width: 10),
+                Text('کد QR دستگاه مادر'),
+              ],
+            ),
+            content: SizedBox(
+              width: 320,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Container(
+                    width: 280,
+                    height: 280,
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(16),
+                      border: Border.all(
+                        color: Theme.of(
+                          dialogContext,
+                        ).colorScheme.outlineVariant,
+                      ),
+                    ),
+                    child: QrImageView(
+                      data: code,
+                      version: QrVersions.auto,
+                      size: 250,
+                      backgroundColor: Colors.white,
+                      gapless: true,
+                    ),
+                  ),
+
+                  const SizedBox(height: 16),
+
+                  Text(
+                    'این کد را در دستگاه Client اسکن کنید',
+                    textAlign: TextAlign.center,
+                    style: Theme.of(dialogContext).textTheme.bodyMedium,
+                  ),
+
+                  const SizedBox(height: 10),
+
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.all(10),
+                    decoration: BoxDecoration(
+                      color: Theme.of(
+                        dialogContext,
+                      ).colorScheme.surfaceContainerHighest,
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: SelectableText(
+                      code,
+                      textAlign: TextAlign.center,
+                      style: const TextStyle(
+                        fontSize: 10,
+                        fontFamily: 'monospace',
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            actions: [
+              TextButton.icon(
+                onPressed: () async {
+                  await Clipboard.setData(ClipboardData(text: code));
+
+                  if (dialogContext.mounted) {
+                    Navigator.of(dialogContext).pop();
+                  }
+                },
+                icon: const Icon(Icons.copy_rounded),
+                label: const Text('کپی کد'),
+              ),
+              FilledButton.icon(
+                onPressed: () {
+                  Navigator.of(dialogContext).pop();
+                },
+                icon: const Icon(Icons.close_rounded),
+                label: const Text('بستن'),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  Future<void> _scanPairingQr() async {
+    if (!(Platform.isAndroid || Platform.isIOS)) {
+      await _showResult(
+        title: 'اسکن دوربین',
+        message:
+            'اسکن QR با دوربین در نسخه موبایل فعال است. در ویندوز می‌توانید کد متنی QR را Paste کنید.',
+        success: false,
+      );
+      return;
+    }
+
+    await showDialog(
+      context: context,
+      builder: (context) => Dialog(
+        child: SizedBox(
+          width: 360,
+          height: 460,
+          child: Stack(
+            children: [
+              ClipRRect(
+                borderRadius: BorderRadius.circular(20),
+                child: MobileScanner(
+                  onDetect: (capture) async {
+                    for (final barcode in capture.barcodes) {
+                      final value = barcode.rawValue;
+                      if (value == null ||
+                          !value.startsWith('DABIRKHANE-SYNC|')) {
+                        continue;
+                      }
+                      _syncPairingController.text = value;
+                      if (context.mounted) Navigator.pop(context);
+                      await _applyPairingCode();
+                      break;
+                    }
+                  },
+                ),
+              ),
+              Positioned(
+                top: 10,
+                right: 10,
+                child: IconButton.filledTonal(
+                  onPressed: () => Navigator.pop(context),
+                  icon: const Icon(Icons.close_rounded),
+                ),
+              ),
+              const Positioned(
+                left: 0,
+                right: 0,
+                bottom: 18,
+                child: Center(
+                  child: Text(
+                    'QR دستگاه مادر را داخل کادر قرار دهید',
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildSyncLogCard(ColorScheme colorScheme) {
+    return ValueListenableBuilder<List<SyncLogEntry>>(
+      valueListenable: SyncService.logNotifier,
+      builder: (context, logs, _) {
+        final visible = logs.reversed.take(40).toList();
+        return Container(
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            color: colorScheme.surfaceContainerHighest.withOpacity(.35),
+            borderRadius: BorderRadius.circular(18),
+            border: Border.all(
+              color: colorScheme.outlineVariant.withOpacity(.35),
+            ),
+          ),
+          child: Column(
+            children: [
+              Row(
+                children: [
+                  const Icon(Icons.terminal_rounded, size: 18),
+                  const SizedBox(width: 8),
+                  const Expanded(
+                    child: Text(
+                      'گزارش زنده هماهنگ‌سازی',
+                      style: TextStyle(fontWeight: FontWeight.w800),
+                    ),
+                  ),
+                  TextButton(
+                    onPressed: logs.isEmpty
+                        ? null
+                        : SyncService.instance.clearLogs,
+                    child: const Text('پاک کردن'),
+                  ),
+                ],
+              ),
+              const Divider(height: 12),
+              SizedBox(
+                height: 180,
+                child: visible.isEmpty
+                    ? const Center(child: Text('هنوز رویدادی ثبت نشده است.'))
+                    : ListView.separated(
+                        itemCount: visible.length,
+                        separatorBuilder: (_, __) => const Divider(height: 1),
+                        itemBuilder: (_, index) {
+                          final item = visible[index];
+                          final time =
+                              '${item.time.hour.toString().padLeft(2, '0')}:${item.time.minute.toString().padLeft(2, '0')}:${item.time.second.toString().padLeft(2, '0')}';
+                          return Padding(
+                            padding: const EdgeInsets.symmetric(vertical: 6),
+                            child: Row(
+                              children: [
+                                SizedBox(
+                                  width: 28,
+                                  child: Text(
+                                    item.direction,
+                                    textAlign: TextAlign.center,
+                                    style: const TextStyle(
+                                      fontWeight: FontWeight.w900,
+                                    ),
+                                  ),
+                                ),
+                                SizedBox(
+                                  width: 62,
+                                  child: Text(
+                                    time,
+                                    style: TextStyle(
+                                      fontSize: 10,
+                                      color: colorScheme.onSurfaceVariant,
+                                    ),
+                                  ),
+                                ),
+                                Expanded(
+                                  child: Text(
+                                    item.message,
+                                    style: const TextStyle(fontSize: 11),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          );
+                        },
+                      ),
+              ),
+            ],
+          ),
+        );
+      },
+    );
   }
 
   Widget _buildSyncTab(ColorScheme colorScheme) {
@@ -1373,12 +1673,16 @@ class _BackupRestoreDialogState extends State<BackupRestoreDialog>
                       Align(
                         alignment: Alignment.centerRight,
                         child: FilledButton.tonalIcon(
-                          onPressed: _discoveringSyncPeers ? null : _discoverSyncPeers,
+                          onPressed: _discoveringSyncPeers
+                              ? null
+                              : _discoverSyncPeers,
                           icon: _discoveringSyncPeers
                               ? const SizedBox(
                                   width: 18,
                                   height: 18,
-                                  child: CircularProgressIndicator(strokeWidth: 2),
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                  ),
                                 )
                               : const Icon(Icons.wifi_find_rounded),
                           label: Text(
@@ -1404,7 +1708,9 @@ class _BackupRestoreDialogState extends State<BackupRestoreDialog>
                                   if (!mounted) return;
                                   ScaffoldMessenger.of(context).showSnackBar(
                                     const SnackBar(
-                                      content: Text('دستگاه مادر انتخاب شد؛ اکنون کد جفت‌سازی را اعمال کنید.'),
+                                      content: Text(
+                                        'دستگاه مادر انتخاب شد؛ اکنون کد جفت‌سازی را اعمال کنید.',
+                                      ),
                                     ),
                                   );
                                 },
@@ -1470,6 +1776,117 @@ class _BackupRestoreDialogState extends State<BackupRestoreDialog>
                         ),
                       ),
                     ],
+                    const SizedBox(height: 10),
+
+                    if (_syncRole == 'master') ...[
+                      Container(
+                        padding: const EdgeInsets.all(14),
+                        decoration: BoxDecoration(
+                          color: colorScheme.primary.withOpacity(.06),
+                          borderRadius: BorderRadius.circular(18),
+                          border: Border.all(
+                            color: colorScheme.primary.withOpacity(.15),
+                          ),
+                        ),
+                        child: Row(
+                          children: [
+                            Container(
+                              width: 44,
+                              height: 44,
+                              decoration: BoxDecoration(
+                                color: colorScheme.primary.withOpacity(.10),
+                                borderRadius: BorderRadius.circular(14),
+                              ),
+                              child: Icon(
+                                Icons.qr_code_2_rounded,
+                                color: colorScheme.primary,
+                              ),
+                            ),
+                            const SizedBox(width: 10),
+                            const Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    'جفت‌سازی سریع',
+                                    style: TextStyle(
+                                      fontWeight: FontWeight.w800,
+                                    ),
+                                  ),
+                                  SizedBox(height: 3),
+                                  Text(
+                                    'QR زیر را روی دستگاه دوم اسکن کنید.',
+                                    style: TextStyle(fontSize: 11),
+                                  ),
+                                ],
+                              ),
+                            ),
+                            FilledButton.tonalIcon(
+                              onPressed: _showPairingQr,
+                              icon: const Icon(Icons.qr_code_2_rounded),
+                              label: const Text('نمایش QR'),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ] else ...[
+                      Container(
+                        padding: const EdgeInsets.all(14),
+                        decoration: BoxDecoration(
+                          color: colorScheme.secondary.withOpacity(.06),
+                          borderRadius: BorderRadius.circular(18),
+                          border: Border.all(
+                            color: colorScheme.secondary.withOpacity(.15),
+                          ),
+                        ),
+                        child: Row(
+                          children: [
+                            const Icon(Icons.qr_code_scanner_rounded),
+                            const SizedBox(width: 10),
+                            const Expanded(
+                              child: Text(
+                                'برای اتصال سریع، QR دستگاه مادر را با دوربین اسکن کنید.',
+                                style: TextStyle(fontSize: 11.5),
+                              ),
+                            ),
+                            FilledButton.tonalIcon(
+                              onPressed: _scanPairingQr,
+                              icon: const Icon(Icons.camera_alt_rounded),
+                              label: const Text('اسکن QR'),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+
+                    const SizedBox(height: 10),
+
+                    SwitchListTile.adaptive(
+                      contentPadding: const EdgeInsets.symmetric(
+                        horizontal: 12,
+                      ),
+                      title: const Text(
+                        'دریافت فایل‌های قدیمی',
+                        style: TextStyle(
+                          fontWeight: FontWeight.w800,
+                          fontSize: 13,
+                        ),
+                      ),
+                      subtitle: Text(
+                        _syncReceiveOldFiles
+                            ? 'فایل‌های قبلی و فایل‌های جدید نیز دریافت و هماهنگ می‌شوند.'
+                            : 'فقط فایل‌هایی که از ${_syncFilesSince?.toLocal().toString().split('.').first ?? 'زمان فعال‌سازی'} به بعد تغییر کرده‌اند دریافت می‌شوند.',
+                        style: const TextStyle(fontSize: 10.5),
+                      ),
+                      value: _syncReceiveOldFiles,
+                      onChanged: (value) {
+                        setState(() => _syncReceiveOldFiles = value);
+                      },
+                    ),
+
+                    const SizedBox(height: 10),
+                    _buildSyncLogCard(colorScheme),
+
                     if (_syncLastSuccess != null)
                       Padding(
                         padding: const EdgeInsets.only(top: 8),

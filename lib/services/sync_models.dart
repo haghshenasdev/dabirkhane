@@ -52,3 +52,16 @@ class SyncChange {
         'created_at': createdAt,
       };
 }
+
+
+class SyncLogEntry {
+  final DateTime time;
+  final String direction;
+  final String message;
+
+  const SyncLogEntry({
+    required this.time,
+    required this.direction,
+    required this.message,
+  });
+}

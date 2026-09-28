@@ -19,6 +19,30 @@ class SyncService {
       ValueNotifier<SyncStatus>(SyncStatus.disconnected);
   static ValueNotifier<SyncStatus> get statusNotifier => _statusNotifier;
 
+  static final ValueNotifier<List<SyncLogEntry>> _logNotifier =
+      ValueNotifier<List<SyncLogEntry>>(const []);
+  static ValueNotifier<List<SyncLogEntry>> get logNotifier => _logNotifier;
+
+  static const int _maxLogEntries = 250;
+
+  void _log(String direction, String message) {
+    final next = [
+      ..._logNotifier.value,
+      SyncLogEntry(
+        time: DateTime.now(),
+        direction: direction,
+        message: message,
+      ),
+    ];
+    if (next.length > _maxLogEntries) {
+      next.removeRange(0, next.length - _maxLogEntries);
+    }
+    _logNotifier.value = List.unmodifiable(next);
+    debugPrint('SYNC [$direction] $message');
+  }
+
+  void clearLogs() => _logNotifier.value = const [];
+
   HttpServer? _server;
   Timer? _timer;
   bool _running = false;
@@ -45,9 +69,7 @@ class SyncService {
       // دیتابیس‌های بزرگ باعث تأخیر در باز شدن فرم اصلی نشوند.
       unawaited(() async {
         try {
-          await DatabaseHelper.ensureSyncIdentity(
-            rebuildLegacyChanges: true,
-          );
+          await DatabaseHelper.ensureSyncIdentity(rebuildLegacyChanges: true);
         } catch (e, st) {
           debugPrint('Background sync identity repair error: $e');
           debugPrintStack(stackTrace: st);
@@ -68,6 +90,7 @@ class SyncService {
           port,
           shared: true,
         );
+        _log('✓', 'سرور هماهنگ‌سازی روی پورت $port فعال شد');
         _server!.listen(
           _handleRequest,
           onError: (_) {
@@ -75,6 +98,7 @@ class SyncService {
           },
         );
       } catch (e) {
+        _log('!', 'سرور روی پورت $port اجرا نشد: $e');
         _lastError = 'امکان باز کردن پورت هماهنگ‌سازی وجود ندارد: $e';
         _setStatus(SyncStatus.error, _lastError);
         return;
@@ -140,8 +164,12 @@ class SyncService {
 
     _syncing = true;
     _setStatus(SyncStatus.connecting);
+
+    final port = await AppSettings.getSyncPeerPort();
+
+    _log('→', 'شروع هماهنگ‌سازی با $host:$port');
+
     try {
-      final port = await AppSettings.getSyncPeerPort();
       await _requestJson('GET', '/sync/info', host: host, port: port, key: key);
       _setStatus(SyncStatus.syncing);
 
@@ -152,8 +180,10 @@ class SyncService {
       await AppSettings.setSyncLastSuccess(DateTime.now());
       _setStatus(SyncStatus.connected);
       _lastError = null;
+      _log('✓', 'هماهنگ‌سازی با موفقیت انجام شد');
     } catch (e) {
       _lastError = e.toString();
+      _log('!', 'خطا: $e');
       _setStatus(SyncStatus.error, _lastError);
     } finally {
       _syncing = false;
@@ -175,6 +205,10 @@ class SyncService {
         .map((e) => SyncChange.fromMap(Map<String, dynamic>.from(e)))
         .toList();
 
+    if (changes.isNotEmpty) {
+      _log('↓', '${changes.length} تغییر از دستگاه مقابل دریافت شد');
+    }
+
     for (final change in changes) {
       if (change.deviceId == await AppSettings.getDeviceId()) continue;
       await DatabaseHelper.applySyncChange(change);
@@ -194,6 +228,7 @@ class SyncService {
     );
     if (changes.isEmpty) return;
 
+    _log('↑', 'ارسال ${changes.length} تغییر به دستگاه مقابل');
     final response = await _requestJson(
       'POST',
       '/sync/push',
@@ -211,13 +246,20 @@ class SyncService {
 
   Future<void> _syncFiles(String host, int port, String key) async {
     final localManifest = await _buildFileManifest();
+    final receiveOldFiles = await AppSettings.getSyncReceiveOldFiles();
+    final filesSince = await AppSettings.getSyncFilesSince();
+
     final remote = await _requestJson(
       'POST',
       '/sync/files/manifest',
       host: host,
       port: port,
       key: key,
-      body: {'files': localManifest},
+      body: {
+        'files': localManifest,
+        'receive_old_files': receiveOldFiles,
+        'files_since': filesSince?.toUtc().toIso8601String(),
+      },
     );
 
     final missing = (remote['need_upload'] as List? ?? const [])
@@ -244,6 +286,7 @@ class SyncService {
       req.add(bytes);
       final res = await req.close();
       await res.drain();
+      _log('↑', 'فایل ارسال شد: $rel (HTTP ${res.statusCode})');
     }
 
     final remoteOnly = (remote['need_download'] as List? ?? const [])
@@ -266,9 +309,15 @@ class SyncService {
       final rel = path
           .relative(entity.path, from: root.path)
           .replaceAll('\\', '/');
+      final stat = await entity.stat();
       final bytes = await entity.readAsBytes();
       final hash = sha256.convert(bytes).toString();
-      result.add({'path': rel, 'sha256': hash, 'size': bytes.length});
+      result.add({
+        'path': rel,
+        'sha256': hash,
+        'size': bytes.length,
+        'modified_at': stat.modified.toUtc().toIso8601String(),
+      });
     }
     return result;
   }
@@ -290,7 +339,10 @@ class SyncService {
         _sign(key, timestamp, 'GET', route, ''),
       );
       final res = await req.close();
-      if (res.statusCode != 200) return;
+      if (res.statusCode != 200) {
+        _log('!', 'دریافت فایل ناموفق بود: $rel (HTTP ${res.statusCode})');
+        return;
+      }
       final bytes = await res.fold<List<int>>(<int>[], (a, b) => a..addAll(b));
       final root = await AppSettings.getLettersDirectory();
       final target = File(path.join(root.path, rel));
@@ -302,6 +354,7 @@ class SyncService {
         if (existingHash == sha256.convert(bytes).toString()) return;
       }
       await target.writeAsBytes(bytes, flush: true);
+      _log('↓', 'فایل دریافت شد: $rel');
     } finally {
       client.close(force: true);
     }
@@ -386,6 +439,10 @@ class SyncService {
       }
       _lastPeerActivity = DateTime.now();
       _setStatus(SyncStatus.connected);
+      _log(
+        '←',
+        '${request.method} ${request.uri.path} از ${request.connectionInfo?.remoteAddress.address ?? 'peer'}',
+      );
 
       final uri = request.uri;
       if (uri.path == '/sync/info' && request.method == 'GET') {
@@ -409,6 +466,7 @@ class SyncService {
           return;
         }
         final next = await DatabaseHelper.reserveMasterLetterNumber();
+        _log('←', 'شماره نامه $next برای دستگاه متصل رزرو شد');
         await _writeJson(request, {'ok': true, 'number': next});
         return;
       }
@@ -433,9 +491,12 @@ class SyncService {
         final changes = (body['changes'] as List? ?? const [])
             .whereType<Map>()
             .map((e) => SyncChange.fromMap(Map<String, dynamic>.from(e)));
+        var count = 0;
         for (final change in changes) {
           await DatabaseHelper.applySyncChange(change);
+          count++;
         }
+        _log('←', '$count تغییر از دستگاه مقابل اعمال شد');
         await _writeJson(request, {'ok': true});
         return;
       }
@@ -446,23 +507,61 @@ class SyncService {
             .whereType<Map>()
             .map((e) => Map<String, dynamic>.from(e))
             .toList();
+
+        final peerReceivesOld = body['receive_old_files'] == true;
+        final peerSince = DateTime.tryParse(
+          body['files_since']?.toString() ?? '',
+        );
+
         final local = await _buildFileManifest();
         final localMap = {for (final e in local) e['path'].toString(): e};
         final incomingMap = {for (final e in incoming) e['path'].toString(): e};
+
+        bool eligibleForPeer(Map<String, dynamic> item) {
+          if (peerReceivesOld) return true;
+          final modified = DateTime.tryParse(
+            item['modified_at']?.toString() ?? '',
+          );
+          return peerSince != null &&
+              modified != null &&
+              !modified.isBefore(peerSince.toUtc());
+        }
+
         final missing = <Map<String, dynamic>>[];
         for (final e in local) {
+          if (!eligibleForPeer(e)) continue;
           final remote = incomingMap[e['path'].toString()];
           if (remote == null || remote['sha256'] != e['sha256']) {
             missing.add(e);
           }
         }
+
+        final receiveOldLocally = await AppSettings.getSyncReceiveOldFiles();
+        final localSince = await AppSettings.getSyncFilesSince();
+
+        bool eligibleForLocal(Map<String, dynamic> item) {
+          if (receiveOldLocally) return true;
+          final modified = DateTime.tryParse(
+            item['modified_at']?.toString() ?? '',
+          );
+          return localSince != null &&
+              modified != null &&
+              !modified.isBefore(localSince.toUtc());
+        }
+
         final remoteOnly = <Map<String, dynamic>>[];
         for (final e in incoming) {
+          if (!eligibleForLocal(e)) continue;
           final localItem = localMap[e['path'].toString()];
           if (localItem == null || localItem['sha256'] != e['sha256']) {
             remoteOnly.add(e);
           }
         }
+
+        _log(
+          '↔',
+          'بررسی فایل‌ها: ارسال ${remoteOnly.length}، دریافت ${missing.length}',
+        );
         await _writeJson(request, {
           'ok': true,
           'need_upload': remoteOnly,
@@ -485,6 +584,7 @@ class SyncService {
         final target = File(path.join(root.path, rel));
         await target.parent.create(recursive: true);
         await target.writeAsBytes(bytes, flush: true);
+        _log('←', 'فایل دریافت شد: $rel');
         await request.response.close();
         return;
       }

@@ -1202,11 +1202,18 @@ class _RecordFormState extends State<RecordForm>
 
     _ignoreWindowClose = true;
 
-    final id = widget.record == null
-        ? int.parse(c['Shomare_Radif']!.text)
-        : widget.record!['Shomare_Radif'] is int
-        ? widget.record!['Shomare_Radif']
-        : int.parse(widget.record!['Shomare_Radif'].toString());
+    final id = _savedRecordId ??
+        (widget.record?['Shomare_Radif'] is int
+            ? widget.record!['Shomare_Radif'] as int
+            : int.tryParse(
+                  widget.record?['Shomare_Radif']?.toString() ?? '',
+                ) ??
+                int.tryParse(c['Shomare_Radif']?.text.trim() ?? ''));
+
+    if (id == null) {
+      _showMessage('شماره نامه بعد از ذخیره مشخص نشد.');
+      return;
+    }
 
     Navigator.pop(context, {
       'id': id,
