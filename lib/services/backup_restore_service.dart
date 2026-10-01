@@ -239,7 +239,9 @@ class BackupRestoreService {
             return BackupInfo(
               type: BackupContentType.files,
               title: 'پشتیبان فایل‌ها',
-              description: months.isNotEmpty ? 'فایل‌های نامه‌ها — $description' : _monthDescription('فایل‌های نامه‌ها', year, month),
+              description: months.isNotEmpty
+                  ? 'فایل‌های نامه‌ها — $description'
+                  : _monthDescription('فایل‌های نامه‌ها', year, month),
               file: file,
               year: year,
               month: month,
@@ -250,7 +252,9 @@ class BackupRestoreService {
             return BackupInfo(
               type: BackupContentType.full,
               title: 'پشتیبان کامل',
-              description: months.isNotEmpty ? 'دیتابیس و فایل‌ها — $description' : _monthDescription('دیتابیس و فایل‌ها', year, month),
+              description: months.isNotEmpty
+                  ? 'دیتابیس و فایل‌ها — $description'
+                  : _monthDescription('دیتابیس و فایل‌ها', year, month),
               file: file,
               year: year,
               month: month,
@@ -433,19 +437,28 @@ class BackupRestoreService {
 
     for (final selected in months) {
       final monthDir = Directory(
-        path.join(lettersDir.path, selected.year.toString(), selected.month.toString()),
+        path.join(
+          lettersDir.path,
+          selected.year.toString(),
+          selected.month.toString(),
+        ),
       );
 
       if (!await monthDir.exists()) continue;
 
-      await for (final entity in monthDir.list(recursive: true, followLinks: false)) {
+      await for (final entity in monthDir.list(
+        recursive: true,
+        followLinks: false,
+      )) {
         if (entity is File) {
-          entries.add(_BackupFile(
-            file: entity,
-            year: selected.year,
-            month: selected.month,
-            baseDir: monthDir.path,
-          ));
+          entries.add(
+            _BackupFile(
+              file: entity,
+              year: selected.year,
+              month: selected.month,
+              baseDir: monthDir.path,
+            ),
+          );
         }
       }
     }
@@ -495,7 +508,10 @@ class BackupRestoreService {
     final dbFile = File(db.path);
 
     if (!await dbFile.exists()) {
-      return const BackupResult(success: false, message: 'فایل دیتابیس پیدا نشد.');
+      return const BackupResult(
+        success: false,
+        message: 'فایل دیتابیس پیدا نشد.',
+      );
     }
 
     onProgress?.call(0.15, 'در حال پیدا کردن فایل‌های ماه‌های انتخاب‌شده...');
@@ -505,18 +521,27 @@ class BackupRestoreService {
 
     for (final selected in months) {
       final monthDir = Directory(
-        path.join(lettersDir.path, selected.year.toString(), selected.month.toString()),
+        path.join(
+          lettersDir.path,
+          selected.year.toString(),
+          selected.month.toString(),
+        ),
       );
       if (!await monthDir.exists()) continue;
 
-      await for (final entity in monthDir.list(recursive: true, followLinks: false)) {
+      await for (final entity in monthDir.list(
+        recursive: true,
+        followLinks: false,
+      )) {
         if (entity is File) {
-          entries.add(_BackupFile(
-            file: entity,
-            year: selected.year,
-            month: selected.month,
-            baseDir: monthDir.path,
-          ));
+          entries.add(
+            _BackupFile(
+              file: entity,
+              year: selected.year,
+              month: selected.month,
+              baseDir: monthDir.path,
+            ),
+          );
         }
       }
     }
@@ -546,7 +571,9 @@ class BackupRestoreService {
     void Function(double progress, String message)? onProgress,
   }) async {
     final tempDir = await getTemporaryDirectory();
-    final prefix = type == BackupType.full ? 'dabirkhane-full' : 'dabirkhane-files';
+    final prefix = type == BackupType.full
+        ? 'dabirkhane-full'
+        : 'dabirkhane-files';
     final stamp = DateTime.now().millisecondsSinceEpoch;
     final zipPath = path.join(tempDir.path, '${prefix}_$stamp.zip');
     final zipFile = File(zipPath);
@@ -564,27 +591,41 @@ class BackupRestoreService {
       if (months.length == 1) 'jalali_month': months.first.month,
       'files_count': entries.length,
     };
-    final manifestBytes = utf8.encode(const JsonEncoder.withIndent('  ').convert(manifest));
-    archive.addFile(ArchiveFile(_manifestFileName, manifestBytes.length, manifestBytes));
+    final manifestBytes = utf8.encode(
+      const JsonEncoder.withIndent('  ').convert(manifest),
+    );
+    archive.addFile(
+      ArchiveFile(_manifestFileName, manifestBytes.length, manifestBytes),
+    );
 
     if (includeDatabase && databaseFile != null) {
       onProgress?.call(0.25, 'در حال افزودن دیتابیس به ZIP...');
       final dbBytes = await databaseFile.readAsBytes();
-      archive.addFile(ArchiveFile('database/dabirkhane.sqlite', dbBytes.length, dbBytes));
+      archive.addFile(
+        ArchiveFile('database/dabirkhane.sqlite', dbBytes.length, dbBytes),
+      );
     }
 
     for (int i = 0; i < entries.length; i++) {
       final entry = entries[i];
       final relativePath = path.relative(entry.file.path, from: entry.baseDir);
-      final zipPathInside = path.join(
-        'files', entry.year.toString(), entry.month.toString(), relativePath,
-      ).replaceAll('\\', '/');
+      final zipPathInside = path
+          .join(
+            'files',
+            entry.year.toString(),
+            entry.month.toString(),
+            relativePath,
+          )
+          .replaceAll('\\', '/');
       final bytes = await entry.file.readAsBytes();
       archive.addFile(ArchiveFile(zipPathInside, bytes.length, bytes));
       final progress = includeDatabase
           ? 0.30 + ((i + 1) / entries.length.clamp(1, 999999)) * 0.45
           : 0.20 + ((i + 1) / entries.length.clamp(1, 999999)) * 0.60;
-      onProgress?.call(progress.clamp(0.0, 0.90), 'در حال فشرده‌سازی فایل ${i + 1} از ${entries.length}...');
+      onProgress?.call(
+        progress.clamp(0.0, 0.90),
+        'در حال فشرده‌سازی فایل ${i + 1} از ${entries.length}...',
+      );
     }
 
     onProgress?.call(0.92, 'در حال ساخت فایل ZIP...');
@@ -704,16 +745,24 @@ class BackupRestoreService {
 
       await selectedFile.copy(targetPath);
 
-      onProgress?.call(0.85, 'در حال باز کردن دیتابیس جدید...');
+      onProgress?.call(0.82, 'در حال باز کردن دیتابیس جدید...');
 
+      // فقط باز کردن دیتابیس کافی نیست. اگر فایل Restore شده version=9
+      // داشته باشد، ممکن است onUpgrade اجرا نشود و ساختار قدیمی
+      // record_categories باقی بماند. این متد Migration مقاوم و سپس
+      // تعمیر Foreign Key را اجرا می‌کند.
       await DatabaseHelper.database;
 
-      onProgress?.call(1, 'بازیابی انجام شد.');
+      onProgress?.call(0.90, 'در حال بررسی و تعمیر ساختار دیتابیس...');
+
+      await DatabaseHelper.repairDatabaseIntegrity();
+
+      onProgress?.call(1, 'بازیابی و بررسی دیتابیس انجام شد.');
 
       return const RestoreResult(
         success: true,
         databaseRestored: true,
-        message: 'دیتابیس با موفقیت بازیابی شد.',
+        message: 'دیتابیس با موفقیت بازیابی و ساختار آن بررسی شد.',
       );
     } catch (e) {
       // اگر جایگزینی شکست خورد، تلاش می‌کنیم
@@ -1010,7 +1059,11 @@ class BackupRestoreService {
     final values = <BackupMonth>[];
     if (selected != null) {
       for (final month in selected) {
-        if (month.month >= 1 && month.month <= 12 && !values.any((m) => m.year == month.year && m.month == month.month)) {
+        if (month.month >= 1 &&
+            month.month <= 12 &&
+            !values.any(
+              (m) => m.year == month.year && m.month == month.month,
+            )) {
           values.add(month);
         }
       }
@@ -1022,13 +1075,16 @@ class BackupRestoreService {
 
   static List<BackupMonth> _readManifestMonths(dynamic raw) {
     if (raw is! List) return [];
-    return raw.map((item) {
-      if (item is! Map) return null;
-      final y = _toInt(item['year']);
-      final m = _toInt(item['month']);
-      if (y == null || m == null || m < 1 || m > 12) return null;
-      return BackupMonth(year: y, month: m);
-    }).whereType<BackupMonth>().toList();
+    return raw
+        .map((item) {
+          if (item is! Map) return null;
+          final y = _toInt(item['year']);
+          final m = _toInt(item['month']);
+          if (y == null || m == null || m < 1 || m > 12) return null;
+          return BackupMonth(year: y, month: m);
+        })
+        .whereType<BackupMonth>()
+        .toList();
   }
 
   static String _monthsDescription(List<BackupMonth> months) =>
@@ -1083,7 +1139,12 @@ class _BackupFile {
   final int month;
   final String baseDir;
 
-  const _BackupFile({required this.file, required this.year, required this.month, required this.baseDir});
+  const _BackupFile({
+    required this.file,
+    required this.year,
+    required this.month,
+    required this.baseDir,
+  });
 }
 
 class _JalaliMonth {

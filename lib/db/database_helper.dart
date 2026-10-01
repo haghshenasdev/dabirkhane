@@ -52,7 +52,9 @@ class DatabaseHelper {
     final columns = await _columns();
 
     if (!columns.contains(searchField)) {
-      throw ArgumentError('فیلد جستجوی سابقه «$searchField» در دیتابیس وجود ندارد.');
+      throw ArgumentError(
+        'فیلد جستجوی سابقه «$searchField» در دیتابیس وجود ندارد.',
+      );
     }
 
     final safeSearch = _quoteIdentifier(searchField);
@@ -270,9 +272,24 @@ class DatabaseHelper {
   // REPAIR record_categories FOREIGN KEY
   // ============================================================
 
+  /// بعد از Restore/Import دیتابیس‌های قدیمی اجرا می‌شود.
+  ///
+  /// Restore ممکن است فایل SQLiteای را جایگزین کند که version آن با
+  /// version فعلی یکی است؛ در این حالت onUpgrade اجرا نمی‌شود. بنابراین
+  /// این متد ابتدا Migration مقاوم را روی ساختار واقعی دیتابیس اجرا می‌کند
+  /// و سپس Foreign Key جدول record_categories را تعمیر می‌کند.
   static Future<void> repairDatabaseIntegrity() async {
     final db = await database;
+
+    print('DATABASE: post-restore integrity check START');
+
+    // مهم: به oldVersion وابسته نیست. این خط برای دیتابیس‌هایی که با
+    // version=9 وارد شده‌اند ولی ساختارشان قدیمی/ناقص است ضروری است.
+    await _migrateToLatest(db);
+
     await _repairRecordCategoriesForeignKey(db);
+
+    print('DATABASE: post-restore integrity check DONE');
   }
 
   static Future<void> _repairRecordCategoriesForeignKey(Database db) async {
@@ -285,8 +302,7 @@ class DatabaseHelper {
       );
 
       final parentColumn = parentInfo.where((row) {
-        return row['name']?.toString().trim().toLowerCase() ==
-            'shomare_radif';
+        return row['name']?.toString().trim().toLowerCase() == 'shomare_radif';
       }).toList();
 
       if (parentColumn.isEmpty) return;
@@ -315,10 +331,7 @@ class DatabaseHelper {
           );
 
           if (indexColumns.length == 1 &&
-              indexColumns.first['name']
-                      ?.toString()
-                      .trim()
-                      .toLowerCase() ==
+              indexColumns.first['name']?.toString().trim().toLowerCase() ==
                   'shomare_radif') {
             parentKeyValid = true;
             break;
@@ -434,9 +447,7 @@ class DatabaseHelper {
           FROM ${_sqlIdentifier(oldTable)} old
         ''');
 
-        await db.execute(
-          'DROP TABLE ${_sqlIdentifier(oldTable)}',
-        );
+        await db.execute('DROP TABLE ${_sqlIdentifier(oldTable)}');
       } finally {
         await db.execute('PRAGMA foreign_keys = ON');
       }
@@ -1566,8 +1577,9 @@ class DatabaseHelper {
         // MultiSelect با جداکننده | ذخیره شده و تمام گزینه‌های
         // انتخاب‌شده باید در مقدار ذخیره‌شده وجود داشته باشند.
         final isMulti = value.startsWith('__multi__:');
-        final normalizedValue =
-            isMulti ? value.substring('__multi__:'.length) : value;
+        final normalizedValue = isMulti
+            ? value.substring('__multi__:'.length)
+            : value;
 
         if (isMulti) {
           final selected = normalizedValue
@@ -1577,16 +1589,14 @@ class DatabaseHelper {
               .toList();
 
           for (final item in selected) {
-            conditions.add(
-              """
+            conditions.add("""
               (
                 CAST(COALESCE($safe, '') AS TEXT) = ?
                 OR CAST(COALESCE($safe, '') AS TEXT) LIKE ?
                 OR CAST(COALESCE($safe, '') AS TEXT) LIKE ?
                 OR CAST(COALESCE($safe, '') AS TEXT) LIKE ?
               )
-              """,
-            );
+              """);
             args.add(item);
             args.add('$item|%');
             args.add('%|$item');
@@ -1727,7 +1737,11 @@ class DatabaseHelper {
             int? masterNumber;
             Object? lastNumberError;
 
-            for (var attempt = 0; attempt < 3 && masterNumber == null; attempt++) {
+            for (
+              var attempt = 0;
+              attempt < 3 && masterNumber == null;
+              attempt++
+            ) {
               try {
                 masterNumber =
                     await SyncNetworkClient.requestNextLetterNumber();
@@ -2359,23 +2373,23 @@ class DatabaseHelper {
       final tables = await db.rawQuery(
         "SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name",
       );
-      result['tables'] =
-          tables.map((e) => e['name']?.toString()).whereType<String>().toList();
+      result['tables'] = tables
+          .map((e) => e['name']?.toString())
+          .whereType<String>()
+          .toList();
 
       final columns = await db.rawQuery('PRAGMA table_info(daftare_andicator)');
-      result['recordColumns'] =
-          columns.map((e) => e['name']?.toString()).whereType<String>().toList();
+      result['recordColumns'] = columns
+          .map((e) => e['name']?.toString())
+          .whereType<String>()
+          .toList();
 
       final count = await db.rawQuery(
         'SELECT COUNT(*) AS c FROM daftare_andicator',
       );
       result['recordCount'] = count.isNotEmpty ? count.first['c'] : 0;
 
-      final schema = await db.query(
-        'record_schema',
-        where: 'id = 1',
-        limit: 1,
-      );
+      final schema = await db.query('record_schema', where: 'id = 1', limit: 1);
       result['hasSchema'] = schema.isNotEmpty;
     } catch (e) {
       result['diagnosticError'] = e.toString();
