@@ -4160,12 +4160,13 @@ class _RecordFormState extends State<RecordForm>
 
       final now = DateTime.now();
 
-      final todayReminder = reminders.cast<Reminder?>().firstWhere(
+      // کارت هشدار باید فقط وقتی نمایش داده شود که موعد واقعاً رسیده
+      // باشد؛ محدود کردن آن به «همان روز تقویمی» باعث می‌شد یادآورهای
+      // عقب‌افتاده در فرم نامه دیده نشوند.
+      final dueReminder = reminders.cast<Reminder?>().firstWhere(
         (reminder) =>
             reminder != null &&
-            reminder.dueDate.year == now.year &&
-            reminder.dueDate.month == now.month &&
-            reminder.dueDate.day == now.day,
+            !reminder.dueDate.isAfter(now),
         orElse: () => null,
       );
 
@@ -4173,7 +4174,7 @@ class _RecordFormState extends State<RecordForm>
 
       setState(() {
         _hasActiveReminder = reminders.isNotEmpty;
-        _todayReminder = todayReminder;
+        _todayReminder = dueReminder;
       });
     } catch (e, stackTrace) {
       debugPrint('load reminder status error: $e');
@@ -4231,7 +4232,7 @@ class _RecordFormState extends State<RecordForm>
                   crossAxisAlignment: CrossAxisAlignment.end,
                   children: [
                     const Text(
-                      'موعد پیگیری این نامه امروز است',
+                      'موعد یادآوری این نامه رسیده است',
                       textDirection: TextDirection.rtl,
                       style: TextStyle(
                         fontSize: 13,

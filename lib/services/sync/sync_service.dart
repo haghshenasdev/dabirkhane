@@ -214,7 +214,13 @@ class SyncService {
       await DatabaseHelper.applySyncChange(change);
     }
 
-    final remoteCursor = (response['last_id'] as num?)?.toInt();
+    // فقط تا ID آخرین رکوردی که واقعاً در این batch دریافت شد جلو برو.
+    // استفاده از last_id کل جدول باعث می‌شد وقتی بیشتر از 100 تغییر وجود
+    // داشت، تغییرهای باقی‌مانده برای همیشه رد شوند.
+    final remoteCursor = changes.isNotEmpty
+        ? changes.last.id
+        : (response['last_id'] as num?)?.toInt();
+
     if (remoteCursor != null && remoteCursor >= cursor) {
       await AppSettings.setSyncPeerPullCursor(remoteCursor);
     }
@@ -241,11 +247,18 @@ class SyncService {
     if (response['ok'] == true) {
       final last = changes.last.id;
       await AppSettings.setSyncPeerPushCursor(last);
+      final applied = (response['applied'] as num?)?.toInt();
+      if (applied != null) {
+        _log('✓', '$applied تغییر در دستگاه مقابل اعمال شد');
+      }
+    } else {
+      throw StateError('دستگاه مقابل تغییرات را نپذیرفت.');
     }
   }
 
   Future<void> _syncFiles(String host, int port, String key) async {
     final localManifest = await _buildFileManifest();
+    final receiveFiles = await AppSettings.getSyncReceiveFiles();
     final receiveOldFiles = await AppSettings.getSyncReceiveOldFiles();
     final filesSince = await AppSettings.getSyncFilesSince();
 
@@ -257,6 +270,7 @@ class SyncService {
       key: key,
       body: {
         'files': localManifest,
+        'receive_files': receiveFiles,
         'receive_old_files': receiveOldFiles,
         'files_since': filesSince?.toUtc().toIso8601String(),
       },
@@ -481,6 +495,8 @@ class SyncService {
         await _writeJson(request, {
           'ok': true,
           'last_id': last,
+          'next_cursor': changes.isEmpty ? after : changes.last.id,
+          'has_more': changes.isNotEmpty && changes.last.id < last,
           'changes': changes.map((e) => e.toMap()).toList(),
         });
         return;
@@ -497,7 +513,7 @@ class SyncService {
           count++;
         }
         _log('←', '$count تغییر از دستگاه مقابل اعمال شد');
-        await _writeJson(request, {'ok': true});
+        await _writeJson(request, {'ok': true, 'applied': count});
         return;
       }
 
@@ -508,6 +524,7 @@ class SyncService {
             .map((e) => Map<String, dynamic>.from(e))
             .toList();
 
+        final peerReceivesFiles = body['receive_files'] != false;
         final peerReceivesOld = body['receive_old_files'] == true;
         final peerSince = DateTime.tryParse(
           body['files_since']?.toString() ?? '',
@@ -518,6 +535,7 @@ class SyncService {
         final incomingMap = {for (final e in incoming) e['path'].toString(): e};
 
         bool eligibleForPeer(Map<String, dynamic> item) {
+          if (!peerReceivesFiles) return false;
           if (peerReceivesOld) return true;
           final modified = DateTime.tryParse(
             item['modified_at']?.toString() ?? '',
@@ -536,10 +554,12 @@ class SyncService {
           }
         }
 
+        final receiveFilesLocally = await AppSettings.getSyncReceiveFiles();
         final receiveOldLocally = await AppSettings.getSyncReceiveOldFiles();
         final localSince = await AppSettings.getSyncFilesSince();
 
         bool eligibleForLocal(Map<String, dynamic> item) {
+          if (!receiveFilesLocally) return false;
           if (receiveOldLocally) return true;
           final modified = DateTime.tryParse(
             item['modified_at']?.toString() ?? '',

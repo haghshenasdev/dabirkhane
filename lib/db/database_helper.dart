@@ -2,6 +2,7 @@ import 'dart:io';
 import 'dart:convert';
 
 import 'package:dabirkhane/model/reminder.dart';
+import 'package:flutter/material.dart';
 import 'package:path/path.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:sqflite/sqflite.dart';
@@ -861,23 +862,29 @@ class DatabaseHelper {
   static Future<int> reserveMasterLetterNumber() async {
     final db = await database;
     return db.transaction((txn) async {
+      final maxNext = ((await _maxLetterNumber(txn)) ?? 0) + 1;
       final rows = await txn.query(
         'sync_number_state',
         where: 'id = 1',
         limit: 1,
       );
-      int next;
+
+      final storedNext = rows.isEmpty
+          ? 0
+          : (rows.first['next_number'] as num?)?.toInt() ?? 0;
+      final next = storedNext > maxNext ? storedNext : maxNext;
+
       if (rows.isEmpty) {
-        next = ((await _maxLetterNumber(txn)) ?? 0) + 1;
         await txn.insert('sync_number_state', {
           'id': 1,
           'next_number': next + 1,
         });
       } else {
-        next = (rows.first['next_number'] as num).toInt();
-        await txn.update('sync_number_state', {
-          'next_number': next + 1,
-        }, where: 'id = 1');
+        await txn.update(
+          'sync_number_state',
+          {'next_number': next + 1},
+          where: 'id = 1',
+        );
       }
       return next;
     });
@@ -903,9 +910,24 @@ class DatabaseHelper {
       limit: 1,
     );
 
-    if (state.isEmpty && await AppSettings.getSyncRole() == 'master') {
-      final next = ((await _maxLetterNumber(db)) ?? 0) + 1;
-      await db.insert('sync_number_state', {'id': 1, 'next_number': next});
+    if (await AppSettings.getSyncRole() == 'master') {
+      final maxNext = ((await _maxLetterNumber(db)) ?? 0) + 1;
+      if (state.isEmpty) {
+        await db.insert(
+          'sync_number_state',
+          {'id': 1, 'next_number': maxNext},
+        );
+      } else {
+        final storedNext =
+            (state.first['next_number'] as num?)?.toInt() ?? 0;
+        if (storedNext < maxNext) {
+          await db.update(
+            'sync_number_state',
+            {'next_number': maxNext},
+            where: 'id = 1',
+          );
+        }
+      }
     }
 
     if (!rebuildLegacyChanges) return;
@@ -1015,39 +1037,96 @@ class DatabaseHelper {
   static Future<void> applySyncChange(SyncChange change) async {
     await runWithoutSyncLogging(() async {
       final db = await database;
+
+      // اگر این change_id قبلاً در این دستگاه اعمال شده است، دوباره
+      // آن را اجرا نکن؛ این جلوی حلقه Client -> Master -> Client را می‌گیرد.
+      final alreadyApplied = await db.query(
+        'sync_changes',
+        columns: ['id'],
+        where: 'change_id = ?',
+        whereArgs: [change.changeId],
+        limit: 1,
+      );
+      if (alreadyApplied.isNotEmpty) {
+        return;
+      }
+
       final p = change.payload;
+
       if (change.entityType == 'record') {
         if (change.operation == 'delete') {
           await db.update(
             'daftare_andicator',
-            {'sync_deleted': 1, 'sync_updated_at': change.createdAt},
+            {
+              'sync_deleted': 1,
+              'sync_updated_at': change.createdAt,
+            },
             where: 'sync_id = ?',
             whereArgs: [change.entityId],
           );
+          await _storeIncomingSyncChange(db, change);
           return;
         }
-        final data = Map<String, dynamic>.from(p['record'] as Map? ?? {});
+
+        final rawRecord = p['record'];
+        if (rawRecord is! Map) {
+          throw StateError('تغییر دریافتی نامه فاقد اطلاعات record است.');
+        }
+
+        final incoming = Map<String, dynamic>.from(rawRecord);
+        incoming['sync_id'] = change.entityId;
+        incoming['sync_updated_at'] = change.createdAt;
+        incoming['sync_deleted'] = 0;
+
         final existing = await db.query(
           'daftare_andicator',
           where: 'sync_id = ?',
           whereArgs: [change.entityId],
           limit: 1,
         );
-        data['sync_id'] = change.entityId;
-        data['sync_updated_at'] = change.createdAt;
-        data['sync_deleted'] = 0;
+
         if (existing.isEmpty) {
-          await db.insert('daftare_andicator', data);
+          final incomingNumber =
+              (incoming['Shomare_Radif'] as num?)?.toInt();
+
+          if (incomingNumber != null) {
+            final conflict = await db.query(
+              'daftare_andicator',
+              columns: ['Shomare_Radif'],
+              where: 'Shomare_Radif = ?',
+              whereArgs: [incomingNumber],
+              limit: 1,
+            );
+
+            if (conflict.isNotEmpty) {
+              final replacement =
+                  ((await _maxLetterNumber(db)) ?? 0) + 1;
+              incoming['Shomare_Radif'] = replacement;
+              debugPrint(
+                'SYNC: شماره $incomingNumber در مقصد وجود داشت؛ '
+                'برای sync_id=${change.entityId} شماره $replacement اختصاص یافت.',
+              );
+            }
+          }
+
+          final normalized = await _normalizeRecordData(db, incoming);
+          await db.insert('daftare_andicator', normalized);
         } else {
           final localId = existing.first['Shomare_Radif'];
-          data.remove('Shomare_Radif');
+          final normalized = await _normalizeRecordData(db, incoming);
+          normalized.remove('Shomare_Radif');
+          normalized.remove('sync_id');
+          normalized['sync_updated_at'] = change.createdAt;
+          normalized['sync_deleted'] = 0;
+
           await db.update(
             'daftare_andicator',
-            data,
+            normalized,
             where: 'Shomare_Radif = ?',
             whereArgs: [localId],
           );
         }
+
         final local = await db.query(
           'daftare_andicator',
           columns: ['Shomare_Radif'],
@@ -1055,20 +1134,28 @@ class DatabaseHelper {
           whereArgs: [change.entityId],
           limit: 1,
         );
+
         if (local.isNotEmpty) {
           final localId = local.first['Shomare_Radif'].toString();
           final categories = (p['categories'] as List? ?? const [])
-              .map((e) => e.toString())
+              .map((e) => e.toString().trim())
+              .where((e) => e.isNotEmpty)
+              .toSet()
               .toList();
+
           await db.delete(
             'record_categories',
             where: 'record_id = ?',
             whereArgs: [localId],
           );
+
           for (final cat in categories) {
-            await db.insert('categories', {
-              'name': cat,
-            }, conflictAlgorithm: ConflictAlgorithm.ignore);
+            await db.insert(
+              'categories',
+              {'name': cat},
+              conflictAlgorithm: ConflictAlgorithm.ignore,
+            );
+
             final catRows = await db.query(
               'categories',
               columns: ['id'],
@@ -1076,34 +1163,83 @@ class DatabaseHelper {
               whereArgs: [cat],
               limit: 1,
             );
-            if (catRows.isNotEmpty)
-              await db.insert('record_categories', {
-                'record_id': localId,
-                'category_id': catRows.first['id'],
-              }, conflictAlgorithm: ConflictAlgorithm.ignore);
+
+            if (catRows.isNotEmpty) {
+              await db.insert(
+                'record_categories',
+                {
+                  'record_id': int.tryParse(localId) ?? localId,
+                  'category_id': catRows.first['id'],
+                },
+                conflictAlgorithm: ConflictAlgorithm.ignore,
+              );
+            }
           }
         }
+
+        await _storeIncomingSyncChange(db, change);
         return;
       }
+
       if (change.entityType == 'reminder') {
-        final data = Map<String, dynamic>.from(p['reminder'] as Map? ?? {});
+        final rawReminder = p['reminder'];
+        if (rawReminder is! Map) return;
+
+        final data = Map<String, dynamic>.from(rawReminder);
         final id = int.tryParse(change.entityId);
         if (id == null) return;
+
         if (change.operation == 'delete') {
           await db.delete('reminders', where: 'id = ?', whereArgs: [id]);
+          await _storeIncomingSyncChange(db, change);
           return;
         }
+
         final existing = await db.query(
           'reminders',
           where: 'id = ?',
           whereArgs: [id],
           limit: 1,
         );
-        if (existing.isEmpty)
+
+        if (existing.isEmpty) {
           await db.insert('reminders', data);
-        else
-          await db.update('reminders', data, where: 'id = ?', whereArgs: [id]);
+        } else {
+          await db.update(
+            'reminders',
+            data,
+            where: 'id = ?',
+            whereArgs: [id],
+          );
+        }
+
+        await _storeIncomingSyncChange(db, change);
       }
+    });
+  }
+
+  static Future<void> _storeIncomingSyncChange(
+    DatabaseExecutor db,
+    SyncChange change,
+  ) async {
+    final exists = await db.query(
+      'sync_changes',
+      columns: ['id'],
+      where: 'change_id = ?',
+      whereArgs: [change.changeId],
+      limit: 1,
+    );
+
+    if (exists.isNotEmpty) return;
+
+    await db.insert('sync_changes', {
+      'change_id': change.changeId,
+      'device_id': change.deviceId,
+      'entity_type': change.entityType,
+      'entity_id': change.entityId,
+      'operation': change.operation,
+      'payload': jsonEncode(change.payload),
+      'created_at': change.createdAt,
     });
   }
 
@@ -1715,22 +1851,28 @@ class DatabaseHelper {
               where: 'id = 1',
               limit: 1,
             );
+            final maxRows = await txn.rawQuery(
+              'SELECT MAX(Shomare_Radif) AS maxRadif FROM daftare_andicator',
+            );
+            final maxNext =
+                ((maxRows.first['maxRadif'] as num?)?.toInt() ?? 0) + 1;
+
             if (state.isEmpty) {
-              final maxRows = await txn.rawQuery(
-                'SELECT MAX(Shomare_Radif) AS maxRadif FROM daftare_andicator',
-              );
-              final next =
-                  ((maxRows.first['maxRadif'] as num?)?.toInt() ?? 0) + 1;
+              final next = maxNext;
               await txn.insert('sync_number_state', {
                 'id': 1,
                 'next_number': next + 1,
               });
               data['Shomare_Radif'] = next;
             } else {
-              final next = (state.first['next_number'] as num).toInt();
-              await txn.update('sync_number_state', {
-                'next_number': next + 1,
-              }, where: 'id = 1');
+              final storedNext =
+                  (state.first['next_number'] as num?)?.toInt() ?? 0;
+              final next = storedNext > maxNext ? storedNext : maxNext;
+              await txn.update(
+                'sync_number_state',
+                {'next_number': next + 1},
+                where: 'id = 1',
+              );
               data['Shomare_Radif'] = next;
             }
           } else {

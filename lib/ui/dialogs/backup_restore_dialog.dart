@@ -65,6 +65,7 @@ class _BackupRestoreDialogState extends State<BackupRestoreDialog>
   List<String> _lastRestoreItems = [];
 
   bool _loadingHistory = true;
+  bool _historyExpanded = false;
 
   bool _syncEnabled = false;
   String _syncRole = 'client';
@@ -75,6 +76,7 @@ class _BackupRestoreDialogState extends State<BackupRestoreDialog>
   int _syncPort = 39421;
   DateTime? _syncLastSuccess;
   bool _syncReceiveOldFiles = false;
+  bool _syncReceiveFiles = true;
   DateTime? _syncFilesSince;
   final TextEditingController _syncHostController = TextEditingController();
   final TextEditingController _syncPortController = TextEditingController();
@@ -361,48 +363,11 @@ class _BackupRestoreDialogState extends State<BackupRestoreDialog>
     }
 
     final hasBackup = _lastBackupAt != null;
-
     final hasRestore = _lastRestoreAt != null;
-
-    if (!hasBackup && !hasRestore) {
-      return Padding(
-        padding: const EdgeInsets.fromLTRB(18, 0, 18, 12),
-        child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 11),
-          decoration: BoxDecoration(
-            color: colorScheme.surfaceContainerLow.withOpacity(.55),
-            borderRadius: BorderRadius.circular(16),
-            border: Border.all(
-              color: colorScheme.outlineVariant.withOpacity(.30),
-            ),
-          ),
-          child: Row(
-            children: [
-              Icon(
-                Icons.info_outline_rounded,
-                size: 20,
-                color: colorScheme.primary,
-              ),
-              const SizedBox(width: 9),
-              Expanded(
-                child: Text(
-                  'هنوز عملیات پشتیبان‌گیری یا بازیابی ثبت نشده است.',
-                  style: TextStyle(
-                    fontSize: 11.5,
-                    color: colorScheme.onSurfaceVariant,
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ),
-      );
-    }
 
     return Padding(
       padding: const EdgeInsets.fromLTRB(18, 0, 18, 12),
       child: Container(
-        padding: const EdgeInsets.all(13),
         decoration: BoxDecoration(
           color: colorScheme.surfaceContainerLow.withOpacity(.65),
           borderRadius: BorderRadius.circular(18),
@@ -411,51 +376,93 @@ class _BackupRestoreDialogState extends State<BackupRestoreDialog>
           ),
         ),
         child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Row(
-              children: [
-                Icon(
-                  Icons.history_rounded,
-                  size: 19,
-                  color: colorScheme.primary,
+            InkWell(
+              borderRadius: BorderRadius.circular(18),
+              onTap: () {
+                setState(() => _historyExpanded = !_historyExpanded);
+              },
+              child: Padding(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 13,
+                  vertical: 10,
                 ),
-                const SizedBox(width: 7),
-                Text(
-                  'آخرین وضعیت پشتیبان',
-                  style: TextStyle(
-                    fontSize: 12.5,
-                    fontWeight: FontWeight.w800,
-                    color: colorScheme.onSurface,
-                  ),
+                child: Row(
+                  children: [
+                    Icon(
+                      Icons.history_rounded,
+                      size: 19,
+                      color: colorScheme.primary,
+                    ),
+                    const SizedBox(width: 7),
+                    const Expanded(
+                      child: Text(
+                        'آخرین وضعیت پشتیبان و بازیابی',
+                        style: TextStyle(
+                          fontSize: 12.5,
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
+                    ),
+                    if (hasBackup)
+                      Text(
+                        _formatJalaliDateTime(_lastBackupAt!),
+                        style: TextStyle(
+                          fontSize: 9.5,
+                          color: colorScheme.onSurfaceVariant,
+                        ),
+                      ),
+                    const SizedBox(width: 5),
+                    Icon(
+                      _historyExpanded
+                          ? Icons.keyboard_arrow_up_rounded
+                          : Icons.keyboard_arrow_down_rounded,
+                      color: colorScheme.onSurfaceVariant,
+                    ),
+                  ],
                 ),
-              ],
-            ),
-
-            const SizedBox(height: 10),
-
-            if (hasBackup)
-              _buildHistoryRow(
-                colorScheme,
-                icon: Icons.upload_rounded,
-                iconColor: colorScheme.primary,
-                title: 'آخرین پشتیبان‌گیری',
-                dateTime: _lastBackupAt!,
-                type: _lastBackupType,
-                items: _lastBackupItems,
               ),
-
-            if (hasBackup && hasRestore) const SizedBox(height: 9),
-
-            if (hasRestore)
-              _buildHistoryRow(
-                colorScheme,
-                icon: Icons.download_rounded,
-                iconColor: colorScheme.secondary,
-                title: 'آخرین بازیابی',
-                dateTime: _lastRestoreAt!,
-                type: _lastRestoreType,
-                items: _lastRestoreItems,
+            ),
+            if (_historyExpanded)
+              Padding(
+                padding: const EdgeInsets.fromLTRB(13, 0, 13, 13),
+                child: Column(
+                  children: [
+                    if (!hasBackup && !hasRestore)
+                      Align(
+                        alignment: Alignment.centerRight,
+                        child: Text(
+                          'هنوز عملیات پشتیبان‌گیری یا بازیابی ثبت نشده است.',
+                          style: TextStyle(
+                            fontSize: 11.5,
+                            color: colorScheme.onSurfaceVariant,
+                          ),
+                        ),
+                      ),
+                    if (hasBackup)
+                      _buildHistoryRow(
+                        colorScheme,
+                        icon: Icons.upload_rounded,
+                        iconColor: colorScheme.primary,
+                        title: 'آخرین پشتیبان‌گیری',
+                        dateTime: _lastBackupAt!,
+                        type: _lastBackupType,
+                        items: _lastBackupItems,
+                      ),
+                    if (hasBackup && hasRestore)
+                      const SizedBox(height: 9),
+                    if (hasRestore)
+                      _buildHistoryRow(
+                        colorScheme,
+                        icon: Icons.download_rounded,
+                        iconColor: colorScheme.secondary,
+                        title: 'آخرین بازیابی',
+                        dateTime: _lastRestoreAt!,
+                        type: _lastRestoreType,
+                        items: _lastRestoreItems,
+                      ),
+                  ],
+                ),
               ),
           ],
         ),
@@ -1151,6 +1158,7 @@ class _BackupRestoreDialogState extends State<BackupRestoreDialog>
     final port = await AppSettings.getSyncPort();
     final last = await AppSettings.getSyncLastSuccess();
     final receiveOldFiles = await AppSettings.getSyncReceiveOldFiles();
+    final receiveFiles = await AppSettings.getSyncReceiveFiles();
     final filesSince = await AppSettings.getSyncFilesSince();
     if (!mounted) return;
     _syncHostController.text = host ?? '';
@@ -1169,6 +1177,7 @@ class _BackupRestoreDialogState extends State<BackupRestoreDialog>
       _syncPort = port;
       _syncLastSuccess = last;
       _syncReceiveOldFiles = receiveOldFiles;
+      _syncReceiveFiles = receiveFiles;
       _syncFilesSince = filesSince;
       _localHost = localHost;
     });
@@ -1228,6 +1237,7 @@ class _BackupRestoreDialogState extends State<BackupRestoreDialog>
 
     final oldReceiveSetting = await AppSettings.getSyncReceiveOldFiles();
     await AppSettings.setSyncReceiveOldFiles(_syncReceiveOldFiles);
+    await AppSettings.setSyncReceiveFiles(_syncReceiveFiles);
 
     // وقتی دریافت فایل‌های قدیمی خاموش است، زمان فعال‌سازی/تغییر این گزینه
     // مرز شروع دریافت فایل‌هاست.
@@ -1866,6 +1876,27 @@ class _BackupRestoreDialogState extends State<BackupRestoreDialog>
                         horizontal: 12,
                       ),
                       title: const Text(
+                        'عدم دریافت فایل‌ها',
+                        style: TextStyle(
+                          fontWeight: FontWeight.w800,
+                          fontSize: 13,
+                        ),
+                      ),
+                      subtitle: const Text(
+                        'اگر فعال باشد، فایل‌های دستگاه مقابل روی این دستگاه دریافت نمی‌شوند.',
+                        style: TextStyle(fontSize: 10.5),
+                      ),
+                      value: !_syncReceiveFiles,
+                      onChanged: (value) {
+                        setState(() => _syncReceiveFiles = !value);
+                      },
+                    ),
+
+                    SwitchListTile.adaptive(
+                      contentPadding: const EdgeInsets.symmetric(
+                        horizontal: 12,
+                      ),
+                      title: const Text(
                         'دریافت فایل‌های قدیمی',
                         style: TextStyle(
                           fontWeight: FontWeight.w800,
@@ -1875,7 +1906,7 @@ class _BackupRestoreDialogState extends State<BackupRestoreDialog>
                       subtitle: Text(
                         _syncReceiveOldFiles
                             ? 'فایل‌های قبلی و فایل‌های جدید نیز دریافت و هماهنگ می‌شوند.'
-                            : 'فقط فایل‌هایی که از ${_syncFilesSince?.toLocal().toString().split('.').first ?? 'زمان فعال‌سازی'} به بعد تغییر کرده‌اند دریافت می‌شوند.',
+                            : 'فقط فایل‌هایی که از ${_syncFilesSince == null ? 'زمان فعال‌سازی' : _formatJalaliDateTime(_syncFilesSince!)} به بعد تغییر کرده‌اند دریافت می‌شوند.',
                         style: const TextStyle(fontSize: 10.5),
                       ),
                       value: _syncReceiveOldFiles,

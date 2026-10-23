@@ -37,6 +37,7 @@ class AppSettings {
   static const _syncPushCursorKey = 'sync_peer_push_cursor';
   static const _syncLastSuccessKey = 'sync_last_success';
   static const _syncReceiveOldFilesKey = 'sync_receive_old_files';
+  static const _syncReceiveFilesKey = 'sync_receive_files';
   static const _syncFilesSinceKey = 'sync_files_since';
 
 
@@ -160,6 +161,16 @@ class AppSettings {
   static Future<void> setSyncReceiveOldFiles(bool value) async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setBool(_syncReceiveOldFilesKey, value);
+  }
+
+  static Future<bool> getSyncReceiveFiles() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getBool(_syncReceiveFilesKey) ?? true;
+  }
+
+  static Future<void> setSyncReceiveFiles(bool value) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(_syncReceiveFilesKey, value);
   }
 
   static Future<DateTime?> getSyncFilesSince() async {

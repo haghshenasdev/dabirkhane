@@ -14,6 +14,7 @@ import '../pages/stats_page.dart';
 import 'package:flutter/material.dart';
 import 'package:shamsi_date/shamsi_date.dart';
 import '../db/database_helper.dart';
+import '../utils/JalaliDateFormatter.dart';
 import 'record_form.dart';
 import '../model/field_definition.dart';
 import '../services/schema_service.dart';
@@ -276,6 +277,27 @@ class _HomePageState extends State<HomePage> {
     try {
       final fromDate = fromDateController.text.trim();
       final toDate = toDateController.text.trim();
+      if (!_isValidFilterDate(fromDate) || !_isValidFilterDate(toDate)) {
+        if (mounted) {
+          showMessage(
+            'تاریخ فیلتر نامعتبر',
+            'تاریخ را با فرمت 1405/01/01 وارد کنید.',
+          );
+        }
+        isLoading = false;
+        if (mounted) setState(() {});
+        return;
+      }
+      if (fromDate.isNotEmpty &&
+          toDate.isNotEmpty &&
+          fromDate.compareTo(toDate) > 0) {
+        if (mounted) {
+          showMessage('بازه تاریخ نامعتبر', 'تاریخ «از» نباید بعد از تاریخ «تا» باشد.');
+        }
+        isLoading = false;
+        if (mounted) setState(() {});
+        return;
+      }
       final onvan = onvanController.text.trim();
       final comment = commentFilterController.text.trim();
       final shomareBadi = shomareBadiFilterController.text.trim();
@@ -1125,14 +1147,22 @@ class _HomePageState extends State<HomePage> {
                       controller: fromDateController,
                       keyboardType: TextInputType.number,
                       textDirection: TextDirection.rtl,
-                      decoration: decoration('از تاریخ', Icons.calendar_month),
+                      inputFormatters: [JalaliDateFormatter()],
+                      decoration: decoration(
+                        'از تاریخ',
+                        Icons.calendar_month,
+                      ).copyWith(hintText: '1405/01/01'),
                     );
 
                     final toDate = TextField(
                       controller: toDateController,
                       keyboardType: TextInputType.number,
                       textDirection: TextDirection.rtl,
-                      decoration: decoration('تا تاریخ', Icons.event),
+                      inputFormatters: [JalaliDateFormatter()],
+                      decoration: decoration(
+                        'تا تاریخ',
+                        Icons.event,
+                      ).copyWith(hintText: '1405/01/31'),
                     );
 
                     if (twoColumns) {
@@ -1234,36 +1264,31 @@ class _HomePageState extends State<HomePage> {
                       },
                     );
 
-                    final categoryWidget = TextField(
-                      controller: categoryFilterController,
-                      textDirection: TextDirection.rtl,
-                      decoration: decoration(
-                        'دسته بندی',
-                        Icons.category_outlined,
+                    final categoryWidget = InkWell(
+                      borderRadius: BorderRadius.circular(14),
+                      onTap: _showCategoryFilterPicker,
+                      child: InputDecorator(
+                        decoration: decoration(
+                          'دسته بندی',
+                          Icons.category_outlined,
+                        ).copyWith(
+                          suffixIcon: const Icon(Icons.arrow_drop_down_rounded),
+                        ),
+                        child: Text(
+                          selectedCategoryFilters.isEmpty
+                              ? 'انتخاب دسته‌بندی'
+                              : selectedCategoryFilters.join('، '),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          textDirection: TextDirection.rtl,
+                          style: TextStyle(
+                            fontSize: 13,
+                            color: selectedCategoryFilters.isEmpty
+                                ? cs.onSurfaceVariant
+                                : cs.onSurface,
+                          ),
+                        ),
                       ),
-                      onChanged: (value) {
-                        _debounceCategoryFilter?.cancel();
-                        _debounceCategoryFilter = Timer(
-                          const Duration(milliseconds: 300),
-                          () async {
-                            if (value.trim().isEmpty) {
-                              if (!mounted) return;
-                              setState(() => categoryFilterSuggestions.clear());
-                              return;
-                            }
-
-                            final result =
-                                await DatabaseHelper.searchCategories(
-                                  value.trim(),
-                                );
-                            if (!mounted) return;
-                            setState(() => categoryFilterSuggestions = result);
-                          },
-                        );
-                      },
-                      onSubmitted: (value) {
-                        _addCategoryFilter(value.trim());
-                      },
                     );
 
                     if (twoColumns) {
@@ -1812,6 +1837,113 @@ class _HomePageState extends State<HomePage> {
   // دسته بندی
   // ============================================================
 
+  Future<void> _showCategoryFilterPicker() async {
+    final categories = await DatabaseHelper.searchCategories('');
+    if (!mounted) return;
+
+    final tempSelected = <String>{...selectedCategoryFilters};
+    final searchController = TextEditingController();
+
+    final result = await showDialog<List<String>>(
+      context: context,
+      builder: (dialogContext) {
+        return StatefulBuilder(
+          builder: (context, setDialogState) {
+            final q = searchController.text.trim().toLowerCase();
+            final visible = q.isEmpty
+                ? categories
+                : categories
+                    .where((item) => item.toLowerCase().contains(q))
+                    .toList();
+
+            return Directionality(
+              textDirection: TextDirection.rtl,
+              child: AlertDialog(
+                title: const Text('انتخاب دسته‌بندی'),
+                content: SizedBox(
+                  width: 460,
+                  height: 480,
+                  child: Column(
+                    children: [
+                      TextField(
+                        controller: searchController,
+                        autofocus: true,
+                        textDirection: TextDirection.rtl,
+                        decoration: const InputDecoration(
+                          labelText: 'جستجوی دسته‌بندی',
+                          prefixIcon: Icon(Icons.search_rounded),
+                          border: OutlineInputBorder(),
+                        ),
+                        onChanged: (_) => setDialogState(() {}),
+                      ),
+                      const SizedBox(height: 10),
+                      Expanded(
+                        child: visible.isEmpty
+                            ? const Center(
+                                child: Text('دسته‌بندی‌ای پیدا نشد'),
+                              )
+                            : ListView.builder(
+                                itemCount: visible.length,
+                                itemBuilder: (_, index) {
+                                  final category = visible[index];
+                                  return CheckboxListTile(
+                                    value: tempSelected.contains(category),
+                                    title: Text(
+                                      category,
+                                      textDirection: TextDirection.rtl,
+                                    ),
+                                    secondary: const Icon(
+                                      Icons.category_outlined,
+                                    ),
+                                    onChanged: (checked) {
+                                      setDialogState(() {
+                                        if (checked == true) {
+                                          tempSelected.add(category);
+                                        } else {
+                                          tempSelected.remove(category);
+                                        }
+                                      });
+                                    },
+                                  );
+                                },
+                              ),
+                      ),
+                    ],
+                  ),
+                ),
+                actions: [
+                  TextButton(
+                    onPressed: () => Navigator.pop(dialogContext),
+                    child: const Text('انصراف'),
+                  ),
+                  FilledButton.icon(
+                    onPressed: () => Navigator.pop(
+                      dialogContext,
+                      tempSelected.toList(),
+                    ),
+                    icon: const Icon(Icons.check_rounded),
+                    label: const Text('اعمال'),
+                  ),
+                ],
+              ),
+            );
+          },
+        );
+      },
+    );
+
+    searchController.dispose();
+    if (!mounted || result == null) return;
+
+    _clearSelectionForFilterChange();
+    setState(() {
+      selectedCategoryFilters = result;
+      categoryFilterController.clear();
+      categoryFilterSuggestions.clear();
+    });
+    await loadMore(reset: true);
+  }
+
   void _addCategoryFilter(String value) {
     if (value.isEmpty) return;
 
@@ -1832,6 +1964,25 @@ class _HomePageState extends State<HomePage> {
   // ============================================================
   // بررسی فیلتر
   // ============================================================
+
+  bool _isValidFilterDate(String value) {
+    if (value.isEmpty) return true;
+    final match = RegExp(r'^\d{4}/\d{2}/\d{2}$').hasMatch(value);
+    if (!match) return false;
+
+    final parts = value.split('/');
+    final year = int.tryParse(parts[0]);
+    final month = int.tryParse(parts[1]);
+    final day = int.tryParse(parts[2]);
+    if (year == null || month == null || day == null) return false;
+
+    try {
+      Jalali(year, month, day).toGregorian();
+      return true;
+    } catch (_) {
+      return false;
+    }
+  }
 
   bool _recordMatchesCurrentFilters(Map<String, dynamic> record) {
     final q = query

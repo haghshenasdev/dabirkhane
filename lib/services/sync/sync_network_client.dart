@@ -37,11 +37,21 @@ class SyncNetworkClient {
       request.headers.contentType = ContentType.json;
       final response = await request.close();
       final text = await response.transform(utf8.decoder).join();
-      if (response.statusCode != 200) return null;
+      if (response.statusCode != 200) {
+        throw StateError(
+          'دریافت شماره از دستگاه مادر ناموفق بود '
+          '(HTTP ${response.statusCode})${text.isEmpty ? '' : ': $text'}',
+        );
+      }
       final data = jsonDecode(text) as Map;
-      return (data['number'] as num?)?.toInt();
-    } catch (_) {
-      return null;
+      final number = (data['number'] as num?)?.toInt();
+      if (number == null || number <= 0) {
+        throw StateError('دستگاه مادر شماره معتبر برنگرداند.');
+      }
+      return number;
+    } catch (e) {
+      if (e is StateError) rethrow;
+      throw StateError('خطا در ارتباط با دستگاه مادر برای شماره‌دهی: $e');
     } finally {
       client.close(force: true);
     }
