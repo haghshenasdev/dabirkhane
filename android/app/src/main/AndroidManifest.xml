@@ -14,7 +14,7 @@
    <package android:name="net.pulsesecure.pulsesecure" /> // your android package name
  </queries>
    <application
-        android:label="دبیرخانه"
+        android:label="باینو"
         android:name="${applicationName}"
         android:usesCleartextTraffic="true"
         android:icon="@mipmap/launcher_icon">

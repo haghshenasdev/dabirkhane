@@ -292,7 +292,10 @@ class _HomePageState extends State<HomePage> {
           toDate.isNotEmpty &&
           fromDate.compareTo(toDate) > 0) {
         if (mounted) {
-          showMessage('بازه تاریخ نامعتبر', 'تاریخ «از» نباید بعد از تاریخ «تا» باشد.');
+          showMessage(
+            'بازه تاریخ نامعتبر',
+            'تاریخ «از» نباید بعد از تاریخ «تا» باشد.',
+          );
         }
         isLoading = false;
         if (mounted) setState(() {});
@@ -865,7 +868,7 @@ class _HomePageState extends State<HomePage> {
               backgroundColor: cs.primary,
               foregroundColor: cs.onPrimary,
               icon: const Icon(Icons.add),
-              label: const Text("ثبت نامه"),
+              label: const Text("ثبت"),
               onPressed: () async {
                 _unfocusSearch();
 
@@ -1034,23 +1037,41 @@ class _HomePageState extends State<HomePage> {
 
                   if (dueReminderCount > 0) _buildDueReminderBanner(),
 
+                  // نمایش وضعیت بارگذاری هنگام جستجو، اعمال فیلتر و دریافت رکوردها
+                  // فقط هنگام بارگذاری دیده می‌شود؛ در حالت عادی لودینگ باقی نمی‌ماند.
+                  if (isLoading)
+                    const Padding(
+                      padding: EdgeInsets.only(bottom: 8),
+                      child: LinearProgressIndicator(minHeight: 3),
+                    ),
+
                   const SizedBox(height: 12),
 
                   //----------------------------------------------------
                   // List
                   //----------------------------------------------------
                   Expanded(
-                    child: records.isEmpty && !isLoading
-                        ? const Center(
-                            child: Text(
-                              "هیچ نامه‌ای ثبت نشده است",
-                              style: TextStyle(fontSize: 18),
-                            ),
+                    child: records.isEmpty
+                        ? Center(
+                            child: isLoading
+                                ? const Column(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      CircularProgressIndicator(),
+                                      SizedBox(height: 12),
+                                      Text('در حال بارگذاری اطلاعات...'),
+                                    ],
+                                  )
+                                : const Text(
+                                    "هیچ نامه‌ای ثبت نشده است",
+                                    style: TextStyle(fontSize: 18),
+                                  ),
                           )
                         : ListView.builder(
                             controller: _scrollController,
 
-                            itemCount: records.length + (hasMore ? 1 : 0),
+                            itemCount:
+                                records.length + (hasMore && isLoading ? 1 : 0),
 
                             itemBuilder: (_, i) {
                               if (i >= records.length) {
@@ -1268,12 +1289,15 @@ class _HomePageState extends State<HomePage> {
                       borderRadius: BorderRadius.circular(14),
                       onTap: _showCategoryFilterPicker,
                       child: InputDecorator(
-                        decoration: decoration(
-                          'دسته بندی',
-                          Icons.category_outlined,
-                        ).copyWith(
-                          suffixIcon: const Icon(Icons.arrow_drop_down_rounded),
-                        ),
+                        decoration:
+                            decoration(
+                              'دسته بندی',
+                              Icons.category_outlined,
+                            ).copyWith(
+                              suffixIcon: const Icon(
+                                Icons.arrow_drop_down_rounded,
+                              ),
+                            ),
                         child: Text(
                           selectedCategoryFilters.isEmpty
                               ? 'انتخاب دسته‌بندی'
@@ -1451,6 +1475,12 @@ class _HomePageState extends State<HomePage> {
                       selectedCategoryFilters.clear();
 
                       categoryFilterSuggestions.clear();
+
+                      // پاک‌سازی همه فیلترهای پویا طبق ساختار فعلی فرم
+                      for (final controller
+                          in _dynamicFilterControllers.values) {
+                        controller.clear();
+                      }
 
                       commentFilterController.clear();
                       shomareBadiFilterController.clear();
@@ -1853,8 +1883,8 @@ class _HomePageState extends State<HomePage> {
             final visible = q.isEmpty
                 ? categories
                 : categories
-                    .where((item) => item.toLowerCase().contains(q))
-                    .toList();
+                      .where((item) => item.toLowerCase().contains(q))
+                      .toList();
 
             return Directionality(
               textDirection: TextDirection.rtl,
@@ -1879,9 +1909,7 @@ class _HomePageState extends State<HomePage> {
                       const SizedBox(height: 10),
                       Expanded(
                         child: visible.isEmpty
-                            ? const Center(
-                                child: Text('دسته‌بندی‌ای پیدا نشد'),
-                              )
+                            ? const Center(child: Text('دسته‌بندی‌ای پیدا نشد'))
                             : ListView.builder(
                                 itemCount: visible.length,
                                 itemBuilder: (_, index) {
@@ -1917,10 +1945,8 @@ class _HomePageState extends State<HomePage> {
                     child: const Text('انصراف'),
                   ),
                   FilledButton.icon(
-                    onPressed: () => Navigator.pop(
-                      dialogContext,
-                      tempSelected.toList(),
-                    ),
+                    onPressed: () =>
+                        Navigator.pop(dialogContext, tempSelected.toList()),
                     icon: const Icon(Icons.check_rounded),
                     label: const Text('اعمال'),
                   ),

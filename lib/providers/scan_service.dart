@@ -410,8 +410,18 @@ class ScanService {
         targetFile = File(path.join(targetDirectory.path, targetName));
       }
 
-      // کپی بدون جایگزین کردن فایل قبلی
-      await file.copy(targetFile.path);
+      // رفتار پیش‌فرض کپی است؛ کاربر می‌تواند در تنظیمات انتقال (Cut) را انتخاب کند.
+      if (await AppSettings.getMoveScannedFiles()) {
+        try {
+          await file.rename(targetFile.path);
+        } on FileSystemException {
+          // اگر مبدأ و مقصد روی دو فضای ذخیره‌سازی متفاوت باشند، کپی و سپس حذف کن.
+          await file.copy(targetFile.path);
+          await file.delete();
+        }
+      } else {
+        await file.copy(targetFile.path);
+      }
 
       counter++;
     }

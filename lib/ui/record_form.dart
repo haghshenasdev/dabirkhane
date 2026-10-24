@@ -384,7 +384,9 @@ class _RecordFormState extends State<RecordForm>
   }
 
   Future<bool> _saveDataOnly() async {
-    if (!_formKey.currentState!.validate()) {
+    final formState = _formKey.currentState;
+    // بعضی صفحات فرم ممکن است FormState نداشته باشند؛ از Null check crash جلوگیری می‌کنیم.
+    if (formState != null && !formState.validate()) {
       return false;
     }
 

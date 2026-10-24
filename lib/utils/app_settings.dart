@@ -7,6 +7,9 @@ import 'package:path_provider/path_provider.dart';
 
 class AppSettings {
   static const _lettersPathKey = 'letters_path';
+  static const _displayTitleKey = 'display_title';
+  static const _moveScannedFilesKey = 'move_scanned_files';
+  static const _searchFilesByYearMonthKey = 'search_files_by_year_month';
   static const _camScannerPath1Key = 'camscanner_path_1';
   static const _camScannerPath2Key = 'camscanner_path_2';
   static const _readWithoutGallerySaveKey = 'read_without_gallery_save';
@@ -578,6 +581,40 @@ class AppSettings {
   // ============================================================
   // Letters directory
   // ============================================================
+
+
+  static Future<String> getDisplayTitle() async {
+    final prefs = await SharedPreferences.getInstance();
+    final value = prefs.getString(_displayTitleKey)?.trim();
+    return (value == null || value.isEmpty) ? 'دبیرخانه' : value;
+  }
+
+  static Future<void> setDisplayTitle(String value) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_displayTitleKey, value.trim().isEmpty ? 'دبیرخانه' : value.trim());
+  }
+
+  /// پیش‌فرض: فایل اسکن‌شده کپی شود؛ در صورت فعال بودن، فایل اصلی منتقل می‌شود.
+  static Future<bool> getMoveScannedFiles() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getBool(_moveScannedFilesKey) ?? false;
+  }
+
+  static Future<void> setMoveScannedFiles(bool value) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(_moveScannedFilesKey, value);
+  }
+
+  /// پیش‌فرض: جستجوی فایل‌ها در تمام پوشه‌ها انجام شود.
+  static Future<bool> getSearchFilesByYearMonthOnly() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getBool(_searchFilesByYearMonthKey) ?? false;
+  }
+
+  static Future<void> setSearchFilesByYearMonthOnly(bool value) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(_searchFilesByYearMonthKey, value);
+  }
 
   /// گرفتن مسیر پوشه نامه‌ها
   static Future<Directory> getLettersDirectory() async {

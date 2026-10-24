@@ -281,6 +281,7 @@ class SettingsPage extends StatelessWidget {
             padding: const EdgeInsets.fromLTRB(14, 18, 14, 28),
             children: [
               _sectionTitle(context, 'عمومی'),
+              const DisplayTitleSettingTile(),
               SwitchListTile(
                 title: const Text('حالت تیره'),
                 subtitle: const Text('فعال / غیرفعال کردن Dark Mode'),
@@ -297,6 +298,7 @@ class SettingsPage extends StatelessWidget {
               _sectionTitle(context, 'فایل‌ها'),
 
               const LettersPathTile(),
+              const SearchFilesByDateSettingTile(),
 
               ListTile(
                 leading: const Icon(Icons.folder_copy_outlined),
@@ -327,6 +329,7 @@ class SettingsPage extends StatelessWidget {
               const ScannerTypeTile(),
               const Divider(),
               const CamScannerPathsTile(),
+              const MoveScannedFilesSettingTile(),
               const SaveAndReturnAfterScanTile(),
 
               const Divider(),
@@ -978,4 +981,141 @@ class _ReminderNotificationTimeTileState
       onTap: _loading ? null : _selectTime,
     );
   }
+}
+
+class DisplayTitleSettingTile extends StatefulWidget {
+  const DisplayTitleSettingTile({super.key});
+  @override
+  State<DisplayTitleSettingTile> createState() =>
+      _DisplayTitleSettingTileState();
+}
+
+class _DisplayTitleSettingTileState extends State<DisplayTitleSettingTile> {
+  String _title = 'دبیرخانه';
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  Future<void> _load() async {
+    final value = await AppSettings.getDisplayTitle();
+    if (mounted) setState(() => _title = value);
+  }
+
+  Future<void> _edit() async {
+    final controller = TextEditingController(text: _title);
+    final value = await showDialog<String>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('عنوان نمایشی برنامه'),
+        content: TextField(
+          controller: controller,
+          autofocus: true,
+          decoration: const InputDecoration(labelText: 'عنوان بالای برنامه'),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('انصراف'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, controller.text.trim()),
+            child: const Text('ذخیره'),
+          ),
+        ],
+      ),
+    );
+    controller.dispose();
+    if (value == null) return;
+    await AppSettings.setDisplayTitle(value);
+    if (mounted)
+      setState(() => _title = value.trim().isEmpty ? 'دبیرخانه' : value.trim());
+    if (mounted) Navigator.of(context).pop(true);
+  }
+
+  @override
+  Widget build(BuildContext context) => ListTile(
+    leading: const Icon(Icons.title),
+    title: const Text('عنوان نمایشی برنامه'),
+    subtitle: Text(_title),
+    trailing: const Icon(Icons.edit_outlined),
+    onTap: _edit,
+  );
+}
+
+class MoveScannedFilesSettingTile extends StatefulWidget {
+  const MoveScannedFilesSettingTile({super.key});
+  @override
+  State<MoveScannedFilesSettingTile> createState() =>
+      _MoveScannedFilesSettingTileState();
+}
+
+class _MoveScannedFilesSettingTileState
+    extends State<MoveScannedFilesSettingTile> {
+  bool _move = false;
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  Future<void> _load() async {
+    final v = await AppSettings.getMoveScannedFiles();
+    if (mounted) setState(() => _move = v);
+  }
+
+  @override
+  Widget build(BuildContext context) => SwitchListTile(
+    secondary: const Icon(Icons.drive_file_move_outline),
+    title: const Text('انتقال فایل‌های اسکن‌شده'),
+    subtitle: Text(
+      _move
+          ? 'فایل از پوشه اسکنر منتقل می‌شود (کات)'
+          : 'فایل اصلی باقی می‌ماند و یک نسخه کپی می‌شود',
+    ),
+    value: _move,
+    onChanged: (v) async {
+      await AppSettings.setMoveScannedFiles(v);
+      if (mounted) setState(() => _move = v);
+    },
+  );
+}
+
+class SearchFilesByDateSettingTile extends StatefulWidget {
+  const SearchFilesByDateSettingTile({super.key});
+  @override
+  State<SearchFilesByDateSettingTile> createState() =>
+      _SearchFilesByDateSettingTileState();
+}
+
+class _SearchFilesByDateSettingTileState
+    extends State<SearchFilesByDateSettingTile> {
+  bool _dateOnly = false;
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  Future<void> _load() async {
+    final v = await AppSettings.getSearchFilesByYearMonthOnly();
+    if (mounted) setState(() => _dateOnly = v);
+  }
+
+  @override
+  Widget build(BuildContext context) => SwitchListTile(
+    secondary: const Icon(Icons.folder_special_outlined),
+    title: const Text('محدود کردن جستجوی فایل‌های نامه'),
+    subtitle: Text(
+      _dateOnly
+          ? 'فقط پوشه سال و ماه تاریخ نامه بررسی می‌شود'
+          : 'تمام پوشه‌ها بررسی می‌شوند (حالت پیش‌فرض)',
+    ),
+    value: _dateOnly,
+    onChanged: (v) async {
+      await AppSettings.setSearchFilesByYearMonthOnly(v);
+      if (mounted) setState(() => _dateOnly = v);
+    },
+  );
 }
