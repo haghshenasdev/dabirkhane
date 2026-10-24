@@ -1008,18 +1008,26 @@ class _RecordFormState extends State<RecordForm>
     final List<File> matchedFiles = [];
 
     try {
-      await for (final entity in lettersDir.list(
-        recursive: true,
-        followLinks: false,
-      )) {
-        if (entity is! File) continue;
+      final searchByDateOnly = await AppSettings.getSearchFilesByYearMonthOnly();
+      final parsedDate = LetterFileOrganizer.parseJalaliDate(c['date']?.text ?? '');
+      final effectiveDateOnly = searchByDateOnly && parsedDate != null;
+      final searchRoot = effectiveDateOnly
+          ? Directory(path.join(lettersDir.path, parsedDate[0].toString(), parsedDate[1].toString()))
+          : lettersDir;
 
-        final nameRaw = path.basenameWithoutExtension(entity.path);
+      if (await searchRoot.exists()) {
+        await for (final entity in searchRoot.list(
+          recursive: !effectiveDateOnly,
+          followLinks: false,
+        )) {
+          if (entity is! File) continue;
 
-        final name = normalizeNumbers(nameRaw);
+          final nameRaw = path.basenameWithoutExtension(entity.path);
+          final name = normalizeNumbers(nameRaw);
 
-        if (regex.hasMatch(name)) {
-          matchedFiles.add(entity);
+          if (regex.hasMatch(name)) {
+            matchedFiles.add(entity);
+          }
         }
       }
 
