@@ -6,6 +6,7 @@ import 'package:dabirkhane/services/excel_export_service.dart';
 import 'package:dabirkhane/ui/dialogs/backup_restore_dialog.dart';
 import 'package:dabirkhane/ui/dialogs/csv_export_dialog.dart';
 import 'package:dabirkhane/utils/glass_toast.dart';
+import 'package:dabirkhane/utils/app_settings.dart';
 import 'package:dabirkhane/services/sync/sync_service.dart';
 import 'package:dabirkhane/services/sync_models.dart';
 
@@ -292,10 +293,7 @@ class _HomePageState extends State<HomePage> {
           toDate.isNotEmpty &&
           fromDate.compareTo(toDate) > 0) {
         if (mounted) {
-          showMessage(
-            'بازه تاریخ نامعتبر',
-            'تاریخ «از» نباید بعد از تاریخ «تا» باشد.',
-          );
+          showMessage('بازه تاریخ نامعتبر', 'تاریخ «از» نباید بعد از تاریخ «تا» باشد.');
         }
         isLoading = false;
         if (mounted) setState(() {});
@@ -696,9 +694,17 @@ class _HomePageState extends State<HomePage> {
     }
   }
 
+  String _displayTitle = 'دبیرخانه';
+
+  Future<void> _loadDisplayTitle() async {
+    final title = await AppSettings.getDisplayTitle();
+    if (mounted && title != _displayTitle) setState(() => _displayTitle = title);
+  }
+
   @override
   void initState() {
     super.initState();
+    _loadDisplayTitle();
 
     if (widget.initialReminderDate != null &&
         widget.initialReminderDate!.trim().isNotEmpty) {
@@ -757,9 +763,9 @@ class _HomePageState extends State<HomePage> {
                     : "${selectedRecordIds.length} مورد انتخاب شده",
                 style: const TextStyle(fontWeight: FontWeight.bold),
               )
-            : const Text(
-                "دبیرخانه",
-                style: TextStyle(fontWeight: FontWeight.bold),
+            : Text(
+                _displayTitle,
+                style: const TextStyle(fontWeight: FontWeight.bold),
               ),
 
         leading: selectionMode
@@ -852,6 +858,7 @@ class _HomePageState extends State<HomePage> {
                       MaterialPageRoute(builder: (_) => const SettingsPage()),
                     );
 
+                    if (mounted) await _loadDisplayTitle();
                     if (changed == true && mounted) {
                       await loadMore(reset: true);
                     }
@@ -868,7 +875,7 @@ class _HomePageState extends State<HomePage> {
               backgroundColor: cs.primary,
               foregroundColor: cs.onPrimary,
               icon: const Icon(Icons.add),
-              label: const Text("ثبت"),
+              label: const Text("ثبت نامه"),
               onPressed: () async {
                 _unfocusSearch();
 
@@ -1070,8 +1077,7 @@ class _HomePageState extends State<HomePage> {
                         : ListView.builder(
                             controller: _scrollController,
 
-                            itemCount:
-                                records.length + (hasMore && isLoading ? 1 : 0),
+                            itemCount: records.length + (hasMore && isLoading ? 1 : 0),
 
                             itemBuilder: (_, i) {
                               if (i >= records.length) {
@@ -1289,15 +1295,12 @@ class _HomePageState extends State<HomePage> {
                       borderRadius: BorderRadius.circular(14),
                       onTap: _showCategoryFilterPicker,
                       child: InputDecorator(
-                        decoration:
-                            decoration(
-                              'دسته بندی',
-                              Icons.category_outlined,
-                            ).copyWith(
-                              suffixIcon: const Icon(
-                                Icons.arrow_drop_down_rounded,
-                              ),
-                            ),
+                        decoration: decoration(
+                          'دسته بندی',
+                          Icons.category_outlined,
+                        ).copyWith(
+                          suffixIcon: const Icon(Icons.arrow_drop_down_rounded),
+                        ),
                         child: Text(
                           selectedCategoryFilters.isEmpty
                               ? 'انتخاب دسته‌بندی'
@@ -1477,8 +1480,7 @@ class _HomePageState extends State<HomePage> {
                       categoryFilterSuggestions.clear();
 
                       // پاک‌سازی همه فیلترهای پویا طبق ساختار فعلی فرم
-                      for (final controller
-                          in _dynamicFilterControllers.values) {
+                      for (final controller in _dynamicFilterControllers.values) {
                         controller.clear();
                       }
 
@@ -1883,8 +1885,8 @@ class _HomePageState extends State<HomePage> {
             final visible = q.isEmpty
                 ? categories
                 : categories
-                      .where((item) => item.toLowerCase().contains(q))
-                      .toList();
+                    .where((item) => item.toLowerCase().contains(q))
+                    .toList();
 
             return Directionality(
               textDirection: TextDirection.rtl,
@@ -1909,7 +1911,9 @@ class _HomePageState extends State<HomePage> {
                       const SizedBox(height: 10),
                       Expanded(
                         child: visible.isEmpty
-                            ? const Center(child: Text('دسته‌بندی‌ای پیدا نشد'))
+                            ? const Center(
+                                child: Text('دسته‌بندی‌ای پیدا نشد'),
+                              )
                             : ListView.builder(
                                 itemCount: visible.length,
                                 itemBuilder: (_, index) {
@@ -1945,8 +1949,10 @@ class _HomePageState extends State<HomePage> {
                     child: const Text('انصراف'),
                   ),
                   FilledButton.icon(
-                    onPressed: () =>
-                        Navigator.pop(dialogContext, tempSelected.toList()),
+                    onPressed: () => Navigator.pop(
+                      dialogContext,
+                      tempSelected.toList(),
+                    ),
                     icon: const Icon(Icons.check_rounded),
                     label: const Text('اعمال'),
                   ),
